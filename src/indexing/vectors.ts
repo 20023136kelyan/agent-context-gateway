@@ -100,9 +100,9 @@ export class VectorStore {
     }
   }
 
-  /** IDs already embedded (for incremental backfill of new turns only). */
-  async existing(ids: string[], dim?: number): Promise<Set<string>> {
-    const table = dim ? await this.getTableForDim(dim) : (this.tables.values().next().value ?? null);
+  /** IDs already embedded in the `dim` table (incremental backfill of new turns only). */
+  async existing(ids: string[], dim: number): Promise<Set<string>> {
+    const table = await this.getTableForDim(dim);
     if (!table || ids.length === 0) return new Set();
     const found = new Set<string>();
     // Chunked: SQL IN lists stay small.
