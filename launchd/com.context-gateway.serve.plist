@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.context-gateway.serve</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>/Users/admin/dev/Agent Context Gateway/gateway.sh</string>
+    <string>serve</string>
+    <string>--port</string>
+    <string>3000</string>
+    <string>--watch</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/admin/.context-gateway/serve.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/admin/.context-gateway/serve.log</string>
+  <key>WorkingDirectory</key>
+  <string>/Users/admin/dev/Agent Context Gateway</string>
+</dict>
+</plist>

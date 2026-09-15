@@ -1,0 +1,427 @@
+{
+  "mode": "rrf",
+  "timestamp": "2026-09-15T13:18:36.983Z",
+  "totalQueries": 24,
+  "overall": {
+    "domain": "overall",
+    "count": 24,
+    "meanNdcg5": 0.8653,
+    "meanMrr5": 0.8958,
+    "meanP1": 0.8333,
+    "meanP5": 0.5799,
+    "p50LatencyMs": 191,
+    "p95LatencyMs": 1762
+  },
+  "byDomain": {
+    "code": {
+      "domain": "code",
+      "count": 8,
+      "meanNdcg5": 0.9416,
+      "meanMrr5": 1,
+      "meanP1": 1,
+      "meanP5": 0.6042,
+      "p50LatencyMs": 335,
+      "p95LatencyMs": 4198
+    },
+    "prose": {
+      "domain": "prose",
+      "count": 8,
+      "meanNdcg5": 0.9155,
+      "meanMrr5": 0.875,
+      "meanP1": 0.75,
+      "meanP5": 0.6563,
+      "p50LatencyMs": 220,
+      "p95LatencyMs": 1762
+    },
+    "paraphrase": {
+      "domain": "paraphrase",
+      "count": 8,
+      "meanNdcg5": 0.7387,
+      "meanMrr5": 0.8125,
+      "meanP1": 0.75,
+      "meanP5": 0.4792,
+      "p50LatencyMs": 191,
+      "p95LatencyMs": 253
+    }
+  },
+  "queryResults": [
+    {
+      "id": "code-1",
+      "domain": "code",
+      "query": "collaboration workspace registration architecture",
+      "ndcg5": 0.6131471927654584,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 0.5,
+      "latencyMs": 4198,
+      "topSessionIds": [
+        "01a093f3-8ffe-7923-ac2c-dd806823f2f4",
+        "019f6a57-040b-7e20-9848-96e3e65607a3"
+      ],
+      "hit": true
+    },
+    {
+      "id": "code-2",
+      "domain": "code",
+      "query": "autoGit rebase session coordinator",
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 1,
+      "latencyMs": 152,
+      "topSessionIds": [
+        "01a093f3-8ffe-7923-ac2c-dd806823f2f4",
+        "01a094ca-d95f-7630-8290-12fb03ad1ce2"
+      ],
+      "hit": true
+    },
+    {
+      "id": "code-3",
+      "domain": "code",
+      "query": "window resizing slow transparency blur",
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 0.5,
+      "latencyMs": 713,
+      "topSessionIds": [
+        "77d0c5a8-b18d-49d9-abae-88cd24197f9e",
+        "82f3fa01-16f5-42af-b29d-f663fb9fed22"
+      ],
+      "hit": true
+    },
+    {
+      "id": "code-4",
+      "domain": "code",
+      "query": "monaco editor replacement codemirror",
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 0.5,
+      "latencyMs": 335,
+      "topSessionIds": [
+        "8a0205bd-2ec7-4937-a823-d5524ca6b0b2",
+        "3c34009a-7c73-4e32-999f-4ca72b12fd8f"
+      ],
+      "hit": true
+    },
+    {
+      "id": "code-5",
+      "domain": "code",
+      "query": "preview generic browser contents surface slot",
+      "ndcg5": 0.9197207891481876,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 0.6666666666666666,
+      "latencyMs": 186,
+      "topSessionIds": [
+        "2e8ba422-4e8d-41a2-b970-e81f2324bbd0",
+        "77d0c5a8-b18d-49d9-abae-88cd24197f9e",
+        "82f3fa01-16f5-42af-b29d-f663fb9fed22"
+      ],
+      "hit": true
+    },
+    {
+      "id": "code-6",
+      "domain": "code",
+      "query": "browser webcontentsview modernization plan",
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 0.6666666666666666,
+      "latencyMs": 138,
+      "topSessionIds": [
+        "2e8ba422-4e8d-41a2-b970-e81f2324bbd0",
+        "82f3fa01-16f5-42af-b29d-f663fb9fed22",
+        "77d0c5a8-b18d-49d9-abae-88cd24197f9e"
+      ],
+      "hit": true
+    },
+    {
+      "id": "code-7",
+      "domain": "code",
+      "query": "isolated recovery lookup damaged record pause close",
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 0.5,
+      "latencyMs": 136,
+      "topSessionIds": [
+        "01a094ca-d95f-7630-8290-12fb03ad1ce2",
+        "019f73a0-9b73-77a0-ac30-2984a0443ab5"
+      ],
+      "hit": true
+    },
+    {
+      "id": "code-8",
+      "domain": "code",
+      "query": "autogit merge preview direct squash merge conflict detection",
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 0.5,
+      "latencyMs": 598,
+      "topSessionIds": [
+        "6bba75f6-4f0a-4e05-ae9a-689d61d18865",
+        "77d0c5a8-b18d-49d9-abae-88cd24197f9e"
+      ],
+      "hit": true
+    },
+    {
+      "id": "prose-9",
+      "domain": "prose",
+      "query": "PowerPoint PPTX presentation rendering engine open source LibreOffice",
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 0.5,
+      "latencyMs": 1762,
+      "topSessionIds": [
+        "019f73a0-9b73-77a0-ac30-2984a0443ab5",
+        "019fd320-3baa-7921-acc7-ff3cafefe793"
+      ],
+      "hit": true
+    },
+    {
+      "id": "prose-10",
+      "domain": "prose",
+      "query": "looking for a name for this store brand furniture Atelia",
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 1,
+      "latencyMs": 527,
+      "topSessionIds": [
+        "14d5bd8d-1201-41cd-bec1-520ba3ddd94e",
+        "ced1642f-f945-40f8-a133-86b86e57b643"
+      ],
+      "hit": true
+    },
+    {
+      "id": "prose-11",
+      "domain": "prose",
+      "query": "shopify liquid theme compare main branch missing elements",
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 0.6666666666666666,
+      "latencyMs": 152,
+      "topSessionIds": [
+        "e989fc8b-ec07-4cfc-b405-d95f9b61459d",
+        "9827d094-d37b-4efe-bf3c-7222e1a22e0a",
+        "77d0c5a8-b18d-49d9-abae-88cd24197f9e"
+      ],
+      "hit": true
+    },
+    {
+      "id": "prose-12",
+      "domain": "prose",
+      "query": "shopify image remix codebase review adori pets",
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 1,
+      "latencyMs": 220,
+      "topSessionIds": [
+        "3d589c11-4bfc-45e2-ab86-f5965d3d2097",
+        "14de049c-74da-4f2d-a7f9-fd2a13b1cb57",
+        "dc7f31f8-01e4-4bc0-a472-981088cb27bd",
+        "def46955-30ab-42f0-a118-2b1f18e53283",
+        "eb63366d-a80d-4bfe-bcad-371fbd3cdd91"
+      ],
+      "hit": true
+    },
+    {
+      "id": "prose-13",
+      "domain": "prose",
+      "query": "furniture storefront fixture media rooms layout Atelia",
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 0.6666666666666666,
+      "latencyMs": 131,
+      "topSessionIds": [
+        "14d5bd8d-1201-41cd-bec1-520ba3ddd94e",
+        "ced1642f-f945-40f8-a133-86b86e57b643",
+        "77d0c5a8-b18d-49d9-abae-88cd24197f9e"
+      ],
+      "hit": true
+    },
+    {
+      "id": "prose-14",
+      "domain": "prose",
+      "query": "launch store settings connections claude codex usage adori",
+      "ndcg5": 0.6309297535714575,
+      "mrr5": 0.5,
+      "p1": 0,
+      "p5": 0.25,
+      "latencyMs": 125,
+      "topSessionIds": [
+        "77d0c5a8-b18d-49d9-abae-88cd24197f9e",
+        "9827d094-d37b-4efe-bf3c-7222e1a22e0a",
+        "e989fc8b-ec07-4cfc-b405-d95f9b61459d",
+        "3d589c11-4bfc-45e2-ab86-f5965d3d2097"
+      ],
+      "hit": true
+    },
+    {
+      "id": "prose-15",
+      "domain": "prose",
+      "query": "Crossand App mobile flutter react native",
+      "ndcg5": 0.6934264036172708,
+      "mrr5": 0.5,
+      "p1": 0,
+      "p5": 0.6666666666666666,
+      "latencyMs": 585,
+      "topSessionIds": [
+        "01a06e80-f027-79b2-ae34-66e80c6237a9",
+        "01a072d3-4315-7d72-adcf-af6b64b1a5c7",
+        "01a069a7-20a6-7e43-ab54-438007741708"
+      ],
+      "hit": true
+    },
+    {
+      "id": "prose-16",
+      "domain": "prose",
+      "query": "find the temporary n8n repo that was cloned",
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 0.5,
+      "latencyMs": 173,
+      "topSessionIds": [
+        "019f6a57-040b-7e20-9848-96e3e65607a3",
+        "019f73a0-9b73-77a0-ac30-2984a0443ab5"
+      ],
+      "hit": true
+    },
+    {
+      "id": "paraphrase-17",
+      "domain": "paraphrase",
+      "query": "What did Codex decide about the collaboration architecture?",
+      "ndcg5": 0.6131471927654584,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 0.3333333333333333,
+      "latencyMs": 253,
+      "topSessionIds": [
+        "01a093f3-8ffe-7923-ac2c-dd806823f2f4",
+        "01a02418-9c71-7223-927d-185d6ead3439",
+        "019f73a0-9b73-77a0-ac30-2984a0443ab5"
+      ],
+      "hit": true
+    },
+    {
+      "id": "paraphrase-18",
+      "domain": "paraphrase",
+      "query": "How should teammates jointly edit together?",
+      "ndcg5": 0.2960819109658652,
+      "mrr5": 0.5,
+      "p1": 0,
+      "p5": 0.3333333333333333,
+      "latencyMs": 191,
+      "topSessionIds": [
+        "019f73a0-9b73-77a0-ac30-2984a0443ab5",
+        "6bba75f6-4f0a-4e05-ae9a-689d61d18865",
+        "2c4d66d5-76f6-4eda-a0d1-dc4564d280ab"
+      ],
+      "hit": true
+    },
+    {
+      "id": "paraphrase-19",
+      "domain": "paraphrase",
+      "query": "Disable window blur effects for faster resizing",
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 0.3333333333333333,
+      "latencyMs": 140,
+      "topSessionIds": [
+        "77d0c5a8-b18d-49d9-abae-88cd24197f9e",
+        "660a371e-f1c1-4878-9c47-f419d164a389",
+        "82f3fa01-16f5-42af-b29d-f663fb9fed22"
+      ],
+      "hit": true
+    },
+    {
+      "id": "paraphrase-20",
+      "domain": "paraphrase",
+      "query": "Why is dragging window borders sluggish or dropping frames?",
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 0.3333333333333333,
+      "latencyMs": 139,
+      "topSessionIds": [
+        "77d0c5a8-b18d-49d9-abae-88cd24197f9e",
+        "019f73a0-9b73-77a0-ac30-2984a0443ab5",
+        "660a371e-f1c1-4878-9c47-f419d164a389"
+      ],
+      "hit": true
+    },
+    {
+      "id": "paraphrase-21",
+      "domain": "paraphrase",
+      "query": "Monaco editor replace CodeMirror",
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 0.5,
+      "latencyMs": 234,
+      "topSessionIds": [
+        "8a0205bd-2ec7-4937-a823-d5524ca6b0b2",
+        "3c34009a-7c73-4e32-999f-4ca72b12fd8f"
+      ],
+      "hit": true
+    },
+    {
+      "id": "paraphrase-22",
+      "domain": "paraphrase",
+      "query": "Why did we choose to swap out Monaco for another editor?",
+      "ndcg5": 0,
+      "mrr5": 0,
+      "p1": 0,
+      "p5": 0,
+      "latencyMs": 145,
+      "topSessionIds": [
+        "e91059ed-bb68-4cbb-b1e6-8110026c37b7",
+        "3c34009a-7c73-4e32-999f-4ca72b12fd8f",
+        "10c06720-8489-4e10-b8de-722da4443672",
+        "019f73a0-9b73-77a0-ac30-2984a0443ab5"
+      ],
+      "hit": false
+    },
+    {
+      "id": "paraphrase-23",
+      "domain": "paraphrase",
+      "query": "Open source PowerPoint PPTX rendering engine",
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 1,
+      "latencyMs": 154,
+      "topSessionIds": [
+        "019f73a0-9b73-77a0-ac30-2984a0443ab5"
+      ],
+      "hit": true
+    },
+    {
+      "id": "paraphrase-24",
+      "domain": "paraphrase",
+      "query": "Software libraries to parse and render slide decks without Microsoft license",
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 1,
+      "latencyMs": 210,
+      "topSessionIds": [
+        "019f73a0-9b73-77a0-ac30-2984a0443ab5"
+      ],
+      "hit": true
+    }
+  ],
+  "decisionCitations": {
+    "meanPrecision": 0,
+    "meanRecall": 0
+  }
+}

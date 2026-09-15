@@ -1,0 +1,146 @@
+/** Phase 3 decisions + temporal tests. */
+import { describe, it, expect, beforeAll } from "vitest";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { extractDecisions, AppleFMJudge } from "../src/decisions/extract.js";
+import { isWhyQuery } from "../src/decisions/cues.js";
+import { normalizeQuery } from "../src/search/query.js";
+import { createApp, closeApp, type GatewayApp } from "../src/app.js";
+import { decideOnce } from "../src/commands.js";
+import { syncAll } from "../src/indexing/sync.js";
+import { CursorStore } from "../src/indexing/store.js";
+import type { Turn } from "../src/core/models.js";
+
+const t = (seq: number, role: Turn["role"], content: string, ts = "2026-09-10T10:00:00Z"): Turn => ({
+  id: `x:s:${seq}`, sessionId: "s", harness: "codex", timestamp: ts, role, content, raw: {}, seq,
+});
+
+describe("extractDecisions", () => {
+  it("assembles conclusion + rationale + alternatives + question with high confidence", () => {
+    const turns = [
+      t(0, "user", "Should we replace Monaco with CodeMirror?"),
+      t(1, "assistant", "Monaco licensing is problematic because legal must review it"),
+      t(2, "assistant", "We decided to replace Monaco with CodeMirror because the MIT license avoids legal review"),
+      t(3, "assistant", "We considered forking Monaco instead of replacing it"),
+    ];
+    const [d] = extractDecisions("s", turns);
+    expect(d.method).toBe("heuristic");
+    expect(d.confidence).toBe(1);
+    expect(d.conclusion.seq).toBe(2);
+    expect(d.rationale.map((x) => x.seq)).toContain(1);
+    expect(d.alternatives.map((x) => x.seq)).toContain(3);
+    expect(d.question?.seq).toBe(0);
+  });
+
+  it("weak cues score low; no cues yield nothing", () => {
+    const [weak] = extractDecisions("s", [t(0, "assistant", "We should probably refactor this sometime")]);
+    expect(weak.confidence).toBeLessThan(0.5);
+    expect(extractDecisions("s", [t(0, "assistant", "The build passed in 42 seconds")])).toEqual([]);
+  });
+
+  it("tool echoes never anchor (selected/click false positives)", () => {
+    const turns = [
+      t(0, "assistant", "Checking the element state"),
+      t(1, "tool", "actions[0] click: ok — element selected"),
+    ];
+    expect(extractDecisions("s", turns)).toEqual([]);
+  });
+
+  it("relevance gate demotes verdicts that ignore the query", () => {
+    const turns = [
+      t(0, "user", "Should we replace Monaco?"),
+      t(1, "assistant", "We decided to replace Monaco because licensing is hostile"),
+    ];
+    const [matching] = extractDecisions("s", turns, ["monaco", "replace", "licensing"]);
+    expect(matching.confidence).toBeGreaterThan(0.65);
+    const [foreign] = extractDecisions("s", turns, ["zebracorn", "lighthouse", "tacos"]);
+    expect(foreign.confidence).toBeLessThan(0.4);
+    // No terms (legacy callers): ungated behavior preserved.
+    const [plain] = extractDecisions("s", turns);
+    expect(plain.confidence).toBeGreaterThanOrEqual(matching.confidence);
+  });
+
+  it("attributive adjectives don't anchor, real verdicts do", () => {
+    const attr = extractDecisions("s", [t(0, "assistant", "I also isolated lookup to the selected session for safety")]);
+    expect(attr).toEqual([]);
+    const real = extractDecisions("s", [
+      t(0, "assistant", "Postgres is boring technology because it just works"),
+      t(1, "assistant", "We selected Postgres"),
+    ]);
+    expect(real).toHaveLength(1);
+    expect(real[0].confidence).toBeGreaterThanOrEqual(0.8);
+  });
+
+  it("why-routing", () => {
+    expect(isWhyQuery("Why did we reject Monaco?")).toBe(true);
+    expect(isWhyQuery("What files changed?")).toBe(false);
+  });
+});
+
+describe("temporal query parsing", () => {
+  const now = new Date("2026-09-15T12:00:00Z");
+  it("intervals", () => {
+    expect(normalizeQuery("x between 2026-09-01 and 2026-09-05", now).after).toBe("2026-09-01T00:00:00.000Z");
+    expect(normalizeQuery("x between 2026-09-01 and 2026-09-05", now).before).toBe("2026-09-05T00:00:00.000Z");
+    expect(normalizeQuery("x since 2026-09-10", now).after).toBe("2026-09-10T00:00:00.000Z");
+    expect(normalizeQuery("x last 3 days", now).after).toBe("2026-09-12T12:00:00.000Z");
+    expect(normalizeQuery("x this week", now).after).toBe("2026-09-14T00:00:00.000Z"); // Mon Sep 14
+  });
+});
+
+describe("decideOnce", () => {
+  let app: GatewayApp;
+  beforeAll(async () => {
+    const root = await mkdtemp(join(tmpdir(), "acg-dec-"));
+    const codexDir = join(root, "codex");
+    await mkdir(join(codexDir, "2026", "09", "10"), { recursive: true });
+    const sess = (id: string, texts: string[]) =>
+      [
+        JSON.stringify({ timestamp: "2026-09-10T09:00:00Z", ordinal: 0, type: "session_meta", payload: { session_id: id, cwd: "/repo/cozea" } }),
+        ...texts.map((text, i) =>
+          JSON.stringify({ timestamp: `2026-09-10T09:${String(i + 1).padStart(2, "0")}:00Z`, ordinal: i + 1, type: "response_item", payload: { type: "message", id: `m${i}`, role: i % 2 ? "assistant" : "user", content: [{ type: "output_text", text }] } }),
+        ),
+      ].join("\n");
+    await writeFile(join(codexDir, "2026", "09", "10", "r1.jsonl"), sess("dddddddd-1111-1111-1111-111111111111", [
+      "Should we adopt the new queue design?",
+      "The old queue drops messages because it lacks persistence",
+      "We decided to adopt the new queue design since persistence avoids data loss",
+      "We considered patching the old queue instead",
+    ]));
+    await writeFile(join(codexDir, "2026", "09", "10", "r2.jsonl"), sess("dddddddd-2222-2222-2222-222222222222", [
+      "What is for lunch",
+      "Tacos are good",
+    ]));
+    app = createApp({ indexDir: join(root, "index"), codexDir, claudeDir: join(root, "empty"), backend: "tantivy", cursorDb: join(root, "nope.vscdb") });
+    await syncAll(app.adapters, app.index, new CursorStore(join(root, "index")));
+  });
+
+  it("returns the decision with rationale, alternatives and provenance", async () => {
+    const res = await decideOnce(app, "Why did we adopt the new queue design?");
+    expect(res.whyRouted).toBe(true);
+    expect(res.decisions.length).toBeGreaterThanOrEqual(1);
+    const top = res.decisions[0];
+    expect(top.method).toBe("neural-judge");
+    expect(top.confidence).toBeGreaterThanOrEqual(0.6);
+    expect(top.session.sessionId).toBe("dddddddd-1111-1111-1111-111111111111");
+    expect(top.conclusion.content).toMatch(/decided/);
+    expect(top.rationale.map((r) => r.content).join(" ")).toMatch(/persistence/);
+    expect(top.alternatives.map((a) => a.content).join(" ")).toMatch(/patching/);
+    closeApp(app);
+  });
+
+  it("AppleFMJudge evaluates and tags method apple-fm when enabled", async () => {
+    process.env.APPLE_FM_ENABLED = "1";
+    const fmJudge = new AppleFMJudge();
+    const candidateTurns = [
+      t(0, "user", "Why replace Kafka?"),
+      t(1, "assistant", "We decided to replace Kafka because it is too heavy"),
+    ];
+    const candidateDecisions = extractDecisions("s", candidateTurns, ["replace", "kafka"]);
+    const judged = await fmJudge.judge(candidateDecisions, "Why replace Kafka?");
+    expect(judged.length).toBeGreaterThanOrEqual(1);
+    expect(judged[0].method).toBe("apple-fm");
+    delete process.env.APPLE_FM_ENABLED;
+  });
+});

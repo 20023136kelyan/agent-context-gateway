@@ -1,0 +1,257 @@
+[
+  {
+    "id": "code-1",
+    "domain": "code",
+    "query": "collaboration workspace registration architecture",
+    "harness": "codex",
+    "description": "Codex collaboration workspace registration and architecture",
+    "relevantSessionIds": [
+      "01a093f3-8ffe-7923-ac2c-dd806823f2f4",
+      "01a094ca-d95f-7630-8290-12fb03ad1ce2"
+    ]
+  },
+  {
+    "id": "code-2",
+    "domain": "code",
+    "query": "autoGit rebase session coordinator",
+    "harness": "codex",
+    "description": "AutoGit rebase paths, sessions, and conflict audit",
+    "relevantSessionIds": [
+      "01a093f3-8ffe-7923-ac2c-dd806823f2f4",
+      "01a094ca-d95f-7630-8290-12fb03ad1ce2"
+    ]
+  },
+  {
+    "id": "code-3",
+    "domain": "code",
+    "query": "window resizing slow transparency blur",
+    "harness": "claude-code",
+    "description": "Window resizing performance, transparency, blur, and Electron vibrancy",
+    "relevantSessionIds": [
+      "77d0c5a8-b18d-49d9-abae-88cd24197f9e"
+    ]
+  },
+  {
+    "id": "code-4",
+    "domain": "code",
+    "query": "monaco editor replacement codemirror",
+    "harness": "claude-code",
+    "description": "Monaco editor replacement with CodeMirror",
+    "relevantSessionIds": [
+      "8a0205bd-2ec7-4937-a823-d5524ca6b0b2"
+    ]
+  },
+  {
+    "id": "code-5",
+    "domain": "code",
+    "query": "preview generic browser contents surface slot",
+    "harness": "claude-code",
+    "description": "Preview generic browser contents and BrowserSurfaceSlot",
+    "relevantSessionIds": [
+      "2e8ba422-4e8d-41a2-b970-e81f2324bbd0",
+      "82f3fa01-16f5-42af-b29d-f663fb9fed22"
+    ]
+  },
+  {
+    "id": "code-6",
+    "domain": "code",
+    "query": "browser webcontentsview modernization plan",
+    "harness": "claude-code",
+    "description": "Browser webcontentsview modernization and architecture plan",
+    "relevantSessionIds": [
+      "82f3fa01-16f5-42af-b29d-f663fb9fed22",
+      "2e8ba422-4e8d-41a2-b970-e81f2324bbd0"
+    ]
+  },
+  {
+    "id": "code-7",
+    "domain": "code",
+    "query": "isolated recovery lookup damaged record pause close",
+    "harness": "codex",
+    "description": "Isolated recovery lookup damaged record pause close",
+    "relevantSessionIds": [
+      "01a094ca-d95f-7630-8290-12fb03ad1ce2"
+    ]
+  },
+  {
+    "id": "code-8",
+    "domain": "code",
+    "query": "autogit merge preview direct squash merge conflict detection",
+    "harness": "claude-code",
+    "description": "AutoGit merge preview, direct and squash merge, conflict coordinator",
+    "relevantSessionIds": [
+      "6bba75f6-4f0a-4e05-ae9a-689d61d18865"
+    ]
+  },
+  {
+    "id": "prose-9",
+    "domain": "prose",
+    "query": "PowerPoint PPTX presentation rendering engine open source LibreOffice",
+    "harness": "codex",
+    "description": "PowerPoint PPTX presentation rendering engine in open source",
+    "relevantSessionIds": [
+      "019f73a0-9b73-77a0-ac30-2984a0443ab5"
+    ]
+  },
+  {
+    "id": "prose-10",
+    "domain": "prose",
+    "query": "looking for a name for this store brand furniture Atelia",
+    "harness": "claude-code",
+    "description": "Atelia store naming and branding ideas",
+    "relevantSessionIds": [
+      "14d5bd8d-1201-41cd-bec1-520ba3ddd94e",
+      "ced1642f-f945-40f8-a133-86b86e57b643"
+    ]
+  },
+  {
+    "id": "prose-11",
+    "domain": "prose",
+    "query": "shopify liquid theme compare main branch missing elements",
+    "harness": "claude-code",
+    "description": "Adori Pets Shopify liquid theme vs main branch comparison",
+    "relevantSessionIds": [
+      "e989fc8b-ec07-4cfc-b405-d95f9b61459d",
+      "9827d094-d37b-4efe-bf3c-7222e1a22e0a"
+    ]
+  },
+  {
+    "id": "prose-12",
+    "domain": "prose",
+    "query": "shopify image remix codebase review adori pets",
+    "harness": "claude-code",
+    "description": "Shopify image remix codebase and review",
+    "relevantSessionIds": [
+      "14de049c-74da-4f2d-a7f9-fd2a13b1cb57",
+      "3d589c11-4bfc-45e2-ab86-f5965d3d2097",
+      "def46955-30ab-42f0-a118-2b1f18e53283",
+      "dc7f31f8-01e4-4bc0-a472-981088cb27bd",
+      "eb63366d-a80d-4bfe-bcad-371fbd3cdd91"
+    ]
+  },
+  {
+    "id": "prose-13",
+    "domain": "prose",
+    "query": "furniture storefront fixture media rooms layout Atelia",
+    "harness": "claude-code",
+    "description": "Furniture storefront layout, rooms, and fixture media in Atelia",
+    "relevantSessionIds": [
+      "14d5bd8d-1201-41cd-bec1-520ba3ddd94e",
+      "ced1642f-f945-40f8-a133-86b86e57b643"
+    ]
+  },
+  {
+    "id": "prose-14",
+    "domain": "prose",
+    "query": "launch store settings connections claude codex usage adori",
+    "harness": "claude-code",
+    "description": "Launch store settings and external agent connections review in Adori",
+    "relevantSessionIds": [
+      "9827d094-d37b-4efe-bf3c-7222e1a22e0a"
+    ]
+  },
+  {
+    "id": "prose-15",
+    "domain": "prose",
+    "query": "Crossand App mobile flutter react native",
+    "harness": "codex",
+    "description": "Crossand App mobile development and components",
+    "relevantSessionIds": [
+      "01a069a7-20a6-7e43-ab54-438007741708",
+      "01a072d3-4315-7d72-adcf-af6b64b1a5c7"
+    ]
+  },
+  {
+    "id": "prose-16",
+    "domain": "prose",
+    "query": "find the temporary n8n repo that was cloned",
+    "harness": "codex",
+    "description": "Temporary n8n repository exploration",
+    "relevantSessionIds": [
+      "019f6a57-040b-7e20-9848-96e3e65607a3"
+    ]
+  },
+  {
+    "id": "paraphrase-17",
+    "domain": "paraphrase",
+    "query": "What did Codex decide about the collaboration architecture?",
+    "harness": "codex",
+    "description": "Direct: What did Codex decide about the collaboration architecture?",
+    "relevantSessionIds": [
+      "01a093f3-8ffe-7923-ac2c-dd806823f2f4",
+      "01a094ca-d95f-7630-8290-12fb03ad1ce2"
+    ]
+  },
+  {
+    "id": "paraphrase-18",
+    "domain": "paraphrase",
+    "query": "How should teammates jointly edit together?",
+    "harness": null,
+    "description": "Paraphrase: How should teammates jointly edit together?",
+    "relevantSessionIds": [
+      "01a093f3-8ffe-7923-ac2c-dd806823f2f4",
+      "01a094ca-d95f-7630-8290-12fb03ad1ce2",
+      "6bba75f6-4f0a-4e05-ae9a-689d61d18865"
+    ]
+  },
+  {
+    "id": "paraphrase-19",
+    "domain": "paraphrase",
+    "query": "Disable window blur effects for faster resizing",
+    "harness": "claude-code",
+    "description": "Direct: Disable window blur effects for faster resizing",
+    "relevantSessionIds": [
+      "77d0c5a8-b18d-49d9-abae-88cd24197f9e"
+    ]
+  },
+  {
+    "id": "paraphrase-20",
+    "domain": "paraphrase",
+    "query": "Why is dragging window borders sluggish or dropping frames?",
+    "harness": null,
+    "description": "Paraphrase: Why is dragging window borders sluggish or dropping frames?",
+    "relevantSessionIds": [
+      "77d0c5a8-b18d-49d9-abae-88cd24197f9e"
+    ]
+  },
+  {
+    "id": "paraphrase-21",
+    "domain": "paraphrase",
+    "query": "Monaco editor replace CodeMirror",
+    "harness": "claude-code",
+    "description": "Direct: Monaco editor replace CodeMirror",
+    "relevantSessionIds": [
+      "8a0205bd-2ec7-4937-a823-d5524ca6b0b2"
+    ]
+  },
+  {
+    "id": "paraphrase-22",
+    "domain": "paraphrase",
+    "query": "Why did we choose to swap out Monaco for another editor?",
+    "harness": null,
+    "description": "Paraphrase: Why did we choose to swap out Monaco for another editor?",
+    "relevantSessionIds": [
+      "8a0205bd-2ec7-4937-a823-d5524ca6b0b2"
+    ]
+  },
+  {
+    "id": "paraphrase-23",
+    "domain": "paraphrase",
+    "query": "Open source PowerPoint PPTX rendering engine",
+    "harness": "codex",
+    "description": "Direct: Open source PowerPoint PPTX rendering engine",
+    "relevantSessionIds": [
+      "019f73a0-9b73-77a0-ac30-2984a0443ab5"
+    ]
+  },
+  {
+    "id": "paraphrase-24",
+    "domain": "paraphrase",
+    "query": "Software libraries to parse and render slide decks without Microsoft license",
+    "harness": null,
+    "description": "Paraphrase: Software libraries to parse and render slide decks without Microsoft license",
+    "relevantSessionIds": [
+      "019f73a0-9b73-77a0-ac30-2984a0443ab5"
+    ]
+  }
+]

@@ -1,0 +1,66 @@
+/** Watcher + single-session sync tests (new chats searchable within seconds). */
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { createApp, closeApp, type GatewayApp } from "../src/app.js";
+import { syncSession, searchOnce } from "../src/commands.js";
+import { watchSources } from "../src/watch.js";
+
+let app: GatewayApp;
+let claudeDir: string;
+let root: string;
+const SID = "eeeeeeee-1111-2222-3333-444444444444";
+
+function claudeLines(id: string, text: string): string {
+  return [
+    JSON.stringify({ type: "user", uuid: "u1", timestamp: "2026-09-10T10:00:00Z", sessionId: id, cwd: "/repo/cozea", message: { role: "user", content: text } }),
+    JSON.stringify({ type: "assistant", uuid: "a1", timestamp: "2026-09-10T10:01:00Z", sessionId: id, cwd: "/repo/cozea", message: { role: "assistant", content: [{ type: "text", text: `Re: ${text} — hyperspace bypass calibration complete` }] } }),
+  ].join("\n");
+}
+
+beforeAll(async () => {
+  root = await mkdtemp(join(tmpdir(), "acg-watch-"));
+  claudeDir = join(root, "claude");
+  await mkdir(join(claudeDir, "cozea"), { recursive: true });
+  app = createApp({ indexDir: join(root, "index"), claudeDir, codexDir: join(root, "empty-codex"), backend: "tantivy", cursorDb: join(root, "no-cursor.vscdb") });
+});
+
+afterAll(() => closeApp(app));
+
+describe("syncSession", () => {
+  it("indexes one session without a full sync", async () => {
+    await writeFile(join(claudeDir, "cozea", `${SID}.jsonl`), claudeLines(SID, "Initial query about hyperspace"));
+    const res = await syncSession(app, "claude-code", SID);
+    expect(res.turns).toBe(2);
+    const found = await searchOnce(app, "hyperspace bypass calibration");
+    expect(found.results[0].provenance.sessionId).toBe(SID);
+  });
+
+  it("unknown session throws not_found", async () => {
+    await expect(syncSession(app, "claude-code", "nope")).rejects.toThrow("not_found");
+  });
+});
+
+describe("watchSources", () => {
+  it("fires a sync shortly after a .jsonl write", async () => {
+    const fired = new Promise<{ sessionsIndexed: number }>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("watch did not fire")), 20000);
+      const watchers = watchSources(app, {
+        dirs: [claudeDir],
+        debounceMs: 100,
+        onSync: (r) => {
+          clearTimeout(timer);
+          for (const w of watchers) w.close();
+          resolve(r);
+        },
+      });
+    });
+    const SID2 = "ffffffff-1111-2222-3333-444444444444";
+    await writeFile(join(claudeDir, "cozea", `${SID2}.jsonl`), claudeLines(SID2, "watch-triggered zebracorn analysis"));
+    const r = await fired;
+    expect(r.sessionsIndexed).toBeGreaterThanOrEqual(1);
+    const found = await searchOnce(app, "zebracorn");
+    expect(found.results[0].provenance.sessionId).toBe(SID2);
+  }, 30000);
+});
