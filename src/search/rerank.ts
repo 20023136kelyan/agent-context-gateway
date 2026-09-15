@@ -65,29 +65,21 @@ export class CrossEncoderReranker {
 
     try {
       await this.init();
-      const results: RerankResult[] = [];
-
-      for (const cand of pool) {
-        const textToScore = cand.content.slice(0, 1000);
-        const inputs = this.tokenizer(query, {
-          text_pair: textToScore,
-          padding: true,
-          truncation: true,
-        });
-        const { logits } = await this.model(inputs);
-        const rawLogit = Number(logits.data[0]);
+      // One batched forward pass over every (query, candidate) pair.
+      const inputs = this.tokenizer(
+        pool.map(() => query),
+        { text_pair: pool.map((c) => c.content.slice(0, 1000)), padding: true, truncation: true },
+      );
+      const { logits } = await this.model(inputs);
+      const width = Number(logits.dims?.[1] ?? 1);
+      const results: RerankResult[] = pool.map((cand, i) => {
+        const rawLogit = Number(logits.data[i * width]);
         // Sigmoid mapping for smooth [0, 1] probability
         const rerankScore = 1 / (1 + Math.exp(-rawLogit));
         // Combined blend: 0.60 * rerankScore + 0.40 * originalScore
         const combinedScore = 0.6 * rerankScore + 0.4 * cand.score;
-
-        results.push({
-          id: cand.id,
-          originalScore: cand.score,
-          rerankScore,
-          combinedScore,
-        });
-      }
+        return { id: cand.id, originalScore: cand.score, rerankScore, combinedScore };
+      });
 
       results.sort((a, b) => b.combinedScore - a.combinedScore);
       return results;

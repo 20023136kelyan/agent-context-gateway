@@ -106,10 +106,32 @@ function speakable(turns: Turn[]): Turn[] {
   return turns.filter((t) => t.role === "user" || t.role === "assistant" || t.role === "system");
 }
 
+/** Per-turn memo keyed by object identity (turn ids can repeat within a file). */
+function memoByTurn<T>(fn: (t: Turn) => T): (t: Turn) => T {
+  const cache = new WeakMap<Turn, T>();
+  return (t) => {
+    if (cache.has(t)) return cache.get(t) as T;
+    const v = fn(t);
+    cache.set(t, v);
+    return v;
+  };
+}
+
 export function extractDecisions(sessionId: string, turns: Turn[], queryTerms: string[] = []): ExtractedDecision[] {
   const speak = speakable(turns);
   const out: ExtractedDecision[] = [];
   const claimed = new Set<string>();
+  // Both passes and every overlapping window re-ask the same questions of a turn.
+  const strongHitsOf = memoByTurn((t) =>
+    sentenceHits(t.content, CONCLUSION_STRONG).filter(
+      (h) => !isHeading(h.sentence) && hasSpeaker(h.sentence) && !isAttributiveUse(h.sentence, CONCLUSION_STRONG),
+    ),
+  );
+  const weakHitsOf = memoByTurn((t) =>
+    sentenceHits(t.content, CONCLUSION_WEAK).filter((h) => !isHeading(h.sentence) && hasSpeaker(h.sentence)),
+  );
+  const hasRationale = memoByTurn((x) => sentenceHits(x.content, RATIONALE_CUES).length > 0);
+  const hasAlt = memoByTurn((x) => sentenceHits(x.content, ALTERNATIVE_CUES).length > 0);
   // Two passes: strong anchors first so a weak cue (e.g. "Should we…?")
   // can never swallow the window containing the real conclusion.
   // Question turns never anchor (they fill the question slot instead).
@@ -120,13 +142,8 @@ export function extractDecisions(sessionId: string, turns: Turn[], queryTerms: s
     // passing mention in a long doc can't outshout a real verdict.
     // Headings never anchor; anchors need a speaker or colon form so
     // adjectives ("the selected session") don't pass as verdicts.
-    const strongHits = sentenceHits(t.content, CONCLUSION_STRONG).filter(
-      (h) => !isHeading(h.sentence) && hasSpeaker(h.sentence) && !isAttributiveUse(h.sentence, CONCLUSION_STRONG),
-    );
-    const weakHits =
-      strongHits.length > 0
-        ? []
-        : sentenceHits(t.content, CONCLUSION_WEAK).filter((h) => !isHeading(h.sentence) && hasSpeaker(h.sentence));
+    const strongHits = strongHitsOf(t);
+    const weakHits = strongHits.length > 0 ? [] : weakHitsOf(t);
     const strong = strongHits.length > 0;
     if (!strong && (strongOnly || weakHits.length === 0)) return;
 
@@ -137,8 +154,6 @@ export function extractDecisions(sessionId: string, turns: Turn[], queryTerms: s
 
     const before = speak.slice(lo, i);
     const after = speak.slice(i + 1, hi);
-    const hasRationale = (x: Turn) => sentenceHits(x.content, RATIONALE_CUES).length > 0;
-    const hasAlt = (x: Turn) => sentenceHits(x.content, ALTERNATIVE_CUES).length > 0;
     const rationale = [...before, ...after].filter(hasRationale).slice(0, 3);
     const alternatives = window.filter((x, xi) => lo + xi !== i && hasAlt(x)).slice(0, 3);
     const question = [...before].reverse().find((x) => x.role === "user" && isQuestion(x.content)) ?? null;

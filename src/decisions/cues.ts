@@ -41,25 +41,39 @@ export const RATIONALE_CUES = [
 
 export const ALTERNATIVE_CUES = ["instead of", "rather than", "alternative", "considered", "option", "versus", " vs ", "vs.", "on the other hand"];
 
+const cueRegexes = new Map<string, RegExp | null>();
+
+/** Compiled once per cue (extraction runs it per sentence of every turn). */
+function cueRegex(cue: string): RegExp | null {
+  const cached = cueRegexes.get(cue);
+  if (cached !== undefined) return cached;
+  // Whole-word match: "selected" must not fire inside "AXSelectedText".
+  // Boundary only where the cue edge is a word char ("decision:" keeps
+  // its colon; " vs " is trimmed first).
+  const words = cue
+    .trim()
+    .split(/\s+/)
+    .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  let re: RegExp | null = null;
+  if (words.length > 0 && words[0]) {
+    const head = /^\w/.test(words[0]) ? "\\b" : "";
+    const tail = /\w$/.test(words[words.length - 1]) ? "\\b" : "";
+    try {
+      re = new RegExp(`${head}${words.join("\\s+")}${tail}`, "g");
+    } catch {
+      re = null; // malformed cue — skip rather than break extraction
+    }
+  }
+  cueRegexes.set(cue, re);
+  return re;
+}
+
 export function countCues(text: string, cues: string[]): number {
   const lower = text.toLowerCase();
   let n = 0;
   for (const c of cues) {
-    // Whole-word match: "selected" must not fire inside "AXSelectedText".
-    // Boundary only where the cue edge is a word char ("decision:" keeps
-    // its colon; " vs " is trimmed first).
-    const words = c
-      .trim()
-      .split(/\s+/)
-      .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-    if (words.length === 0 || !words[0]) continue;
-    const head = /^\w/.test(words[0]) ? "\\b" : "";
-    const tail = /\w$/.test(words[words.length - 1]) ? "\\b" : "";
-    try {
-      n += lower.match(new RegExp(`${head}${words.join("\\s+")}${tail}`, "g"))?.length ?? 0;
-    } catch {
-      // malformed cue — skip rather than break extraction
-    }
+    const re = cueRegex(c);
+    if (re) n += lower.match(re)?.length ?? 0;
   }
   return n;
 }
@@ -95,11 +109,14 @@ export function isHeading(sentence: string): boolean {
 const VERB_CUES = ["selected", "chosen", "preferred", "agreed"];
 const DETERMINER_TAIL = /(?:the|a|an|this|that|these|those|its|their|his|her|my|your)\s+$/;
 
+const VERB_CUE_REGEXES = new Map(VERB_CUES.map((c) => [c, new RegExp(`\\b${c}\\b`)]));
+
 export function isAttributiveUse(sentence: string, cues: string[]): boolean {
   const lower = sentence.toLowerCase();
   for (const c of cues) {
-    if (!VERB_CUES.includes(c)) continue;
-    const idx = lower.search(new RegExp(`\\b${c}\\b`));
+    const re = VERB_CUE_REGEXES.get(c);
+    if (!re) continue;
+    const idx = lower.search(re);
     if (idx < 0) continue;
     if (DETERMINER_TAIL.test(lower.slice(0, idx))) return true;
   }
