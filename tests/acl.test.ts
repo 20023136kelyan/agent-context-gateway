@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { AclStore } from "../src/security/acl.js";
 import { createApp, closeApp, type GatewayApp } from "../src/app.js";
-import { searchOnce } from "../src/commands.js";
+import { searchOnce, syncNow } from "../src/commands.js";
 import { syncAll } from "../src/indexing/sync.js";
 import { CursorStore } from "../src/indexing/store.js";
 import type { Session } from "../src/core/models.js";
@@ -161,5 +161,14 @@ describe("search with PermCov evaluation", () => {
     // Measure PermCov: fraction of unauthorized documents in results must be exactly 0.0!
     const permCov = app.acl.computePermCov(guestRes.results, "guest-principal", sessionsMap);
     expect(permCov).toBe(0.0);
+  });
+
+  it("keeps enforcing ACL after an index rebuild", async () => {
+    await syncNow(app, true);
+    const res = await searchOnce(app, "Lighthouse keeper audit report", { callerPrincipal: "guest-principal" });
+    expect(res.results.length).toBeGreaterThanOrEqual(1);
+    for (const r of res.results) {
+      expect(sessionsMap.get(`${r.provenance.harness}:${r.provenance.sessionId}`)?.projectId).toBe("public-proj");
+    }
   });
 });

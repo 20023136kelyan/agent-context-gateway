@@ -108,6 +108,11 @@ export class SearchService {
     this.acl = store;
   }
 
+  /** Swap in a rebuilt index, keeping every attachment (ACL, topology, feedback, temporal, vectors). */
+  setIndex(index: SearchIndex): void {
+    this.index = index;
+  }
+
   private adapterFor(harness: string): ContextAdapter | undefined {
     return this.adapters.find((a) => a.harness === harness);
   }

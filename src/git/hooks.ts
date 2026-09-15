@@ -116,6 +116,6 @@ export async function handleGitCommitEvent(
     repo: event.repo,
   };
 
-  app.index.indexTurns([enriched], join(event.repo, ".git"));
+  await app.indexLock.run(() => app.index.indexTurns([enriched], join(event.repo, ".git")));
   return { indexed: true, turnId };
 }

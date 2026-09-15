@@ -16,7 +16,6 @@ import { exploreLineage } from "./topology/lineage.js";
 import { searchLiveSessions } from "./collaboration/live.js";
 import { TantivyIndex } from "./indexing/tantivy-index.js";
 import { SqliteIndex } from "./indexing/sqlite-index.js";
-import { SearchService } from "./search/search.js";
 import type { PackagedResult } from "./search/search.js";
 import { initVectors } from "./app.js";
 import type { GatewayApp } from "./app.js";
@@ -34,9 +33,10 @@ function adapterFor(app: GatewayApp, harness: string) {
 }
 
 export async function ensureSynced(app: GatewayApp) {
-  if (app.index.stats().docCount === 0) {
-    await syncAll(app.adapters, app.index, app.cursors);
-  }
+  if (app.index.stats().docCount > 0) return;
+  await app.indexLock.run(async () => {
+    if (app.index.stats().docCount === 0) await syncAll(app.adapters, app.index, app.cursors);
+  });
 }
 
 export async function listSources(app: GatewayApp) {
@@ -223,24 +223,28 @@ export async function syncSession(
   const session = sessions.find((s) => s.id === sessionId);
   if (!session) throw new Error(`not_found: session "${sessionId}"`);
   const turns = await adapter.listTurns(session.id);
-  app.index.indexTurns(enrichTurns(turns, session), session.sourcePath);
-  // Stamp only a source this session owns alone: a shared source (Cursor DB,
-  // Zep export, .git) still holds unsynced sessions the next full sync must see.
-  const shared = sessions.some((s) => s !== session && s.sourcePath === session.sourcePath);
-  if (!shared && !isRemoteSource(session.sourcePath)) {
-    try {
-      const st = await stat(session.sourcePath);
-      app.cursors.set(session.sourcePath, { mtimeMs: st.mtimeMs, size: st.size });
-      app.cursors.save();
-    } catch {
-      // source vanished mid-sync — index keeps the turns, next full sync reconciles
+  await app.indexLock.run(async () => {
+    app.index.indexTurns(enrichTurns(turns, session), session.sourcePath);
+    // Stamp only a source this session owns alone: a shared source (Cursor DB,
+    // Zep export, .git) still holds unsynced sessions the next full sync must see.
+    const shared = sessions.some((s) => s !== session && s.sourcePath === session.sourcePath);
+    if (!shared && !isRemoteSource(session.sourcePath)) {
+      try {
+        const st = await stat(session.sourcePath);
+        app.cursors.set(session.sourcePath, { mtimeMs: st.mtimeMs, size: st.size });
+        app.cursors.save();
+      } catch {
+        // source vanished mid-sync — index keeps the turns, next full sync reconciles
+      }
     }
-  }
-  app.index.markSynced();
+    app.index.markSynced();
+  });
   let vectors: unknown = null;
   if (opts.embed) {
     const store = app.vectors ?? (await initVectors(app).catch(() => null));
-    vectors = store ? await embedSessionTurns(adapter, session, store).catch((e: unknown) => ({ error: String(e) })) : { error: "vector-store-unavailable" };
+    vectors = store
+      ? await app.vectorLock.run(() => embedSessionTurns(adapter, session, store)).catch((e: unknown) => ({ error: String(e) }))
+      : { error: "vector-store-unavailable" };
   }
   let link: unknown = null;
   if (opts.parent) {
@@ -374,25 +378,24 @@ export function cancelSubscription(app: GatewayApp, id: string) {
 }
 
 export async function syncNow(app: GatewayApp, rebuild = false, opts: { embed?: boolean } = {}) {
-  let result: Awaited<ReturnType<typeof syncAll>>;
-  if (!rebuild) {
-    result = await syncAll(app.adapters, app.index, app.cursors);
-  } else {
+  const result = await app.indexLock.run(async () => {
+    if (!rebuild) return syncAll(app.adapters, app.index, app.cursors);
     const create =
       app.backend === "tantivy"
         ? () => new TantivyIndex(app.indexDir)
         : () => new SqliteIndex(app.indexDir);
     const out = await rebuildAll(app.adapters, create, app.cursors, app.indexDir, app.index);
-    result = out.result;
     app.index = out.index;
-    app.search = new SearchService(app.adapters, out.index);
-    if (app.vectors) app.search.attachVectors(app.vectors);
-  }
+    // Swap in place: a fresh SearchService would silently drop ACL, topology,
+    // feedback and temporal attachments until restart.
+    app.search.setIndex(out.index);
+    return out.result;
+  });
   // Semantic backfill is opt-in and resumable; lexical sync never blocks on it.
   let vectors: unknown = null;
   if (opts.embed) {
     const store = app.vectors ?? (await initVectors(app));
-    vectors = await embedMissing(app.adapters, store);
+    vectors = await app.vectorLock.run(() => embedMissing(app.adapters, store));
   }
   return { ...result, vectors };
 }
@@ -413,7 +416,7 @@ export async function backfillEmbeddings(
   },
 ) {
   const store = app.vectors ?? (await initVectors(app));
-  return embedMissing(app.adapters, store, opts);
+  return app.vectorLock.run(() => embedMissing(app.adapters, store, opts));
 }
 
 export async function health(app: GatewayApp) {

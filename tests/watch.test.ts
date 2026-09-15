@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createApp, closeApp, type GatewayApp } from "../src/app.js";
-import { syncSession, searchOnce } from "../src/commands.js";
+import { syncSession, searchOnce, syncNow } from "../src/commands.js";
 import { watchSources } from "../src/watch.js";
 
 let app: GatewayApp;
@@ -62,5 +62,31 @@ describe("watchSources", () => {
     expect(r.sessionsIndexed).toBeGreaterThanOrEqual(1);
     const found = await searchOnce(app, "zebracorn");
     expect(found.results[0].provenance.sessionId).toBe(SID2);
+  }, 30000);
+});
+
+describe("index writes are serialized", () => {
+  it("a sync waits while another write holds the index lock", async () => {
+    let release!: () => void;
+    const held = app.indexLock.run(() => new Promise<void>((r) => (release = r)));
+    let done = false;
+    const pending = syncNow(app, false).then(() => {
+      done = true;
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(done).toBe(false);
+    release();
+    await held;
+    await pending;
+    expect(done).toBe(true);
+  });
+
+  it("rebuild racing a sync and a session sync leaves a consistent index", async () => {
+    const results = await Promise.all([syncNow(app, true), syncNow(app, false), syncSession(app, "claude-code", SID)]);
+    expect(results).toHaveLength(3);
+    const found = await searchOnce(app, "hyperspace bypass calibration");
+    expect(found.results[0].provenance.sessionId).toBe(SID);
+    const stats = app.index.stats();
+    expect(Object.values(stats.perHarness).reduce((a, b) => a + b, 0)).toBe(stats.docCount);
   }, 30000);
 });

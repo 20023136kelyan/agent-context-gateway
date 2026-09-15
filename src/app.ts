@@ -21,6 +21,17 @@ import { AclStore, defaultAclPath } from "./security/acl.js";
 import { SubscriptionStore, defaultSubscriptionsPath } from "./collaboration/live.js";
 import { SearchService } from "./search/search.js";
 
+/** Promise-chain mutex: runs callbacks one at a time, in call order. */
+export class AsyncLock {
+  private tail: Promise<unknown> = Promise.resolve();
+
+  run<T>(fn: () => Promise<T> | T): Promise<T> {
+    const result = this.tail.then(fn);
+    this.tail = result.catch(() => undefined);
+    return result;
+  }
+}
+
 export interface AppOptions {
   indexDir?: string;
   vectorDir?: string;
@@ -47,6 +58,10 @@ export interface GatewayApp {
   temporal: TemporalStore;
   acl: AclStore;
   subscriptions: SubscriptionStore;
+  /** Serializes index + cursor writes (watcher, POST /sync, rebuild, syncSession, git events). Never nest. */
+  indexLock: AsyncLock;
+  /** Serializes vector-store writes, separately so long backfills don't block lexical sync. */
+  vectorLock: AsyncLock;
 }
 
 export function createApp(opts: AppOptions = {}): GatewayApp {
@@ -74,7 +89,11 @@ export function createApp(opts: AppOptions = {}): GatewayApp {
   search.attachFeedback(feedback);
   search.attachTemporal(temporal);
   search.attachAcl(acl);
-  return { adapters, index, cursors, search, indexDir, backend, vectors: null, vectorDir, topology, feedback, temporal, acl, subscriptions };
+  return {
+    adapters, index, cursors, search, indexDir, backend, vectors: null, vectorDir, topology, feedback, temporal, acl, subscriptions,
+    indexLock: new AsyncLock(),
+    vectorLock: new AsyncLock(),
+  };
 }
 
 /** Open (or create) the vector store and attach it to search. Safe to skip offline. */

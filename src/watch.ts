@@ -39,10 +39,12 @@ export function watchSources(app: GatewayApp, opts: WatchOptions = {}): FSWatche
     }
     syncing = true;
     try {
-      const res = await syncAll(app.adapters, app.index, app.cursors);
+      // Under the app write lock: a rebuild or POST /sync can't interleave with it.
+      const res = await app.indexLock.run(() => syncAll(app.adapters, app.index, app.cursors));
       let embedded: number | undefined;
-      if (opts.embed && app.vectors) {
-        const er = await embedMissing(app.adapters, app.vectors).catch(() => null);
+      const vectors = app.vectors;
+      if (opts.embed && vectors) {
+        const er = await app.vectorLock.run(() => embedMissing(app.adapters, vectors)).catch(() => null);
         embedded = er?.turnsEmbedded;
       }
       opts.onSync?.({ sessionsIndexed: res.sessionsIndexed, turnsIndexed: res.turnsIndexed, embedded });
