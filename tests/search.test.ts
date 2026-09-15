@@ -10,7 +10,7 @@ import { CursorStore } from "../src/indexing/store.js";
 import { syncAll } from "../src/indexing/sync.js";
 import { SearchService } from "../src/search/search.js";
 import { normalizeQuery } from "../src/search/query.js";
-import { extractArtifacts, extractCommitShas, extractPrUrls } from "../src/adapters/text.js";
+import { extractArtifacts, extractCommitShas, extractPrUrls, extractFileRefs } from "../src/adapters/text.js";
 
 let claudeDir: string;
 let codexDir: string;
@@ -106,6 +106,18 @@ describe("artifact extraction", () => {
     expect(arts.some((a) => a.includes("1234567"))).toBe(false);
     expect(extractCommitShas("no shas here")).toEqual([]);
     expect(extractPrUrls("no urls")).toEqual([]);
+  });
+
+  it("keeps full file extensions (.json is not .js, .tsx is not .ts)", () => {
+    expect(extractFileRefs("edit package.json now")).toEqual(["package.json"]);
+    expect(extractFileRefs("see ui/App.tsx")).toEqual(["ui/App.tsx"]);
+    expect(extractFileRefs("lib/util.jsx and tsconfig.json.")).toEqual(["lib/util.jsx", "tsconfig.json"]);
+    expect(extractFileRefs("main.gopher is not go")).toEqual([]);
+  });
+
+  it("ignores UUID segments and hex-only words as commit SHAs", () => {
+    expect(extractCommitShas("session 3f2a9b1c-1234-4abc-9def-0123456789ab was defaced")).toEqual([]);
+    expect(extractCommitShas("landed in 9f8e7d6c5b")).toEqual(["9f8e7d6c5b"]);
   });
 });
 

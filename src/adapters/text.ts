@@ -6,7 +6,8 @@ export function truncate(s: string, max = MAX_CONTENT): string {
   return s.slice(0, max) + "…[truncated]";
 }
 
-const FILE_RE = /(?:PR\s+#\d+|src\/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+|[A-Za-z0-9_./-]+\.(?:ts|tsx|js|jsx|py|rs|go|md|json))/g;
+// The trailing lookahead stops ".json" matching as ".js" (and ".tsx" as ".ts").
+const FILE_RE = /(?:PR\s+#\d+|src\/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+|[A-Za-z0-9_./-]+\.(?:tsx|ts|jsx|json|js|py|rs|go|md))(?![A-Za-z0-9])/g;
 
 export function extractFileRefs(text: string): string[] {
   const out = new Set<string>();
@@ -14,7 +15,8 @@ export function extractFileRefs(text: string): string[] {
   return [...out].slice(0, 20);
 }
 
-const SHA_RE = /\b[0-9a-f]{7,40}\b/g;
+// Hyphen neighbours are excluded so UUID segments ("3f2a9b1c-…") don't count.
+const SHA_RE = /(?<![0-9A-Za-z_-])[0-9a-f]{7,40}(?![0-9A-Za-z_-])/g;
 const PR_URL_RE = /https?:\/\/[^\s)]+\/pull\/\d+[^\s)]*/g;
 
 /** Commit SHAs mentioned in text (7-40 hex; hints, not verified against git). */
@@ -22,7 +24,8 @@ export function extractCommitShas(text: string): string[] {
   const out = new Set<string>();
   for (const m of text.matchAll(SHA_RE)) {
     const sha = m[0];
-    if (/^\d+$/.test(sha)) continue; // pure numbers are not shas
+    // Pure numbers and hex-only words ("defaced") are not shas.
+    if (!/\d/.test(sha) || !/[a-f]/.test(sha)) continue;
     out.add(sha);
   }
   return [...out].slice(0, 20);
