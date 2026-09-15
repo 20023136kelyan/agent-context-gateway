@@ -10,6 +10,7 @@
  * stays as the cheap recall stage either way.
  */
 import type { Turn } from "../core/models.js";
+import type { CrossEncoderReranker } from "../search/rerank.js";
 import { CONCLUSION_STRONG, CONCLUSION_WEAK, RATIONALE_CUES, ALTERNATIVE_CUES, sentenceHits, isQuestion, isHeading, hasSpeaker, isAttributiveUse } from "./cues.js";
 
 export type DecisionMethod = "heuristic" | "neural-judge" | "apple-fm";
@@ -47,17 +48,21 @@ export class HeuristicJudge implements DecisionJudge {
 export class NeuralEntailmentJudge implements DecisionJudge {
   readonly method: DecisionMethod = "neural-judge";
 
+  /** Defaults to the shared cross-encoder, loaded lazily (keeps ONNX off the import path). */
+  constructor(private reranker?: Pick<CrossEncoderReranker, "rerank">) {}
+
   async judge(candidates: ExtractedDecision[], query?: string): Promise<ExtractedDecision[]> {
     if (!query || candidates.length === 0) return candidates;
     try {
-      const { getSharedReranker } = await import("../search/rerank.js");
-      const reranker = getSharedReranker();
+      const reranker = this.reranker ?? (await import("../search/rerank.js")).getSharedReranker();
       const texts = candidates.map((c) => ({
         id: c.conclusion.id,
         content: `${c.conclusion.content}\nRationale: ${c.rationale.map((r) => r.content).join(" ")}`,
         score: c.confidence,
       }));
       const reranked = await reranker.rerank(query, texts, candidates.length);
+      // Model didn't run (offline, load failure): heuristic verdicts stand, labelled as heuristic.
+      if (!reranked.some((r) => r.neural)) return candidates;
       const scoreMap = new Map(reranked.map((r) => [r.id, r.rerankScore]));
 
       const judged = candidates.map((c) => {
@@ -92,7 +97,8 @@ export class AppleFMJudge implements DecisionJudge {
     const fmEnabled = process.env.APPLE_FM_ENABLED === "1";
     if (fmEnabled) {
       const judged = await this.fallback.judge(candidates, query);
-      return judged.map((j) => ({ ...j, method: "apple-fm" as const }));
+      // Relabel only verdicts a model actually judged.
+      return judged.map((j) => (j.method === "neural-judge" ? { ...j, method: "apple-fm" as const } : j));
     }
     return this.fallback.judge(candidates, query);
   }
@@ -122,13 +128,14 @@ export function extractDecisions(sessionId: string, turns: Turn[], queryTerms: s
   const out: ExtractedDecision[] = [];
   const claimed = new Set<string>();
   // Both passes and every overlapping window re-ask the same questions of a turn.
+  // Question sentences never conclude; the rest of the turn still can.
   const strongHitsOf = memoByTurn((t) =>
     sentenceHits(t.content, CONCLUSION_STRONG).filter(
-      (h) => !isHeading(h.sentence) && hasSpeaker(h.sentence) && !isAttributiveUse(h.sentence, CONCLUSION_STRONG),
+      (h) => !h.sentence.endsWith("?") && !isHeading(h.sentence) && hasSpeaker(h.sentence) && !isAttributiveUse(h.sentence, CONCLUSION_STRONG),
     ),
   );
   const weakHitsOf = memoByTurn((t) =>
-    sentenceHits(t.content, CONCLUSION_WEAK).filter((h) => !isHeading(h.sentence) && hasSpeaker(h.sentence)),
+    sentenceHits(t.content, CONCLUSION_WEAK).filter((h) => !h.sentence.endsWith("?") && !isHeading(h.sentence) && hasSpeaker(h.sentence)),
   );
   const hasRationale = memoByTurn((x) => sentenceHits(x.content, RATIONALE_CUES).length > 0);
   const hasAlt = memoByTurn((x) => sentenceHits(x.content, ALTERNATIVE_CUES).length > 0);
@@ -137,7 +144,7 @@ export function extractDecisions(sessionId: string, turns: Turn[], queryTerms: s
   // Question turns never anchor (they fill the question slot instead).
   const anchorAt = (i: number, strongOnly: boolean): void => {
     const t = speak[i];
-    if (claimed.has(t.id) || isQuestion(t.content)) return;
+    if (claimed.has(t.id)) return;
     // Sentence-scoped anchor: best single sentence decides strength, so a
     // passing mention in a long doc can't outshout a real verdict.
     // Headings never anchor; anchors need a speaker or colon form so

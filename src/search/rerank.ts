@@ -16,6 +16,8 @@ export interface RerankResult {
   originalScore: number;
   rerankScore: number;
   combinedScore: number;
+  /** false when the model couldn't run and scores are the originals passed through. */
+  neural: boolean;
 }
 
 export class CrossEncoderReranker {
@@ -78,7 +80,7 @@ export class CrossEncoderReranker {
         const rerankScore = 1 / (1 + Math.exp(-rawLogit));
         // Combined blend: 0.60 * rerankScore + 0.40 * originalScore
         const combinedScore = 0.6 * rerankScore + 0.4 * cand.score;
-        return { id: cand.id, originalScore: cand.score, rerankScore, combinedScore };
+        return { id: cand.id, originalScore: cand.score, rerankScore, combinedScore, neural: true };
       });
 
       results.sort((a, b) => b.combinedScore - a.combinedScore);
@@ -90,6 +92,7 @@ export class CrossEncoderReranker {
         originalScore: c.score,
         rerankScore: c.score,
         combinedScore: c.score,
+        neural: false,
       }));
     }
   }

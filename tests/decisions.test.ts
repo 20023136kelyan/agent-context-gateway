@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { extractDecisions, AppleFMJudge } from "../src/decisions/extract.js";
+import { extractDecisions, AppleFMJudge, NeuralEntailmentJudge } from "../src/decisions/extract.js";
 import { isWhyQuery } from "../src/decisions/cues.js";
 import { normalizeQuery } from "../src/search/query.js";
 import { createApp, closeApp, type GatewayApp } from "../src/app.js";
@@ -72,6 +72,22 @@ describe("extractDecisions", () => {
     expect(real[0].confidence).toBeGreaterThanOrEqual(0.8);
   });
 
+  it("a '?' inside a URL or code doesn't turn a verdict into a question", () => {
+    const [d] = extractDecisions("s", [t(0, "assistant", "We decided to ship it; details at https://example.com/pr?id=42 for review")]);
+    expect(d?.conclusion.seq).toBe(0);
+  });
+
+  it("the neural judge keeps the heuristic label when its model didn't run", async () => {
+    const fallback = {
+      rerank: async (_q: string, cands: { id: string; content: string; score: number }[]) =>
+        cands.map((c) => ({ id: c.id, originalScore: c.score, rerankScore: c.score, combinedScore: c.score, neural: false })),
+    };
+    const cands = extractDecisions("s", [t(0, "user", "Why replace Kafka?"), t(1, "assistant", "We decided to replace Kafka because it is too heavy")], ["replace", "kafka"]);
+    const judged = await new NeuralEntailmentJudge(fallback).judge(cands, "Why replace Kafka?");
+    expect(judged[0].method).toBe("heuristic");
+    expect(judged[0].confidence).toBe(cands[0].confidence);
+  });
+
   it("why-routing", () => {
     expect(isWhyQuery("Why did we reject Monaco?")).toBe(true);
     expect(isWhyQuery("What files changed?")).toBe(false);
@@ -82,7 +98,8 @@ describe("temporal query parsing", () => {
   const now = new Date("2026-09-15T12:00:00Z");
   it("intervals", () => {
     expect(normalizeQuery("x between 2026-09-01 and 2026-09-05", now).after).toBe("2026-09-01T00:00:00.000Z");
-    expect(normalizeQuery("x between 2026-09-01 and 2026-09-05", now).before).toBe("2026-09-05T00:00:00.000Z");
+    // The end date is inclusive: "before" (exclusive) is the following midnight.
+    expect(normalizeQuery("x between 2026-09-01 and 2026-09-05", now).before).toBe("2026-09-06T00:00:00.000Z");
     expect(normalizeQuery("x since 2026-09-10", now).after).toBe("2026-09-10T00:00:00.000Z");
     expect(normalizeQuery("x last 3 days", now).after).toBe("2026-09-12T12:00:00.000Z");
     expect(normalizeQuery("x this week", now).after).toBe("2026-09-14T00:00:00.000Z"); // Mon Sep 14

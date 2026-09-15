@@ -84,12 +84,15 @@ export function countCues(text: string, cues: string[]): number {
  * an 8KB plan doc scores 1, same as one in a 100-char verdict. Anchoring on
  * sentences (not whole turns) stops long docs from winning by verbosity.
  */
-export function sentenceHits(text: string, cues: string[], maxSentences = 400): { sentence: string; count: number }[] {
+function splitSentences(text: string, maxSentences = 400): string[] {
   // Every newline is a boundary: TOC entries, tables and headings never form
   // mega-sentences that smuggle cues past the speaker/heading rules.
-  const sentences = text.split(/\n+|(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean).slice(0, maxSentences);
+  return text.split(/\n+|(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean).slice(0, maxSentences);
+}
+
+export function sentenceHits(text: string, cues: string[], maxSentences = 400): { sentence: string; count: number }[] {
   const hits: { sentence: string; count: number }[] = [];
-  for (const sentence of sentences) {
+  for (const sentence of splitSentences(text, maxSentences)) {
     const count = countCues(sentence, cues);
     if (count > 0) hits.push({ sentence, count });
   }
@@ -133,8 +136,9 @@ export function hasSpeaker(sentence: string): boolean {
   return /\b(we|i|team|let's|lets|our|we've|we have|i've|i have)\b/i.test(sentence);
 }
 
+/** Some sentence ends with "?" — not merely any "?" (optional chaining, URLs, regexes). */
 export function isQuestion(text: string): boolean {
-  return text.includes("?");
+  return splitSentences(text).some((s) => s.endsWith("?"));
 }
 
 /** "why"-style queries route to the decision path (no understanding needed). */

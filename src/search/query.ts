@@ -69,7 +69,8 @@ export function normalizeQuery(q: string, now = new Date()): NormalizedQuery {
   const between = lower.match(/between\s+(\d{4}-\d{2}-\d{2})\s+and\s+(\d{4}-\d{2}-\d{2})/);
   if (between) {
     after = new Date(between[1]).toISOString();
-    before = new Date(between[2]).toISOString();
+    // The end date is inclusive: stop at the following midnight ("before" is exclusive).
+    before = new Date(Date.parse(between[2]) + 86_400_000).toISOString();
   }
   const sinceMatch = lower.match(/\bsince\s+(\d{4}-\d{2}-\d{2})/);
   if (sinceMatch) after = new Date(sinceMatch[1]).toISOString();
