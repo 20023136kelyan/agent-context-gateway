@@ -69,6 +69,14 @@ describe("AclStore", () => {
     expect(store.canAccess("quarantined-agent", mockSession({ id: "good-sess" }))).toBe(true);
     expect(store.canAccess("quarantined-agent", mockSession({ id: "bad-sess-99" }))).toBe(false);
   });
+
+  it("applies the '*' rule to anonymous callers; without one, anonymous stays open", async () => {
+    const anon = new AclStore(join(await mkdtemp(join(tmpdir(), "acg-acl-anon-")), "acl.json"));
+    expect(anon.canAccess(undefined, mockSession({ projectId: "secret-project" }))).toBe(true);
+    anon.setRule({ principal: "*", allowedProjects: ["public-project"] });
+    expect(anon.canAccess(undefined, mockSession({ projectId: "secret-project" }))).toBe(false);
+    expect(anon.canAccess(undefined, mockSession({ projectId: "public-project" }))).toBe(true);
+  });
 });
 
 describe("search with PermCov evaluation", () => {

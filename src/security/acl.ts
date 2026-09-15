@@ -60,12 +60,12 @@ export class AclStore {
 
   /**
    * Checks if a principal has permission to view context from this session.
-   * If no rule is configured for the principal or '*', default allows access (local-first compatibility).
+   * Anonymous callers get the '*' rule, so omitting an identity can't bypass it.
+   * With no rule for the principal and no '*' rule, access stays open (local-first compatibility).
    */
   canAccess(principal: string | undefined, session: Session): boolean {
-    if (!principal) return true;
-    const rule = this.getRule(principal);
-    if (!rule) return true; // No policy defined for principal -> open access
+    const rule = principal ? this.getRule(principal) : this.rules.get("*");
+    if (!rule) return true; // No policy defined -> open access
 
     // 1. Explicitly denied sessions
     if (rule.deniedSessions && rule.deniedSessions.includes(session.id)) {
