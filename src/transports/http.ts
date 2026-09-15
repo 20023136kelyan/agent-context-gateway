@@ -113,6 +113,7 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
           callerPrincipal: (req.headers["x-gateway-principal"] as string | undefined) ?? q.principal,
           asOf: q.asOf,
           includeSuperseded: q.includeSuperseded === "true",
+          semantic: q.semantic === "false" ? false : undefined,
           maxResults: q.maxResults ? Number(q.maxResults) : undefined,
           maxTurns: q.maxTurns ? Number(q.maxTurns) : undefined,
           maxTokens: q.maxTokens ? Number(q.maxTokens) : undefined,
@@ -339,7 +340,12 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
   fastify.post("/subscriptions", async (req, reply) => {
     const b = (req.body ?? {}) as { query?: string; harness?: string; webhookUrl?: string };
     if (!b.query?.trim()) return reply.code(400).send({ error: 'bad_request: missing "query"' });
-    return createSubscription(app, b.query, { harness: b.harness, webhookUrl: b.webhookUrl });
+    try {
+      return createSubscription(app, b.query, { harness: b.harness, webhookUrl: b.webhookUrl });
+    } catch (e) {
+      const { code, message } = toStatus(e);
+      return reply.code(code).send({ error: message });
+    }
   });
 
   fastify.delete("/subscriptions/:id", async (req) => {

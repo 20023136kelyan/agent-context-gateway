@@ -25,6 +25,13 @@ export interface IndexedSession {
   adapter: ContextAdapter;
   session: Session;
   turns: Turn[];
+  /** Turns absent from the index before this pass (only with `detectNew`). */
+  newTurns?: Turn[];
+}
+
+export interface SyncOptions {
+  /** Report turns that are new to the index (costs an id lookup per session). */
+  detectNew?: boolean;
 }
 
 /** Non-file sources (a Zep API URL) have no mtime/size; re-index them at most this often. */
@@ -43,6 +50,7 @@ export async function syncAllDetailed(
   adapters: ContextAdapter[],
   index: SearchIndex,
   cursors: CursorStore,
+  opts: SyncOptions = {},
 ): Promise<{ result: SyncResult; indexed: IndexedSession[] }> {
   let sessionsSeen = 0;
   let sessionsIndexed = 0;
@@ -94,8 +102,9 @@ export async function syncAllDetailed(
           failed = true;
           continue;
         }
+        const known = opts.detectNew ? index.existingIds(turns.map((t) => t.id)) : null;
         index.indexTurns(enrichTurns(turns, s), s.sourcePath);
-        indexed.push({ adapter, session: s, turns });
+        indexed.push({ adapter, session: s, turns, newTurns: known ? turns.filter((t) => !known.has(t.id)) : undefined });
         sessionsIndexed += 1;
         turnsIndexed += turns.length;
       }

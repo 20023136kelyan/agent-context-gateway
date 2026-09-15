@@ -8,7 +8,8 @@ import { watch, type FSWatcher } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { GatewayApp } from "./app.js";
-import { syncAll } from "./indexing/sync.js";
+import { syncAllDetailed } from "./indexing/sync.js";
+import { notifyNewTurns } from "./commands.js";
 import { embedMissing } from "./indexing/embed-sync.js";
 
 export function defaultWatchDirs(): string[] {
@@ -40,7 +41,10 @@ export function watchSources(app: GatewayApp, opts: WatchOptions = {}): FSWatche
     syncing = true;
     try {
       // Under the app write lock: a rebuild or POST /sync can't interleave with it.
-      const res = await app.indexLock.run(() => syncAll(app.adapters, app.index, app.cursors));
+      const { result: res, indexed } = await app.indexLock.run(() =>
+        syncAllDetailed(app.adapters, app.index, app.cursors, { detectNew: app.subscriptions.all().length > 0 }),
+      );
+      await notifyNewTurns(app, indexed.flatMap((s) => s.newTurns ?? [])).catch((e) => opts.onError?.(e));
       let embedded: number | undefined;
       const vectors = app.vectors;
       if (opts.embed && vectors) {

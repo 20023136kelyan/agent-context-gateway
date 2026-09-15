@@ -6,7 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import type { GatewayApp } from "../app.js";
-import { listSources, listSessions, searchOnce, decideOnce, getRelated, traverseArtifacts, listInvalidations, listAclRules, searchLive, getLineage, createSubscription, recordFeedback, getSession, getTurn, getContext, showTopology } from "../commands.js";
+import { listSources, listSessions, searchOnce, decideOnce, getRelated, traverseArtifacts, listInvalidations, listAclRules, searchLive, getLineage, createSubscription, listSubscriptions, recordFeedback, getSession, getTurn, getContext, showTopology } from "../commands.js";
 
 const Harness = z.enum(["claude-code", "codex", "cursor", "zep", "git"]);
 
@@ -40,6 +40,7 @@ export function buildMcpServer(app: GatewayApp): McpServer {
       callerPrincipal: z.string().optional().describe("Caller identity for resource-level ACL enforcement"),
       asOf: z.string().optional().describe("Point-in-time reconstruction (ISO timestamp): ignores invalidations after this date"),
       includeSuperseded: z.boolean().optional().describe("Include superseded historical knowledge without demotion"),
+      semantic: z.boolean().optional().describe("false = lexical only (skip vector candidates)"),
       maxResults: z.number().min(1).max(20).optional(),
       maxTurns: z.number().min(1).max(15).optional(),
       maxTokens: z.number().min(100).max(20000).optional(),
@@ -147,6 +148,13 @@ export function buildMcpServer(app: GatewayApp): McpServer {
     "Register a context subscription to receive notifications when matching turns appear (spec §66)",
     { query: z.string(), harness: Harness.optional(), webhookUrl: z.string().optional() },
     async (args) => text(createSubscription(app, args.query, { harness: args.harness, webhookUrl: args.webhookUrl })),
+  );
+
+  server.tool(
+    "context.list_subscriptions",
+    "List context subscriptions with their most recent matches (poll here when you registered no webhook)",
+    {},
+    async () => text(listSubscriptions(app)),
   );
 
   return server;

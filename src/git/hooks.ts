@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { turnId as makeTurnId } from "../core/id.js";
 import { extractFileRefs } from "../adapters/text.js";
 import type { GatewayApp } from "../app.js";
+import { notifyNewTurns } from "../commands.js";
 
 export interface GitCommitEvent {
   repo: string;
@@ -116,6 +117,11 @@ export async function handleGitCommitEvent(
     repo: event.repo,
   };
 
-  await app.indexLock.run(() => app.index.indexTurns([enriched], join(event.repo, ".git")));
+  const fresh = await app.indexLock.run(() => {
+    const known = app.index.existingIds([turnId]).has(turnId);
+    app.index.indexTurns([enriched], join(event.repo, ".git"));
+    return known ? [] : [turn];
+  });
+  await notifyNewTurns(app, fresh);
   return { indexed: true, turnId };
 }

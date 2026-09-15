@@ -8,6 +8,23 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import type { ContextAdapter } from "../adapters/types.js";
 import type { Session, Turn } from "../core/models.js";
+import { normalizeQuery } from "../search/query.js";
+
+/** Kept per subscription so callers without a webhook (MCP agents) can poll what matched. */
+export interface NotificationRecord {
+  deliveredAt: string;
+  turns: { turnId: string; harness: string; sessionId: string; timestamp: string; snippet: string }[];
+  webhook?: { ok: boolean; status?: number; error?: string };
+}
+
+const RECENT_LIMIT = 20;
+const WEBHOOK_TIMEOUT_MS = 5000;
+
+/** Terms a turn must contain: search's normalization (stop-words dropped), else the raw words. */
+export function subscriptionTerms(query: string): string[] {
+  const terms = normalizeQuery(query).indexQuery.split(" ").filter(Boolean);
+  return terms.length > 0 ? terms : query.toLowerCase().split(/\s+/).filter(Boolean);
+}
 
 export interface LiveSearchResult {
   session: Session;
@@ -24,6 +41,8 @@ export interface Subscription {
   webhookUrl?: string;
   createdAt: string;
   lastNotifiedAt?: string;
+  /** Newest last, capped at RECENT_LIMIT. */
+  recent?: NotificationRecord[];
 }
 
 export interface SubscriptionNotification {
@@ -35,6 +54,8 @@ export interface SubscriptionNotification {
 
 export class SubscriptionStore {
   private subs = new Map<string, Subscription>();
+  /** Notification -> the record it appended, so delivery can write the webhook outcome back. */
+  private records = new WeakMap<SubscriptionNotification, NotificationRecord>();
   constructor(private path: string) {
     this.load();
   }
@@ -57,6 +78,17 @@ export class SubscriptionStore {
   }
 
   subscribe(query: string, opts?: { harness?: string; webhookUrl?: string }): Subscription {
+    if (opts?.webhookUrl) {
+      let url: URL;
+      try {
+        url = new URL(opts.webhookUrl);
+      } catch {
+        throw new Error(`bad_request: invalid webhookUrl "${opts.webhookUrl}"`);
+      }
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        throw new Error("bad_request: webhookUrl must be http(s)");
+      }
+    }
     const id = `sub_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const sub: Subscription = {
       id,
@@ -89,7 +121,7 @@ export class SubscriptionStore {
     const now = new Date().toISOString();
 
     for (const sub of this.subs.values()) {
-      const terms = sub.query.toLowerCase().split(/\s+/).filter(Boolean);
+      const terms = subscriptionTerms(sub.query);
       const matches = newTurns.filter((t) => {
         if (sub.harness && t.harness !== sub.harness) return false;
         const hay = t.content.toLowerCase();
@@ -98,17 +130,62 @@ export class SubscriptionStore {
 
       if (matches.length > 0) {
         sub.lastNotifiedAt = now;
-        notifications.push({
+        const notification: SubscriptionNotification = {
           subscriptionId: sub.id,
           query: sub.query,
           matchingTurns: matches,
           deliveredAt: now,
-        });
+        };
+        const record: NotificationRecord = {
+          deliveredAt: now,
+          turns: matches.slice(0, 20).map((t) => ({
+            turnId: t.id,
+            harness: t.harness,
+            sessionId: t.sessionId,
+            timestamp: t.timestamp,
+            snippet: t.content.slice(0, 200),
+          })),
+        };
+        sub.recent = [...(sub.recent ?? []), record].slice(-RECENT_LIMIT);
+        this.records.set(notification, record);
+        notifications.push(notification);
       }
     }
 
     if (notifications.length > 0) this.save();
     return notifications;
+  }
+
+  /** POST each notification to its subscription's webhook (5s timeout) and record the outcome. */
+  async deliver(notifications: SubscriptionNotification[]): Promise<void> {
+    let delivered = false;
+    await Promise.all(
+      notifications.map(async (n) => {
+        const url = this.subs.get(n.subscriptionId)?.webhookUrl;
+        if (!url) return;
+        let outcome: NotificationRecord["webhook"];
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              subscriptionId: n.subscriptionId,
+              query: n.query,
+              deliveredAt: n.deliveredAt,
+              turns: n.matchingTurns.map((t) => ({ id: t.id, harness: t.harness, sessionId: t.sessionId, timestamp: t.timestamp, role: t.role, content: t.content })),
+            }),
+            signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
+          });
+          outcome = { ok: res.ok, status: res.status };
+        } catch (e) {
+          outcome = { ok: false, error: e instanceof Error ? e.message : String(e) };
+        }
+        const record = this.records.get(n);
+        if (record) record.webhook = outcome;
+        delivered = true;
+      }),
+    );
+    if (delivered) this.save();
   }
 }
 

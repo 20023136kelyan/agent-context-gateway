@@ -173,6 +173,18 @@ export class SqliteIndex implements SearchIndex {
     });
   }
 
+  existingIds(ids: string[]): Set<string> {
+    const found = new Set<string>();
+    for (let i = 0; i < ids.length; i += 500) {
+      const chunk = ids.slice(i, i + 500);
+      const rows = this.db
+        .prepare(`SELECT id FROM docs WHERE id IN (${chunk.map(() => "?").join(",")})`)
+        .all(...chunk) as { id: string }[];
+      for (const r of rows) found.add(r.id);
+    }
+    return found;
+  }
+
   stats(): IndexStats {
     const total = (this.db.prepare("SELECT COUNT(*) as c FROM docs").get() as { c: number }).c;
     const per = this.db.prepare("SELECT harness, COUNT(*) as c FROM docs GROUP BY harness").all() as {

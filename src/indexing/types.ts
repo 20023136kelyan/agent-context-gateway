@@ -32,6 +32,8 @@ export interface SearchIndex {
   search(query: string, opts?: IndexFilter): IndexSearchHit[];
   /** Stored doc fetch for ranking/packaging (may be stale — verify against adapters). */
   getTurnsByIds(ids: string[]): Turn[];
+  /** Which of these turn ids are already indexed (new-turn detection for subscriptions). */
+  existingIds(ids: string[]): Set<string>;
   /** Record a successful sync point (freshness signal, spec §35/§68). */
   markSynced(): void;
   stats(): IndexStats;

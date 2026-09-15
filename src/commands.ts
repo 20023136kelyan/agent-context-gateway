@@ -4,7 +4,8 @@
  * with `not_found` / `bad_request` messages that transports map to codes.
  */
 import { stat } from "node:fs/promises";
-import { syncAll, rebuildAll, enrichTurns, isRemoteSource } from "./indexing/sync.js";
+import { syncAll, syncAllDetailed, rebuildAll, enrichTurns, isRemoteSource } from "./indexing/sync.js";
+import type { Turn } from "./core/models.js";
 import { embedMissing, embedSessionTurns } from "./indexing/embed-sync.js";
 import { embeddingsAvailable } from "./embeddings/provider.js";
 import { loadRemotes, queryRemote } from "./remotes.js";
@@ -39,6 +40,14 @@ export async function ensureSynced(app: GatewayApp) {
   });
 }
 
+/** Evaluate subscriptions against turns that are new to the index; deliver webhooks. */
+export async function notifyNewTurns(app: GatewayApp, turns: Turn[]): Promise<number> {
+  if (turns.length === 0 || app.subscriptions.all().length === 0) return 0;
+  const notifications = app.subscriptions.notifyTurns(turns);
+  await app.subscriptions.deliver(notifications);
+  return notifications.length;
+}
+
 export async function listSources(app: GatewayApp) {
   const out = [];
   for (const a of app.adapters) {
@@ -66,7 +75,7 @@ export async function listSessions(app: GatewayApp, filter: { harness?: string; 
 export async function searchOnce(app: GatewayApp, query: string, opts: SearchOptions = {}, chain: string[] = []) {
   if (!query.trim()) throw new Error("bad_request: empty query");
   await ensureSynced(app);
-  if (!app.vectors) {
+  if (!app.vectors && opts.semantic !== false) {
     try {
       await initVectors(app);
     } catch {
@@ -116,7 +125,7 @@ export async function decideOnce(
 ) {
   if (!query.trim()) throw new Error("bad_request: empty query");
   await ensureSynced(app);
-  if (!app.vectors) {
+  if (!app.vectors && opts.semantic !== false) {
     try {
       await initVectors(app);
     } catch {
@@ -223,7 +232,9 @@ export async function syncSession(
   const session = sessions.find((s) => s.id === sessionId);
   if (!session) throw new Error(`not_found: session "${sessionId}"`);
   const turns = await adapter.listTurns(session.id);
-  await app.indexLock.run(async () => {
+  const fresh = await app.indexLock.run(async () => {
+    // New-turn detection costs an index lookup: only when someone subscribed.
+    const known = app.subscriptions.all().length > 0 ? app.index.existingIds(turns.map((t) => t.id)) : null;
     app.index.indexTurns(enrichTurns(turns, session), session.sourcePath);
     // Stamp only a source this session owns alone: a shared source (Cursor DB,
     // Zep export, .git) still holds unsynced sessions the next full sync must see.
@@ -238,7 +249,9 @@ export async function syncSession(
       }
     }
     app.index.markSynced();
+    return known ? turns.filter((t) => !known.has(t.id)) : [];
   });
+  await notifyNewTurns(app, fresh);
   let vectors: unknown = null;
   if (opts.embed) {
     const store = app.vectors ?? (await initVectors(app).catch(() => null));
@@ -378,8 +391,11 @@ export function cancelSubscription(app: GatewayApp, id: string) {
 }
 
 export async function syncNow(app: GatewayApp, rebuild = false, opts: { embed?: boolean } = {}) {
-  const result = await app.indexLock.run(async () => {
-    if (!rebuild) return syncAll(app.adapters, app.index, app.cursors);
+  const { result, fresh } = await app.indexLock.run(async () => {
+    if (!rebuild) {
+      const out = await syncAllDetailed(app.adapters, app.index, app.cursors, { detectNew: app.subscriptions.all().length > 0 });
+      return { result: out.result, fresh: out.indexed.flatMap((s) => s.newTurns ?? []) };
+    }
     const create =
       app.backend === "tantivy"
         ? () => new TantivyIndex(app.indexDir)
@@ -389,8 +405,10 @@ export async function syncNow(app: GatewayApp, rebuild = false, opts: { embed?: 
     // Swap in place: a fresh SearchService would silently drop ACL, topology,
     // feedback and temporal attachments until restart.
     app.search.setIndex(out.index);
-    return out.result;
+    // Everything is "new" to a rebuilt index: that's history, not news — no notifications.
+    return { result: out.result, fresh: [] as Turn[] };
   });
+  await notifyNewTurns(app, fresh);
   // Semantic backfill is opt-in and resumable; lexical sync never blocks on it.
   let vectors: unknown = null;
   if (opts.embed) {

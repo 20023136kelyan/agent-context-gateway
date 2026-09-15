@@ -248,6 +248,24 @@ export class TantivyIndex implements SearchIndex {
     return out;
   }
 
+  existingIds(ids: string[]): Set<string> {
+    const found = new Set<string>();
+    if (ids.length === 0) return found;
+    const schema = buildSchema();
+    this.index.reload();
+    const searcher = this.index.searcher();
+    // Chunked: giant sessions exceed Tantivy's boolean clause limit.
+    for (let i = 0; i < ids.length; i += 500) {
+      const chunk = ids.slice(i, i + 500);
+      const res = searcher.search(Query.termSetQuery(schema, "id", chunk), chunk.length, false);
+      for (const h of res.hits) {
+        const id = searcher.doc(h.docAddress).getFirst("id");
+        if (typeof id === "string") found.add(id);
+      }
+    }
+    return found;
+  }
+
   stats(): IndexStats {
     this.index.reload();
     const searcher = this.index.searcher();
