@@ -10,6 +10,8 @@ import { TantivyIndex } from "../src/indexing/tantivy-index.js";
 import type { SearchIndex } from "../src/indexing/types.js";
 import { CursorStore } from "../src/indexing/store.js";
 import { syncAll } from "../src/indexing/sync.js";
+import type { ContextAdapter } from "../src/adapters/types.js";
+import type { Session, Turn } from "../src/core/models.js";
 
 let claudeDir: string;
 let codexDir: string;
@@ -115,6 +117,43 @@ describe("tantivy reader sharing (P2a background fix)", () => {
     } finally {
       a.close();
       b.close();
+    }
+  });
+});
+
+describe("sync failure handling", () => {
+  it("leaves a source unstamped when its turns fail to load, so the next sync retries", async () => {
+    const dir = join(root, "flaky");
+    await mkdir(dir, { recursive: true });
+    const sourcePath = join(dir, "flaky.jsonl");
+    await writeFile(sourcePath, "{}");
+    const session: Session = { id: "flaky-1", harness: "claude-code", agentId: "claude-code:local", projectId: "p", workspace: "/w", startedAt: "2026-09-10T00:00:00Z", sourcePath };
+    const turn: Turn = { id: "claude-code:flaky-1:t1", sessionId: "flaky-1", harness: "claude-code", timestamp: "2026-09-10T00:00:00Z", role: "user", content: "flaky retry marmalade", raw: {}, seq: 0 };
+    let calls = 0;
+    const flaky: ContextAdapter = {
+      harness: "claude-code",
+      capabilities: () => ({ sessions: true, turns: true, search: false, topology: false }),
+      listSessions: async () => [session],
+      listTurns: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("transient read error");
+        return [turn];
+      },
+      getTurn: async () => turn,
+      getCursor: async () => ({}),
+    };
+    const indexDir = join(root, "index-flaky");
+    const index = new TantivyIndex(indexDir);
+    const cursors = new CursorStore(indexDir);
+    try {
+      const first = await syncAll([flaky], index, cursors);
+      expect(first.sessionsFailed).toBe(1);
+      expect(first.sessionsIndexed).toBe(0);
+      const second = await syncAll([flaky], index, cursors);
+      expect(second.sessionsIndexed).toBe(1);
+      expect(index.search("marmalade")).toHaveLength(1);
+    } finally {
+      index.close();
     }
   });
 });

@@ -6,16 +6,109 @@
 import { stat, rm, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { ContextAdapter } from "../adapters/types.js";
-import type { Turn } from "../core/models.js";
+import type { Session, Turn } from "../core/models.js";
 import type { SearchIndex } from "./types.js";
-import { CursorStore } from "./store.js";
+import { CursorStore, type CursorEntry } from "./store.js";
 
 export interface SyncResult {
   sessionsSeen: number;
   sessionsIndexed: number;
   sessionsSkipped: number;
+  /** Sessions whose turns could not be read; their source is retried next sync. */
+  sessionsFailed: number;
   turnsIndexed: number;
   docCount: number;
+}
+
+/** A session (re-)indexed during a sync pass. */
+export interface IndexedSession {
+  adapter: ContextAdapter;
+  session: Session;
+  turns: Turn[];
+}
+
+/** Non-file sources (a Zep API URL) have no mtime/size; re-index them at most this often. */
+const REMOTE_RESYNC_MS = 5 * 60 * 1000;
+
+export function isRemoteSource(sourcePath: string): boolean {
+  return /^https?:\/\//i.test(sourcePath);
+}
+
+/** Index rows carry session metadata that turns don't. */
+export function enrichTurns(turns: Turn[], s: Session): (Turn & { projectId: string; workspace: string; repo: string | null })[] {
+  return turns.map((t) => ({ ...t, projectId: s.projectId, workspace: s.workspace, repo: s.repo ?? null }));
+}
+
+export async function syncAllDetailed(
+  adapters: ContextAdapter[],
+  index: SearchIndex,
+  cursors: CursorStore,
+): Promise<{ result: SyncResult; indexed: IndexedSession[] }> {
+  let sessionsSeen = 0;
+  let sessionsIndexed = 0;
+  let sessionsSkipped = 0;
+  let sessionsFailed = 0;
+  let turnsIndexed = 0;
+  const indexed: IndexedSession[] = [];
+
+  for (const adapter of adapters) {
+    const sessions = await adapter.listSessions().catch(() => [] as Session[]);
+    sessionsSeen += sessions.length;
+    // One source can hold many sessions (Cursor state.vscdb, Zep threads.json,
+    // Git .git): decide "changed" once per source, index all of its sessions,
+    // then stamp — stamping per session would hide the rest of the source.
+    const bySource = new Map<string, Session[]>();
+    for (const s of sessions) {
+      const group = bySource.get(s.sourcePath);
+      if (group) group.push(s);
+      else bySource.set(s.sourcePath, [s]);
+    }
+    for (const [sourcePath, group] of bySource) {
+      const prev = cursors.get(sourcePath);
+      let stamp: CursorEntry;
+      if (isRemoteSource(sourcePath)) {
+        if (prev && Date.now() - prev.mtimeMs < REMOTE_RESYNC_MS) {
+          sessionsSkipped += group.length;
+          continue;
+        }
+        stamp = { mtimeMs: Date.now(), size: -1 };
+      } else {
+        try {
+          const st = await stat(sourcePath);
+          stamp = { mtimeMs: st.mtimeMs, size: st.size };
+        } catch {
+          continue; // source unavailable — skip, never fabricate
+        }
+        if (prev && prev.mtimeMs === stamp.mtimeMs && prev.size === stamp.size) {
+          sessionsSkipped += group.length;
+          continue;
+        }
+      }
+      let failed = false;
+      for (const s of group) {
+        let turns: Turn[];
+        try {
+          turns = await adapter.listTurns(s.id);
+        } catch {
+          sessionsFailed += 1;
+          failed = true;
+          continue;
+        }
+        index.indexTurns(enrichTurns(turns, s), s.sourcePath);
+        indexed.push({ adapter, session: s, turns });
+        sessionsIndexed += 1;
+        turnsIndexed += turns.length;
+      }
+      // Leave a source with a failed session unstamped so the next sync retries it.
+      if (!failed) cursors.set(sourcePath, stamp);
+    }
+  }
+  cursors.save();
+  index.markSynced();
+  return {
+    result: { sessionsSeen, sessionsIndexed, sessionsSkipped, sessionsFailed, turnsIndexed, docCount: index.stats().docCount },
+    indexed,
+  };
 }
 
 export async function syncAll(
@@ -23,45 +116,7 @@ export async function syncAll(
   index: SearchIndex,
   cursors: CursorStore,
 ): Promise<SyncResult> {
-  let sessionsSeen = 0;
-  let sessionsIndexed = 0;
-  let sessionsSkipped = 0;
-  let turnsIndexed = 0;
-
-  for (const adapter of adapters) {
-    const sessions = await adapter.listSessions().catch(() => []);
-    sessionsSeen += sessions.length;
-    for (const s of sessions) {
-      let mtimeMs = 0;
-      let size = 0;
-      try {
-        const st = await stat(s.sourcePath);
-        mtimeMs = st.mtimeMs;
-        size = st.size;
-      } catch {
-        continue; // source unavailable — skip, never fabricate
-      }
-      const prev = cursors.get(s.sourcePath);
-      if (prev && prev.mtimeMs === mtimeMs && prev.size === size) {
-        sessionsSkipped += 1;
-        continue;
-      }
-      const turns = await adapter.listTurns(s.id).catch(() => []);
-      const enriched: (Turn & { projectId: string; workspace: string; repo: string | null })[] = turns.map((t) => ({
-        ...t,
-        projectId: s.projectId,
-        workspace: s.workspace,
-        repo: s.repo ?? null,
-      }));
-      index.indexTurns(enriched, s.sourcePath);
-      cursors.set(s.sourcePath, { mtimeMs, size });
-      sessionsIndexed += 1;
-      turnsIndexed += turns.length;
-    }
-  }
-  cursors.save();
-  index.markSynced();
-  return { sessionsSeen, sessionsIndexed, sessionsSkipped, turnsIndexed, docCount: index.stats().docCount };
+  return (await syncAllDetailed(adapters, index, cursors)).result;
 }
 
 export async function rebuildAll(
@@ -70,7 +125,7 @@ export async function rebuildAll(
   cursors: CursorStore,
   indexDir: string,
   previous?: SearchIndex,
-): Promise<{ result: SyncResult; index: SearchIndex }> {
+): Promise<{ result: SyncResult; index: SearchIndex; indexed: IndexedSession[] }> {
   try {
     previous?.close();
   } catch {
@@ -84,8 +139,8 @@ export async function rebuildAll(
   cursors.clear();
   const fresh = createIndex();
   try {
-    const result = await syncAll(adapters, fresh, cursors);
-    return { result, index: fresh };
+    const { result, indexed } = await syncAllDetailed(adapters, fresh, cursors);
+    return { result, index: fresh, indexed };
   } catch (e) {
     try {
       fresh.close();

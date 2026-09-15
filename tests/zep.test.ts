@@ -88,3 +88,35 @@ describe("ZepAdapter", () => {
     }
   });
 });
+
+describe("shared source file (one export, many threads)", () => {
+  it("indexes every thread, skips them together, re-indexes them together", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "acg-zep-shared-"));
+    const thread = (id: string, word: string) => ({
+      uuid: id,
+      created_at: "2026-09-12T10:00:00Z",
+      messages: [{ uuid: "m1", role: "user", content: `thread ${id} discusses ${word}` }],
+    });
+    const write = (word: string) =>
+      writeFile(join(dir, "threads.json"), JSON.stringify([thread("t-1", word), thread("t-2", word), thread("t-3", word)]));
+    await write("aardvark");
+    const root = await mkdtemp(join(tmpdir(), "acg-zep-shared-idx-"));
+    const app = createApp({ indexDir: join(root, "index"), claudeDir: join(root, "c"), codexDir: join(root, "x"), zepDir: dir, backend: "tantivy", cursorDb: join(root, "no.vscdb") });
+    try {
+      const first = await syncAll(app.adapters, app.index, app.cursors);
+      expect(first.sessionsIndexed).toBe(3);
+      expect(app.index.search("aardvark")).toHaveLength(3);
+
+      const second = await syncAll(app.adapters, app.index, app.cursors);
+      expect(second.sessionsIndexed).toBe(0);
+      expect(second.sessionsSkipped).toBe(3);
+
+      await write("okapi"); // different size -> source changed
+      const third = await syncAll(app.adapters, app.index, app.cursors);
+      expect(third.sessionsIndexed).toBe(3);
+      expect(app.index.search("okapi")).toHaveLength(3);
+    } finally {
+      closeApp(app);
+    }
+  });
+});

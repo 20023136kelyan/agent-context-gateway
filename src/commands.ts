@@ -4,7 +4,7 @@
  * with `not_found` / `bad_request` messages that transports map to codes.
  */
 import { stat } from "node:fs/promises";
-import { syncAll, rebuildAll } from "./indexing/sync.js";
+import { syncAll, rebuildAll, enrichTurns, isRemoteSource } from "./indexing/sync.js";
 import { embedMissing, embedSessionTurns } from "./indexing/embed-sync.js";
 import { embeddingsAvailable } from "./embeddings/provider.js";
 import { loadRemotes, queryRemote } from "./remotes.js";
@@ -223,14 +223,18 @@ export async function syncSession(
   const session = sessions.find((s) => s.id === sessionId);
   if (!session) throw new Error(`not_found: session "${sessionId}"`);
   const turns = await adapter.listTurns(session.id);
-  const enriched = turns.map((t) => ({ ...t, projectId: session.projectId, workspace: session.workspace, repo: session.repo ?? null }));
-  app.index.indexTurns(enriched, session.sourcePath);
-  try {
-    const st = await stat(session.sourcePath);
-    app.cursors.set(session.sourcePath, { mtimeMs: st.mtimeMs, size: st.size });
-    app.cursors.save();
-  } catch {
-    // source vanished mid-sync — index keeps the turns, next full sync reconciles
+  app.index.indexTurns(enrichTurns(turns, session), session.sourcePath);
+  // Stamp only a source this session owns alone: a shared source (Cursor DB,
+  // Zep export, .git) still holds unsynced sessions the next full sync must see.
+  const shared = sessions.some((s) => s !== session && s.sourcePath === session.sourcePath);
+  if (!shared && !isRemoteSource(session.sourcePath)) {
+    try {
+      const st = await stat(session.sourcePath);
+      app.cursors.set(session.sourcePath, { mtimeMs: st.mtimeMs, size: st.size });
+      app.cursors.save();
+    } catch {
+      // source vanished mid-sync — index keeps the turns, next full sync reconciles
+    }
   }
   app.index.markSynced();
   let vectors: unknown = null;
