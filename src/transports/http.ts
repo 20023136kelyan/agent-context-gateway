@@ -2,7 +2,8 @@
  * Fastify HTTP transport — loopback only (local-only MVP, no remote).
  * Export buildHttpServer for tests (inject); serveHttp binds 127.0.0.1.
  */
-import Fastify, { type FastifyInstance } from "fastify";
+import { timingSafeEqual } from "node:crypto";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import type { GatewayApp } from "../app.js";
 import type { Harness } from "../core/models.js";
 import { listSources, listSessions, searchOnce, decideOnce, getRelated, traverseArtifacts, listInvalidations, recordInvalidation, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, cancelSubscription, recordFeedback, getSession, getTurn, getContext, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "../commands.js";
@@ -16,6 +17,40 @@ function toStatus(e: unknown): { code: number; message: string } {
   return { code: 500, message: msg };
 }
 
+const LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "::1"];
+
+/** Loopback names plus GATEWAY_ALLOWED_HOSTS (comma-separated), lowercased. */
+function allowedHosts(): Set<string> {
+  const extra = (process.env.GATEWAY_ALLOWED_HOSTS ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean);
+  return new Set([...LOOPBACK_HOSTS, ...extra]);
+}
+
+/** Host header -> bare hostname: "localhost:3000" -> "localhost", "[::1]:3000" -> "::1". */
+function hostnameOf(host: string | undefined): string {
+  if (!host) return "";
+  const v6 = host.match(/^\[([^\]]+)\](?::\d+)?$/);
+  return (v6 ? v6[1] : host.replace(/:\d+$/, "")).toLowerCase();
+}
+
+function tokenMatches(got: string | undefined, want: string): boolean {
+  const a = Buffer.from(got ?? "");
+  const b = Buffer.from(`Bearer ${want}`);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/** A browser write from a page that isn't on an allowed host. CLI, curl and the Swift app send no Origin. */
+function isCrossSiteWrite(req: FastifyRequest): boolean {
+  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return false;
+  if (req.headers["sec-fetch-site"] === "cross-site") return true;
+  const origin = req.headers.origin;
+  if (origin === undefined) return false;
+  try {
+    return !allowedHosts().has(new URL(origin).hostname.replace(/^\[|\]$/g, "").toLowerCase());
+  } catch {
+    return true; // "null" (sandboxed frames, file://) or malformed
+  }
+}
+
 export function buildHttpServer(app: GatewayApp): FastifyInstance {
   const fastify = Fastify({ logger: false });
   // Git hooks post URL-encoded fields (see git/hooks.ts).
@@ -23,15 +58,25 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
     done(null, Object.fromEntries(new URLSearchParams(body as string)));
   });
 
+  // Token-authenticated requests are trusted from anywhere. Everything else
+  // must name a loopback Host (DNS rebinding: a hostile page that resolves its
+  // own domain to 127.0.0.1 is same-origin to the browser, but its Host header
+  // still names that domain) and must not be a browser cross-site write (CSRF).
   // P2e token auth: when GATEWAY_TOKEN is set, every route except liveness
-  // needs `Authorization: Bearer <token>`. MCP/CLI-local paths are unaffected
-  // (same-user IPC); loopback HTTP is the trust boundary for remotes.
+  // needs `Authorization: Bearer <token>`.
   fastify.addHook("onRequest", async (req, reply) => {
-    if (req.url === "/health" || req.url.startsWith("/health?")) return;
     const want = process.env.GATEWAY_TOKEN;
-    if (!want) return;
-    const got = req.headers.authorization;
-    if (got !== `Bearer ${want}`) {
+    const authed = !!want && tokenMatches(req.headers.authorization, want);
+    const isHealth = req.url === "/health" || req.url.startsWith("/health?");
+    if (!authed) {
+      if (!allowedHosts().has(hostnameOf(req.headers.host))) {
+        if (isHealth) return reply.code(200).send({ ok: true }); // liveness only
+        return reply.code(403).send({ error: "forbidden: unrecognized Host (non-loopback access needs GATEWAY_TOKEN)" });
+      }
+      if (isCrossSiteWrite(req)) return reply.code(403).send({ error: "forbidden: cross-site request" });
+    }
+    if (isHealth) return;
+    if (want && !authed) {
       return reply.code(401).send({ error: "unauthorized: bad or missing bearer token" });
     }
   });

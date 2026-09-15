@@ -85,6 +85,39 @@ describe("HTTP", () => {
   });
 });
 
+describe("HTTP request origin checks", () => {
+  it("rejects a foreign Host (DNS rebinding) but still answers liveness", async () => {
+    const server = buildHttpServer(app);
+    const res = await server.inject({ method: "GET", url: "/search?q=collaboration", headers: { host: "evil.test:3000" } });
+    expect(res.statusCode).toBe(403);
+    const health = await server.inject({ method: "GET", url: "/health", headers: { host: "evil.test:3000" } });
+    expect(health.statusCode).toBe(200);
+    expect(health.json()).toEqual({ ok: true });
+  });
+
+  it("rejects cross-site browser writes (CSRF); loopback pages and header-less clients pass", async () => {
+    const server = buildHttpServer(app);
+    const url = "/topology/unlink?ph=codex&ps=x&ch=codex&cs=y";
+    expect((await server.inject({ method: "POST", url, headers: { origin: "https://evil.test" } })).statusCode).toBe(403);
+    expect((await server.inject({ method: "POST", url, headers: { origin: "null" } })).statusCode).toBe(403);
+    expect((await server.inject({ method: "POST", url, headers: { origin: "http://localhost:5173" } })).statusCode).toBe(200);
+    expect((await server.inject({ method: "POST", url, headers: { host: "127.0.0.1:3000" } })).statusCode).toBe(200);
+  });
+
+  it("accepts a valid bearer token from a non-loopback Host; anonymous LAN requests are refused", async () => {
+    process.env.GATEWAY_TOKEN = "tok-1";
+    try {
+      const server = buildHttpServer(app);
+      const authed = await server.inject({ method: "GET", url: "/sources", headers: { host: "192.168.1.50:3000", authorization: "Bearer tok-1" } });
+      expect(authed.statusCode).toBe(200);
+      const anon = await server.inject({ method: "GET", url: "/sources", headers: { host: "192.168.1.50:3000" } });
+      expect(anon.statusCode).toBe(403);
+    } finally {
+      delete process.env.GATEWAY_TOKEN;
+    }
+  });
+});
+
 describe("MCP", () => {
   it("context.search via in-memory client returns same core results", async () => {
     const server = buildMcpServer(app);
