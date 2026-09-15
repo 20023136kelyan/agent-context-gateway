@@ -77,6 +77,8 @@ export interface SearchResponse {
 const TOPO_SCOPES = new Set(["parent", "children", "siblings", "auto"]);
 /** Candidates the cross-encoder scores when rerank is on. */
 const RERANK_POOL = 15;
+/** Listing sessions walks every history dir; reuse the result this long. */
+const SESSION_TTL_MS = 10_000;
 
 export class SearchService {
   private vectors: VectorStore | null = null;
@@ -85,6 +87,7 @@ export class SearchService {
   private temporal: TemporalStore | null = null;
   private acl: AclStore | null = null;
   private reranker: Pick<CrossEncoderReranker, "rerank"> = getSharedReranker();
+  private sessionCache: { at: number; map: Map<string, Session> } | null = null;
 
   constructor(
     private adapters: ContextAdapter[],
@@ -117,6 +120,25 @@ export class SearchService {
     this.index = index;
   }
 
+  /** Drop cached session metadata (after a sync adds or changes sessions). */
+  invalidateSessions(): void {
+    this.sessionCache = null;
+  }
+
+  /** Every adapter's sessions keyed "harness:id", cached for SESSION_TTL_MS. */
+  private async sessionMap(fresh = false): Promise<{ map: Map<string, Session>; cached: boolean }> {
+    if (!fresh && this.sessionCache && Date.now() - this.sessionCache.at < SESSION_TTL_MS) {
+      return { map: this.sessionCache.map, cached: true };
+    }
+    const lists = await Promise.all(this.adapters.map((a) => a.listSessions().catch(() => [] as Session[])));
+    const map = new Map<string, Session>();
+    this.adapters.forEach((a, i) => {
+      for (const s of lists[i]) map.set(`${a.harness}:${s.id}`, s);
+    });
+    this.sessionCache = { at: Date.now(), map };
+    return { map, cached: false };
+  }
+
   /** Replace the cross-encoder (tests; alternative rerankers). */
   setReranker(reranker: Pick<CrossEncoderReranker, "rerank">): void {
     this.reranker = reranker;
@@ -137,15 +159,17 @@ export class SearchService {
     const half = Math.floor(maxTurns / 2);
     const nowMs = Date.now();
 
-    // Session map for project/agent/sourcePath (adapter-cached, ~ms warm).
-    const sessions = new Map<string, Session>();
-    for (const a of this.adapters) {
-      for (const s of await a.listSessions().catch(() => [])) sessions.set(`${a.harness}:${s.id}`, s);
-    }
+    // Session map for project/agent/sourcePath (cached briefly; refreshed on a miss).
+    let { map: sessions, cached: sessionsCached } = await this.sessionMap();
+    const findCaller = () =>
+      opts.callerSessionId ? [...sessions.values()].find((s) => s.id === opts.callerSessionId) : undefined;
     // The caller's harness comes from its own session, not from the result filter.
-    const callerSession = opts.callerSessionId
-      ? [...sessions.values()].find((s) => s.id === opts.callerSessionId)
-      : undefined;
+    let callerSession = findCaller();
+    if (opts.callerSessionId && !callerSession && sessionsCached) {
+      ({ map: sessions } = await this.sessionMap(true));
+      sessionsCached = false;
+      callerSession = findCaller();
+    }
 
     // CAsT conversational rewriting: resolve topology references, strip filler, generate multi-query variants
     const rewritten = rewriteConversationalQuery(rawQuery, opts.callerSessionId, this.topology, callerSession?.harness);
@@ -254,6 +278,16 @@ export class SearchService {
     // (ms), then full-parse ONLY top sessions for expansion/packaging.
     // Stored docs may be stale — hits missing from truth are dropped.
     const now = new Date().toISOString();
+    // A hit from a session the cached map hasn't seen (created since): refresh once.
+    if (
+      sessionsCached &&
+      hits.some((h) => {
+        const p = parseTurnId(h.turnId);
+        return p !== null && !sessions.has(`${p.harness}:${p.sessionId}`);
+      })
+    ) {
+      ({ map: sessions } = await this.sessionMap(true));
+    }
     const storedById = new Map(this.index.getTurnsByIds(hits.map((h) => h.turnId)).map((t) => [t.id, t]));
     const ranked: { hit: (typeof hits)[number]; turn: Turn; session: Session; score: number }[] = [];
     for (const hit of hits) {

@@ -12,7 +12,8 @@ import { homedir } from "node:os";
 import type { Harness, Session, Turn, TurnRole } from "../core/models.js";
 import { turnId as makeTurnId } from "../core/id.js";
 import type { ContextAdapter, FileCursor } from "./types.js";
-import { truncate, extractFileRefs, claudeContentToText, claudeToolNames } from "./text.js";
+import { truncate, extractFileRefs, claudeContentToText, claudeToolNames, TURN_CACHE_SESSIONS, TURN_CACHE_CHARS, turnChars } from "./text.js";
+import { LruCache } from "../core/lru.js";
 import { repoRoot } from "./repo.js";
 
 const HARNESS: Harness = "claude-code";
@@ -47,7 +48,13 @@ export class ClaudeAdapter implements ContextAdapter {
   /** Session metadata cache: path -> {mtimeMs, size, session}. Peek-once. */
   private sessionCache = new Map<string, { mtimeMs: number; size: number; session: Session }>();
   /** Parsed turns cache: path -> {mtimeMs, size, turns}. Avoids re-parsing multi-MB JSONL on every query. */
-  private turnsCache = new Map<string, { mtimeMs: number; size: number; turns: Turn[] }>();
+  private turnsCache = new LruCache<string, { mtimeMs: number; size: number; turns: Turn[] }>(
+    TURN_CACHE_SESSIONS,
+    TURN_CACHE_CHARS,
+    (e) => turnChars(e.turns),
+  );
+  /** sessionId -> file, filled by listSessions so lookups skip the slug-dir scan. */
+  private pathById = new Map<string, { path: string; slug: string }>();
 
   constructor(baseDir = defaultBaseDir()) {
     this.baseDir = baseDir;
@@ -59,6 +66,15 @@ export class ClaudeAdapter implements ContextAdapter {
 
   /** Locate session file by scanning slug dirs (MVP: O(n) dirs, fine for local). */
   async findSessionFile(sessionId: string): Promise<{ path: string; slug: string } | null> {
+    const known = this.pathById.get(sessionId);
+    if (known) {
+      try {
+        await stat(known.path);
+        return known;
+      } catch {
+        this.pathById.delete(sessionId); // moved or deleted: rescan
+      }
+    }
     let slugs: string[] = [];
     try {
       slugs = await readdir(this.baseDir);
@@ -69,7 +85,9 @@ export class ClaudeAdapter implements ContextAdapter {
       const candidate = join(this.baseDir, slug, `${sessionId}.jsonl`);
       try {
         await stat(candidate);
-        return { path: candidate, slug };
+        const found = { path: candidate, slug };
+        this.pathById.set(sessionId, found);
+        return found;
       } catch {
         // not here
       }
@@ -99,6 +117,7 @@ export class ClaudeAdapter implements ContextAdapter {
         try {
           const meta = await this.cachedSessionMeta(path, sessionId, slug);
           sessions.push(meta);
+          this.pathById.set(sessionId, { path, slug });
         } catch {
           // unreadable file — skip, report via health later
         }

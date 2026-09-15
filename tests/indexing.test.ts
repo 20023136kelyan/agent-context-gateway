@@ -100,6 +100,26 @@ for (const backend of backends) {
         second.close();
       }
     });
+
+    it("defers writes until commit(); docCount() agrees with stats", async () => {
+      const index = backend.create(join(root, `index-${backend.name}-3`));
+      try {
+        const turn = {
+          id: "claude-code:deferred-1:t1", sessionId: "deferred-1", harness: "claude-code" as const,
+          timestamp: "2026-09-10T00:00:00Z", role: "user" as const, content: "deferredword appears once",
+          raw: {}, seq: 0, projectId: "p", workspace: "/w", repo: null,
+        };
+        index.indexTurns([turn], "/tmp/deferred.jsonl", { commit: false });
+        // Tantivy readers see commits only (SQLite's own connection sees its open transaction).
+        if (backend.name === "tantivy") expect(index.search("deferredword")).toHaveLength(0);
+        index.commit();
+        expect(index.search("deferredword")).toHaveLength(1);
+        expect(index.docCount()).toBe(1);
+        expect(index.stats().docCount).toBe(1);
+      } finally {
+        index.close();
+      }
+    });
   });
 }
 

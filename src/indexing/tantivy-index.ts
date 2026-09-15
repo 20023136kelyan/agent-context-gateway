@@ -9,6 +9,8 @@
  * - No native upsert: indexTurns deletes by exact `id` term (raw tokenizer)
  *   then re-adds. `id`/`harness`/`projectId`/`sessionId` use the `raw`
  *   tokenizer so term filters and deletes match exactly.
+ * - Commits are expensive (segment flush + reload): a sync pass writes every
+ *   session with `{ commit: false }` and commits once at the end.
  * - Single writer per index dir per process (Tantivy directory lock):
  *   share ONE TantivyIndex/SearchService instance across CLI/HTTP/MCP.
  *   Concurrent opens of the same dir fail with LockBusy.
@@ -17,7 +19,7 @@ import { mkdirSync, existsSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import type { Turn } from "../core/models.js";
-import type { IndexStats, SearchIndex, IndexSearchHit } from "./types.js";
+import type { IndexStats, SearchIndex, IndexSearchHit, IndexWriteOptions } from "./types.js";
 
 const require = createRequire(import.meta.url);
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -44,6 +46,13 @@ export function buildSchema() {
     .build();
 }
 
+let sharedSchema: ReturnType<typeof buildSchema> | null = null;
+
+/** The schema is immutable: build it once instead of per query. */
+function schema(): ReturnType<typeof buildSchema> {
+  return (sharedSchema ??= buildSchema());
+}
+
 function isEmptyDir(dir: string): boolean {
   try {
     return readdirSync(dir).length === 0;
@@ -58,6 +67,24 @@ function uniqueInBatch(list: Turn[]): Turn[] {
   return list.filter((t) => (seen.has(t.id) ? false : (seen.add(t.id), true)));
 }
 
+function docToTurn(doc: { getFirst(field: string): unknown }): Turn {
+  const num = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0));
+  const str = (v: unknown) => (typeof v === "string" ? v : String(v ?? ""));
+  const off = num(doc.getFirst("byteOffset"));
+  return {
+    id: str(doc.getFirst("id")),
+    sessionId: str(doc.getFirst("sessionId")),
+    harness: str(doc.getFirst("harness")) as Turn["harness"],
+    timestamp: new Date(num(doc.getFirst("timestampMs")) || 0).toISOString(),
+    role: str(doc.getFirst("role")) as Turn["role"],
+    content: str(doc.getFirst("content")),
+    raw: {},
+    fileRefs: JSON.parse(str(doc.getFirst("fileRefs")) || "[]"),
+    seq: 0,
+    byteOffset: off >= 0 ? off : undefined,
+  };
+}
+
 export class TantivyIndex implements SearchIndex {
   private index: TantivyIndexHandle;
   /**
@@ -67,19 +94,21 @@ export class TantivyIndex implements SearchIndex {
    * brief. Throws LockBusy with a clear message when another writer runs.
    */
   private writer: InstanceType<typeof tantivy.IndexWriter> | null = null;
+  /** Per-harness doc counts: loaded from gateway-meta.json on first write, saved on commit. */
+  private counts: Record<string, number> | null = null;
+  private uncommitted = false;
   readonly dir: string;
 
   constructor(dir: string) {
     this.dir = dir;
     mkdirSync(dir, { recursive: true });
-    const schema = buildSchema();
     if (isEmptyDir(dir)) {
-      this.index = new Index(schema, dir);
+      this.index = new Index(schema(), dir);
     } else {
       try {
         this.index = Index.open(dir);
       } catch {
-        this.index = new Index(schema, dir);
+        this.index = new Index(schema(), dir);
       }
     }
   }
@@ -97,37 +126,40 @@ export class TantivyIndex implements SearchIndex {
     return this.writer;
   }
 
-  indexTurns(turns: Turn[], sourcePath: string): void {
-    // Baseline for O(1) per-harness counts: ids present BEFORE this batch.
-    // (Upsert replaces, so delta = batch size minus baseline.)
-    const baseline = new Map<string, number>();
-    try {
-      const schema = buildSchema();
-      const searcher = this.index.searcher();
-      const bySession = new Map<string, Turn[]>();
-      for (const t of turns) {
-        const list = bySession.get(t.sessionId) ?? [];
-        list.push(t);
-        bySession.set(t.sessionId, list);
-      }
-      for (const [sid, list] of bySession) {
-        const uniq = uniqueInBatch(list);
+  private loadCounts(): Record<string, number> {
+    return (this.counts ??= { ...(this.readMeta().counts ?? {}) });
+  }
+
+  indexTurns(turns: Turn[], sourcePath: string, opts: IndexWriteOptions = {}): void {
+    const writer = this.ensureWriter();
+    // O(1) per-harness counts: ids already committed are replaced (upsert),
+    // so only the rest of the batch adds to its harness count.
+    const counts = this.loadCounts();
+    const searcher = this.index.searcher();
+    const bySession = new Map<string, Turn[]>();
+    for (const t of turns) {
+      const list = bySession.get(t.sessionId) ?? [];
+      list.push(t);
+      bySession.set(t.sessionId, list);
+    }
+    for (const list of bySession.values()) {
+      const uniq = uniqueInBatch(list);
+      let present = 0;
+      try {
         // Chunked: giant sessions exceed Tantivy's boolean clause limit.
-        let present = 0;
         for (let i = 0; i < uniq.length; i += 500) {
           const chunk = uniq.slice(i, i + 500);
-          const q = Query.termSetQuery(schema, "id", chunk.map((t) => t.id));
-          present += searcher.search(q, chunk.length).hits.length;
+          present += searcher.search(Query.termSetQuery(schema(), "id", chunk.map((t) => t.id)), chunk.length, false).hits.length;
         }
-        baseline.set(sid, present);
+      } catch {
+        // counts best-effort; docCount stays exact
       }
-    } catch {
-      // counts best-effort; docCount stays exact
+      const h = list[0].harness;
+      counts[h] = (counts[h] ?? 0) + (uniq.length - present);
     }
     for (const t of turns) {
       const extra = t as Turn & { projectId?: string; workspace?: string; repo?: string | null };
       // Upsert via delete-then-add on exact id term.
-      const writer = this.ensureWriter();
       writer.deleteDocumentsByTerm("id", t.id);
       const doc = new Document();
       doc.addText("id", t.id);
@@ -142,50 +174,38 @@ export class TantivyIndex implements SearchIndex {
       doc.addText("sourcePath", sourcePath);
       doc.addInteger("timestampMs", Date.parse(t.timestamp) || 0);
       doc.addInteger("byteOffset", t.byteOffset ?? -1);
-      this.ensureWriter().addDocument(doc);
+      writer.addDocument(doc);
     }
+    this.uncommitted = true;
+    if (opts.commit !== false) this.commit();
+  }
+
+  commit(): void {
+    if (!this.uncommitted) return;
     this.ensureWriter().commit();
     this.index.reload();
-    // Maintain O(1) per-harness counts from the pre-batch baseline.
-    try {
-      const counts = this.readCounts();
-      const bySession = new Map<string, Turn[]>();
-      for (const t of turns) {
-        const list = bySession.get(t.sessionId) ?? [];
-        list.push(t);
-        bySession.set(t.sessionId, list);
-      }
-      for (const [sid, list] of bySession) {
-        const uniq = uniqueInBatch(list);
-        const h = list[0].harness;
-        counts[h] = (counts[h] ?? 0) + (uniq.length - (baseline.get(sid) ?? 0));
-      }
-      this.writeMeta({ counts });
-    } catch {
-      // counts best-effort; docCount stays exact
-    }
+    this.uncommitted = false;
+    if (this.counts) this.writeMeta({ counts: this.counts });
   }
 
   removeSession(sessionId: string): void {
-    const schema = buildSchema();
     // Decrement counts from stored docs before deleting (session-scoped scan).
     try {
       this.index.reload();
       const searcher = this.index.searcher();
-      const res = searcher.search(Query.termQuery(schema, "sessionId", sessionId), 100000);
-      const counts = this.readCounts();
+      const res = searcher.search(Query.termQuery(schema(), "sessionId", sessionId), 100000, false);
+      const counts = this.loadCounts();
       for (const h of res.hits) {
         const hw = searcher.doc(h.docAddress).getFirst("harness");
         const name = typeof hw === "string" ? hw : "unknown";
         counts[name] = Math.max(0, (counts[name] ?? 1) - 1);
       }
-      this.writeMeta({ counts });
     } catch {
       // counts best-effort; docCount stays exact
     }
-    this.ensureWriter().deleteDocumentsByQuery(Query.termQuery(schema, "sessionId", sessionId));
-    this.ensureWriter().commit();
-    this.index.reload();
+    this.ensureWriter().deleteDocumentsByQuery(Query.termQuery(schema(), "sessionId", sessionId));
+    this.uncommitted = true;
+    this.commit();
   }
 
   search(
@@ -193,21 +213,20 @@ export class TantivyIndex implements SearchIndex {
     opts?: { harness?: string; projectId?: string; repo?: string; sessionId?: string; limit?: number },
   ): IndexSearchHit[] {
     if (!query.trim()) return [];
-    const schema = buildSchema();
     const clauses: object[] = [];
     // Lenient parse: unknown operators become errors list instead of throwing.
     const [textQuery] = this.index.parseQueryLenient(query, ["content"]);
     clauses.push({ occur: Occur.Must, query: textQuery });
-    if (opts?.harness) clauses.push({ occur: Occur.Must, query: Query.termQuery(schema, "harness", opts.harness) });
+    if (opts?.harness) clauses.push({ occur: Occur.Must, query: Query.termQuery(schema(), "harness", opts.harness) });
     if (opts?.projectId)
-      clauses.push({ occur: Occur.Must, query: Query.termQuery(schema, "projectId", opts.projectId) });
-    if (opts?.repo) clauses.push({ occur: Occur.Must, query: Query.termQuery(schema, "repo", opts.repo) });
+      clauses.push({ occur: Occur.Must, query: Query.termQuery(schema(), "projectId", opts.projectId) });
+    if (opts?.repo) clauses.push({ occur: Occur.Must, query: Query.termQuery(schema(), "repo", opts.repo) });
     if (opts?.sessionId)
-      clauses.push({ occur: Occur.Must, query: Query.termQuery(schema, "sessionId", opts.sessionId) });
+      clauses.push({ occur: Occur.Must, query: Query.termQuery(schema(), "sessionId", opts.sessionId) });
     const combined = clauses.length === 1 ? textQuery : Query.booleanQuery(clauses);
     this.index.reload();
     const searcher = this.index.searcher();
-    const res = searcher.search(combined, opts?.limit ?? 50);
+    const res = searcher.search(combined, opts?.limit ?? 50, false);
     const hits: IndexSearchHit[] = [];
     for (const h of res.hits) {
       const doc = searcher.doc(h.docAddress);
@@ -217,47 +236,36 @@ export class TantivyIndex implements SearchIndex {
     return hits;
   }
 
-  /** Fetch stored docs for packaging. */
+  /** Fetch stored docs for packaging, in input order (one id-set query per 500 ids). */
   getTurnsByIds(ids: string[]): Turn[] {
     if (ids.length === 0) return [];
-    const schema = buildSchema();
     this.index.reload();
     const searcher = this.index.searcher();
-    const out: Turn[] = [];
-    for (const id of ids) {
-      const q = Query.termQuery(schema, "id", id);
-      const res = searcher.search(q, 1);
-      if (res.hits.length === 0) continue;
-      const doc = searcher.doc(res.hits[0].docAddress);
-      const num = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0));
-      const str = (v: unknown) => (typeof v === "string" ? v : String(v ?? ""));
-      const off = num(doc.getFirst("byteOffset"));
-      out.push({
-        id: str(doc.getFirst("id")),
-        sessionId: str(doc.getFirst("sessionId")),
-        harness: str(doc.getFirst("harness")) as Turn["harness"],
-        timestamp: new Date(num(doc.getFirst("timestampMs")) || 0).toISOString(),
-        role: str(doc.getFirst("role")) as Turn["role"],
-        content: str(doc.getFirst("content")),
-        raw: {},
-        fileRefs: JSON.parse(str(doc.getFirst("fileRefs")) || "[]"),
-        seq: 0,
-        byteOffset: off >= 0 ? off : undefined,
-      });
+    const byId = new Map<string, Turn>();
+    const unique = [...new Set(ids)];
+    for (let i = 0; i < unique.length; i += 500) {
+      const chunk = unique.slice(i, i + 500);
+      const res = searcher.search(Query.termSetQuery(schema(), "id", chunk), chunk.length, false);
+      for (const h of res.hits) {
+        const turn = docToTurn(searcher.doc(h.docAddress));
+        byId.set(turn.id, turn);
+      }
     }
-    return out;
+    return ids.flatMap((id) => {
+      const t = byId.get(id);
+      return t ? [t] : [];
+    });
   }
 
   existingIds(ids: string[]): Set<string> {
     const found = new Set<string>();
     if (ids.length === 0) return found;
-    const schema = buildSchema();
     this.index.reload();
     const searcher = this.index.searcher();
     // Chunked: giant sessions exceed Tantivy's boolean clause limit.
     for (let i = 0; i < ids.length; i += 500) {
       const chunk = ids.slice(i, i + 500);
-      const res = searcher.search(Query.termSetQuery(schema, "id", chunk), chunk.length, false);
+      const res = searcher.search(Query.termSetQuery(schema(), "id", chunk), chunk.length, false);
       for (const h of res.hits) {
         const id = searcher.doc(h.docAddress).getFirst("id");
         if (typeof id === "string") found.add(id);
@@ -266,14 +274,17 @@ export class TantivyIndex implements SearchIndex {
     return found;
   }
 
-  stats(): IndexStats {
+  docCount(): number {
     this.index.reload();
-    const searcher = this.index.searcher();
-    const all = searcher.search(Query.allQuery(), 1_000_000);
+    return this.index.searcher().numDocs;
+  }
+
+  stats(): IndexStats {
+    const meta = this.readMeta();
     return {
-      docCount: all.count ?? all.hits.length,
-      lastSync: this.readMeta().lastSync,
-      perHarness: this.readMeta().counts ?? {},
+      docCount: this.docCount(),
+      lastSync: meta.lastSync,
+      perHarness: this.counts ?? meta.counts ?? {},
     };
   }
 
@@ -286,10 +297,6 @@ export class TantivyIndex implements SearchIndex {
     } catch {
       return {};
     }
-  }
-
-  private readCounts(): Record<string, number> {
-    return this.readMeta().counts ?? {};
   }
 
   private writeMeta(patch: { lastSync?: string; counts?: Record<string, number> }): void {
@@ -306,6 +313,7 @@ export class TantivyIndex implements SearchIndex {
 
   close(): void {
     try {
+      this.commit();
       this.writer?.waitMergingThreads();
     } catch {
       // best-effort release of the directory lock

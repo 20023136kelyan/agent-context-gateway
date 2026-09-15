@@ -7,7 +7,7 @@ import { mkdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { createRequire } from "node:module";
 import type { Turn } from "../core/models.js";
-import type { IndexStats, SearchIndex, IndexSearchHit, IndexFilter } from "./types.js";
+import type { IndexStats, SearchIndex, IndexSearchHit, IndexFilter, IndexWriteOptions } from "./types.js";
 import { STOP } from "../search/query.js";
 
 // node:sqlite is experimental: Vite/Vitest strips static `node:` imports
@@ -32,6 +32,7 @@ export function sanitizeFtsQuery(q: string): string {
 
 export class SqliteIndex implements SearchIndex {
   private db: InstanceType<DatabaseSyncType>;
+  private inTransaction = false;
   readonly dir: string;
 
   constructor(dir: string) {
@@ -77,7 +78,34 @@ export class SqliteIndex implements SearchIndex {
     }
   }
 
-  indexTurns(turns: Turn[], sourcePath: string): void {
+  indexTurns(turns: Turn[], sourcePath: string, opts: IndexWriteOptions = {}): void {
+    // One transaction per batch (or per sync pass with commit:false): autocommit
+    // per row would fsync every insert.
+    if (!this.inTransaction) {
+      this.db.exec("BEGIN");
+      this.inTransaction = true;
+    }
+    try {
+      this.insertTurns(turns, sourcePath);
+    } catch (e) {
+      this.db.exec("ROLLBACK");
+      this.inTransaction = false;
+      throw e;
+    }
+    if (opts.commit !== false) this.commit();
+  }
+
+  commit(): void {
+    if (!this.inTransaction) return;
+    this.db.exec("COMMIT");
+    this.inTransaction = false;
+  }
+
+  docCount(): number {
+    return (this.db.prepare("SELECT COUNT(*) as c FROM docs").get() as { c: number }).c;
+  }
+
+  private insertTurns(turns: Turn[], sourcePath: string): void {
     const stmt = this.db.prepare(`
       INSERT INTO docs(id,harness,sessionId,projectId,repo,workspace,timestampMs,role,content,fileRefs,sourcePath,byteOffset)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
@@ -186,7 +214,7 @@ export class SqliteIndex implements SearchIndex {
   }
 
   stats(): IndexStats {
-    const total = (this.db.prepare("SELECT COUNT(*) as c FROM docs").get() as { c: number }).c;
+    const total = this.docCount();
     const per = this.db.prepare("SELECT harness, COUNT(*) as c FROM docs GROUP BY harness").all() as {
       harness: string;
       c: number;
@@ -212,6 +240,7 @@ export class SqliteIndex implements SearchIndex {
   }
 
   close(): void {
+    this.commit();
     this.db.close();
   }
 

@@ -34,9 +34,9 @@ function adapterFor(app: GatewayApp, harness: string) {
 }
 
 export async function ensureSynced(app: GatewayApp) {
-  if (app.index.stats().docCount > 0) return;
+  if (app.index.docCount() > 0) return;
   await app.indexLock.run(async () => {
-    if (app.index.stats().docCount === 0) await syncAll(app.adapters, app.index, app.cursors);
+    if (app.index.docCount() === 0) await syncAll(app.adapters, app.index, app.cursors);
   });
 }
 
@@ -251,6 +251,7 @@ export async function syncSession(
     app.index.markSynced();
     return known ? turns.filter((t) => !known.has(t.id)) : [];
   });
+  app.search.invalidateSessions();
   await notifyNewTurns(app, fresh);
   let vectors: unknown = null;
   if (opts.embed) {
@@ -408,6 +409,7 @@ export async function syncNow(app: GatewayApp, rebuild = false, opts: { embed?: 
     // Everything is "new" to a rebuilt index: that's history, not news — no notifications.
     return { result: out.result, fresh: [] as Turn[] };
   });
+  if (result.sessionsIndexed > 0) app.search.invalidateSessions();
   await notifyNewTurns(app, fresh);
   // Semantic backfill is opt-in and resumable; lexical sync never blocks on it.
   let vectors: unknown = null;

@@ -12,12 +12,14 @@
  * Everything else (event_msg, turn_context, world_state, usage) is skipped.
  */
 import { readFile, stat, readdir, open } from "node:fs/promises";
+import type { Dirent } from "node:fs";
+import { LruCache } from "../core/lru.js";
 import { join, basename } from "node:path";
 import { homedir } from "node:os";
 import type { Harness, Session, Turn, TurnRole } from "../core/models.js";
 import { turnId as makeTurnId } from "../core/id.js";
 import type { ContextAdapter, FileCursor } from "./types.js";
-import { truncate, extractFileRefs, codexContentToText } from "./text.js";
+import { truncate, extractFileRefs, codexContentToText, TURN_CACHE_SESSIONS, TURN_CACHE_CHARS, turnChars } from "./text.js";
 import { repoRoot } from "./repo.js";
 
 const HARNESS: Harness = "codex";
@@ -45,28 +47,28 @@ interface CodexLine {
   payload?: Record<string, unknown>;
 }
 
+/** Recursive *.jsonl listing; dirent types avoid a stat per entry (symlinks still get one). */
 async function walkJsonl(dir: string, out: string[]): Promise<void> {
-  let entries: string[] = [];
+  let entries: Dirent[];
   try {
-    entries = await readdir(dir, { withFileTypes: true } as never) as unknown as string[];
+    entries = await readdir(dir, { withFileTypes: true });
   } catch {
     return;
   }
-  // readdir withFileTypes overload typing workaround: re-read plain
-  let names: string[];
-  try {
-    names = await readdir(dir);
-  } catch {
-    return;
-  }
-  for (const name of names) {
-    const full = join(dir, name);
-    try {
-      const st = await stat(full);
-      if (st.isDirectory()) await walkJsonl(full, out);
-      else if (name.endsWith(".jsonl")) out.push(full);
-    } catch {
-      continue;
+  for (const e of entries) {
+    const full = join(dir, e.name);
+    if (e.isDirectory()) {
+      await walkJsonl(full, out);
+    } else if (e.isSymbolicLink()) {
+      try {
+        const st = await stat(full);
+        if (st.isDirectory()) await walkJsonl(full, out);
+        else if (e.name.endsWith(".jsonl")) out.push(full);
+      } catch {
+        continue; // dangling link
+      }
+    } else if (e.name.endsWith(".jsonl")) {
+      out.push(full);
     }
   }
 }
@@ -75,7 +77,13 @@ export class CodexAdapter implements ContextAdapter {
   readonly harness: Harness = HARNESS;
   private baseDir: string;
   private sessionCache = new Map<string, { mtimeMs: number; size: number; session: Session }>();
-  private turnsCache = new Map<string, { mtimeMs: number; size: number; turns: Turn[] }>();
+  private turnsCache = new LruCache<string, { mtimeMs: number; size: number; turns: Turn[] }>(
+    TURN_CACHE_SESSIONS,
+    TURN_CACHE_CHARS,
+    (e) => turnChars(e.turns),
+  );
+  /** sessionId -> file, filled by listSessions so listTurns doesn't re-walk the tree. */
+  private pathById = new Map<string, string>();
 
   constructor(baseDir = defaultBaseDir()) {
     this.baseDir = baseDir;
@@ -92,10 +100,23 @@ export class CodexAdapter implements ContextAdapter {
   }
 
   async findSessionFile(sessionId: string): Promise<string | null> {
+    const known = this.pathById.get(sessionId);
+    if (known) {
+      try {
+        await stat(known);
+        return known;
+      } catch {
+        this.pathById.delete(sessionId); // moved or deleted: rescan
+      }
+    }
     const files = await this.listSessionFiles();
+    const remember = (f: string) => {
+      this.pathById.set(sessionId, f);
+      return f;
+    };
     // Fast path: filename contains session id
     for (const f of files) {
-      if (basename(f).includes(sessionId)) return f;
+      if (basename(f).includes(sessionId)) return remember(f);
     }
     // Slow path: check session_meta
     for (const f of files) {
@@ -103,7 +124,7 @@ export class CodexAdapter implements ContextAdapter {
         const first = await this.readFirstLine(f);
         const o = JSON.parse(first) as CodexLine;
         const p = (o.payload ?? {}) as SessionMetaPayload;
-        if (p.session_id === sessionId || p.id === sessionId) return f;
+        if (p.session_id === sessionId || p.id === sessionId) return remember(f);
       } catch {
         continue;
       }
@@ -120,12 +141,14 @@ export class CodexAdapter implements ContextAdapter {
         const cached = this.sessionCache.get(path);
         if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) {
           sessions.push(cached.session);
+          this.pathById.set(cached.session.id, path);
           continue;
         }
         const s = await this.peekSessionMeta(path);
         if (s) {
           this.sessionCache.set(path, { mtimeMs: st.mtimeMs, size: st.size, session: s });
           sessions.push(s);
+          this.pathById.set(s.id, path);
         }
       } catch {
         continue;

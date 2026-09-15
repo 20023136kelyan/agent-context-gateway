@@ -26,8 +26,17 @@ export interface IndexFilter {
   limit?: number;
 }
 
+export interface IndexWriteOptions {
+  /** false = leave the batch uncommitted; call commit() once after many batches (one sync pass). */
+  commit?: boolean;
+}
+
 export interface SearchIndex {
-  indexTurns(turns: Turn[], sourcePath: string): void;
+  indexTurns(turns: Turn[], sourcePath: string, opts?: IndexWriteOptions): void;
+  /** Make deferred writes durable and visible to searches. No-op when nothing is pending. */
+  commit(): void;
+  /** Live document count (cheap; no stats scan). */
+  docCount(): number;
   removeSession(sessionId: string): void;
   search(query: string, opts?: IndexFilter): IndexSearchHit[];
   /** Stored doc fetch for ranking/packaging (may be stale — verify against adapters). */

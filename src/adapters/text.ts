@@ -1,6 +1,14 @@
 /** Shared text helpers for adapters (MVP). */
 const MAX_CONTENT = 8000;
 
+/** Bounds for each adapter's parsed-turn cache (long-running serve): ~100MB of UTF-16 content. */
+export const TURN_CACHE_SESSIONS = 128;
+export const TURN_CACHE_CHARS = 50_000_000;
+
+export function turnChars(turns: { content: string }[]): number {
+  return turns.reduce((n, t) => n + t.content.length, 0);
+}
+
 export function truncate(s: string, max = MAX_CONTENT): string {
   if (s.length <= max) return s;
   return s.slice(0, max) + "…[truncated]";

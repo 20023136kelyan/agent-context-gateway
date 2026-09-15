@@ -103,7 +103,7 @@ export async function syncAllDetailed(
           continue;
         }
         const known = opts.detectNew ? index.existingIds(turns.map((t) => t.id)) : null;
-        index.indexTurns(enrichTurns(turns, s), s.sourcePath);
+        index.indexTurns(enrichTurns(turns, s), s.sourcePath, { commit: false });
         indexed.push({ adapter, session: s, turns, newTurns: known ? turns.filter((t) => !known.has(t.id)) : undefined });
         sessionsIndexed += 1;
         turnsIndexed += turns.length;
@@ -112,10 +112,12 @@ export async function syncAllDetailed(
       if (!failed) cursors.set(sourcePath, stamp);
     }
   }
+  // One commit per pass, before cursors persist: a failed commit leaves them unsaved, so the next sync retries.
+  index.commit();
   cursors.save();
   index.markSynced();
   return {
-    result: { sessionsSeen, sessionsIndexed, sessionsSkipped, sessionsFailed, turnsIndexed, docCount: index.stats().docCount },
+    result: { sessionsSeen, sessionsIndexed, sessionsSkipped, sessionsFailed, turnsIndexed, docCount: index.docCount() },
     indexed,
   };
 }
