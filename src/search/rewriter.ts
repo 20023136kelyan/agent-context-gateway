@@ -9,11 +9,15 @@
 import type { TopologyStore, SessionRef } from "../topology/store.js";
 import type { Harness } from "../core/models.js";
 
+export type TopologyRelation = "parent" | "children" | "siblings";
+
 export interface RewrittenQuery {
   original: string;
   primaryQuery: string;
   variants: string[];
   resolvedTarget?: SessionRef;
+  /** Which reference ("my parent" / "my child" / "my sibling") produced resolvedTarget. */
+  resolvedRelation?: TopologyRelation;
   expandedTerms: string[];
 }
 
@@ -58,7 +62,7 @@ export function resolveTopologyReferences(
   callerSessionId?: string,
   topology?: TopologyStore | null,
   callerHarness?: Harness,
-): { cleanedQuery: string; target?: SessionRef } {
+): { cleanedQuery: string; target?: SessionRef; relation?: TopologyRelation } {
   if (!callerSessionId || !topology) {
     return { cleanedQuery: query };
   }
@@ -70,29 +74,33 @@ export function resolveTopologyReferences(
 
   const lower = query.toLowerCase();
   let target: SessionRef | undefined;
+  let relation: TopologyRelation | undefined;
   let cleaned = query;
 
   if (/\b(my\s+parent|the\s+parent(\s+agent)?)\b/i.test(lower)) {
     const parents = topology.parentsOf(callerRef);
     if (parents.length > 0) {
       target = parents[0];
+      relation = "parent";
       cleaned = cleaned.replace(/\b(my\s+parent|the\s+parent(\s+agent)?)\b/gi, "").trim();
     }
   } else if (/\b(my\s+children|any\s+child(\s+agent)?|the\s+child(\s+agent)?)\b/i.test(lower)) {
     const children = topology.childrenOf(callerRef);
     if (children.length > 0) {
       target = children[0];
+      relation = "children";
       cleaned = cleaned.replace(/\b(my\s+children|any\s+child(\s+agent)?|the\s+child(\s+agent)?)\b/gi, "").trim();
     }
   } else if (/\b(my\s+sibling|the\s+sibling(\s+agent)?)\b/i.test(lower)) {
     const siblings = topology.siblingsOf(callerRef);
     if (siblings.length > 0) {
       target = siblings[0];
+      relation = "siblings";
       cleaned = cleaned.replace(/\b(my\s+sibling|the\s+sibling(\s+agent)?)\b/gi, "").trim();
     }
   }
 
-  return { cleanedQuery: cleaned, target };
+  return { cleanedQuery: cleaned, target, relation };
 }
 
 /**
@@ -142,7 +150,7 @@ export function rewriteConversationalQuery(
   callerHarness?: Harness,
 ): RewrittenQuery {
   // 1. Resolve topology references
-  const { cleanedQuery: topoCleaned, target } = resolveTopologyReferences(
+  const { cleanedQuery: topoCleaned, target, relation } = resolveTopologyReferences(
     rawQuery,
     callerSessionId,
     topology,
@@ -160,6 +168,7 @@ export function rewriteConversationalQuery(
     primaryQuery: primary,
     variants,
     resolvedTarget: target,
+    resolvedRelation: relation,
     expandedTerms,
   };
 }

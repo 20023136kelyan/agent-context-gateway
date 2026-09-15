@@ -36,6 +36,8 @@ export interface SearchOptions {
   callerPrincipal?: string;
   /** Neural Cross-Encoder reranker over top candidates (Phase B.2) */
   rerank?: boolean;
+  /** Use vector candidates when a store is attached (default true); false = lexical only. */
+  semantic?: boolean;
   /** Point-in-time reconstruction (ISO timestamp): ignores invalidations after this time (Phase C.1) */
   asOf?: string;
   /** Include superseded historical knowledge without demotion */
@@ -73,6 +75,8 @@ export interface SearchResponse {
 }
 
 const TOPO_SCOPES = new Set(["parent", "children", "siblings", "auto"]);
+/** Candidates the cross-encoder scores when rerank is on. */
+const RERANK_POOL = 15;
 
 export class SearchService {
   private vectors: VectorStore | null = null;
@@ -80,7 +84,7 @@ export class SearchService {
   private feedback: FeedbackStore | null = null;
   private temporal: TemporalStore | null = null;
   private acl: AclStore | null = null;
-  private reranker: CrossEncoderReranker = getSharedReranker();
+  private reranker: Pick<CrossEncoderReranker, "rerank"> = getSharedReranker();
 
   constructor(
     private adapters: ContextAdapter[],
@@ -113,6 +117,11 @@ export class SearchService {
     this.index = index;
   }
 
+  /** Replace the cross-encoder (tests; alternative rerankers). */
+  setReranker(reranker: Pick<CrossEncoderReranker, "rerank">): void {
+    this.reranker = reranker;
+  }
+
   private adapterFor(harness: string): ContextAdapter | undefined {
     return this.adapters.find((a) => a.harness === harness);
   }
@@ -128,23 +137,27 @@ export class SearchService {
     const half = Math.floor(maxTurns / 2);
     const nowMs = Date.now();
 
-    // CAsT conversational rewriting: resolve topology references, strip filler, generate multi-query variants
-    const rewritten = rewriteConversationalQuery(rawQuery, opts.callerSessionId, this.topology, opts.harness);
-    const nq = normalizeQuery(rewritten.primaryQuery);
-    const limit = Math.max(50, maxResults * 10);
-
     // Session map for project/agent/sourcePath (adapter-cached, ~ms warm).
     const sessions = new Map<string, Session>();
     for (const a of this.adapters) {
       for (const s of await a.listSessions().catch(() => [])) sessions.set(`${a.harness}:${s.id}`, s);
     }
+    // The caller's harness comes from its own session, not from the result filter.
+    const callerSession = opts.callerSessionId
+      ? [...sessions.values()].find((s) => s.id === opts.callerSessionId)
+      : undefined;
+
+    // CAsT conversational rewriting: resolve topology references, strip filler, generate multi-query variants
+    const rewritten = rewriteConversationalQuery(rawQuery, opts.callerSessionId, this.topology, callerSession?.harness);
+    const nq = normalizeQuery(rewritten.primaryQuery);
+    const limit = Math.max(50, maxResults * 10);
 
     // Topological scope resolution (explicit links; auto routes from wording).
     let scopeSessions: { harness: string; sessionId: string }[] | null = null;
     let effectiveScope = scope;
     if (rewritten.resolvedTarget) {
       scopeSessions = [rewritten.resolvedTarget];
-      effectiveScope = "parent";
+      effectiveScope = rewritten.resolvedRelation ?? "parent";
     } else if (TOPO_SCOPES.has(scope)) {
       let routed: string | null = scope;
       if (scope === "auto") {
@@ -156,7 +169,7 @@ export class SearchService {
         if (!opts.callerSessionId) {
           throw new Error(`bad_request: scope="${routed}" needs callerSessionId (--as-session)`);
         }
-        const caller = [...sessions.values()].find((s) => s.id === opts.callerSessionId);
+        const caller = callerSession;
         if (!caller) throw new Error(`not_found: caller session "${opts.callerSessionId}"`);
         const ref = { harness: caller.harness, sessionId: caller.id };
         const topo = this.topology;
@@ -204,7 +217,7 @@ export class SearchService {
     const vecRanks = new Map<string, number>();
     const vecSim = new Map<string, number>();
     let hasVectors = false;
-    if (this.vectors && (await this.vectors.count().catch(() => 0)) > 0) {
+    if (opts.semantic !== false && this.vectors && (await this.vectors.count().catch(() => 0)) > 0) {
       try {
         const qv = await embedQuery(nq.indexQuery);
         let vhits: { turnId: string; similarity: number }[] = [];
@@ -290,19 +303,32 @@ export class SearchService {
     // Neural Cross-Encoder precision reranking over top candidates (Phase B.2)
     if (opts.rerank === true && ranked.length > 1) {
       try {
-        const topSlice = ranked.slice(0, 15);
+        const topSlice = ranked.slice(0, RERANK_POOL);
         const candidates = topSlice.map((r) => ({
           id: r.hit.turnId,
           content: r.turn.content,
           score: r.score,
         }));
-        const reranked = await this.reranker.rerank(rewritten.primaryQuery, candidates, 15);
-        const rerankMap = new Map(reranked.map((item) => [item.id, item.combinedScore]));
-        for (const r of topSlice) {
-          const s = rerankMap.get(r.hit.turnId);
-          if (s !== undefined) r.score = s;
+        const reranked = await this.reranker.rerank(rewritten.primaryQuery, candidates, RERANK_POOL);
+        const byId = new Map(topSlice.map((r) => [r.hit.turnId, r]));
+        const head = reranked.flatMap((item) => {
+          const r = byId.get(item.id);
+          if (!r) return [];
+          r.score = item.combinedScore;
+          return [r];
+        });
+        if (head.length === topSlice.length) {
+          // The tail was never reranked and its raw scores are on another
+          // scale: keep it strictly below the reranked head.
+          const tail = ranked.slice(RERANK_POOL);
+          const floor = Math.min(...head.map((r) => r.score));
+          const tailTop = tail[0]?.score ?? 0;
+          if (tailTop >= floor) {
+            const scale = tailTop > 0 ? (floor * 0.99) / tailTop : 0;
+            for (const r of tail) r.score *= scale;
+          }
+          ranked.splice(0, ranked.length, ...head, ...tail);
         }
-        ranked.sort((a, b) => b.score - a.score);
       } catch {
         // Safe degradation: keep RRF ranking
       }

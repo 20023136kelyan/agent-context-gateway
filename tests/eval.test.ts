@@ -3,7 +3,16 @@
  */
 import { describe, it, expect } from "vitest";
 import { ndcgAtK, mrrAtK, precisionAtK, evaluateCitations } from "../src/eval/metrics.js";
-import { loadGoldenQueries } from "../src/eval/runner.js";
+import { loadGoldenQueries, modeOptions } from "../src/eval/runner.js";
+
+describe("eval modes", () => {
+  it("map to distinct search pipelines (lexical really skips vectors)", () => {
+    expect(modeOptions("lexical")).toEqual({ semantic: false, rerank: false });
+    expect(modeOptions("hybrid")).toEqual({ semantic: true, rerank: false });
+    expect(modeOptions("rrf")).toEqual(modeOptions("hybrid"));
+    expect(modeOptions("rerank")).toEqual({ semantic: true, rerank: true });
+  });
+});
 
 describe("IR Metrics", () => {
   it("computes perfect NDCG@5 when all top results are relevant", () => {

@@ -9,6 +9,7 @@ import { createApp, closeApp, initVectors, type GatewayApp } from "../app.js";
 import { searchOnce, decideOnce } from "../commands.js";
 import { ndcgAtK, mrrAtK, precisionAtK, evaluateCitations } from "./metrics.js";
 import type { Harness } from "../core/models.js";
+import type { SearchOptions } from "../search/search.js";
 
 export interface GoldenQuery {
   id: string;
@@ -56,6 +57,15 @@ export interface EvalRunResult {
   };
 }
 
+export type EvalMode = "lexical" | "hybrid" | "rerank" | "rrf";
+
+/** Search options per eval mode. "rrf" is the pre-rename alias of "hybrid" (vectors + RRF fusion). */
+export function modeOptions(mode: EvalMode): Required<Pick<SearchOptions, "semantic" | "rerank">> {
+  if (mode === "lexical") return { semantic: false, rerank: false };
+  if (mode === "rerank") return { semantic: true, rerank: true };
+  return { semantic: true, rerank: false };
+}
+
 export function loadGoldenQueries(path?: string): GoldenQuery[] {
   const p = path ?? join(process.cwd(), "tests", "eval", "golden.json");
   return JSON.parse(readFileSync(p, "utf8")) as GoldenQuery[];
@@ -84,9 +94,10 @@ function aggregate(results: QueryEvalResult[], domain: string): DomainAggregate 
 export async function runEval(
   app: GatewayApp,
   queries: GoldenQuery[],
-  mode: "lexical" | "hybrid" | "rrf",
+  mode: EvalMode,
 ): Promise<EvalRunResult> {
   const queryResults: QueryEvalResult[] = [];
+  const modeOpts = modeOptions(mode);
 
   for (const [idx, q] of queries.entries()) {
     const t0 = Date.now();
@@ -94,6 +105,7 @@ export async function runEval(
     const res = await searchOnce(app, q.query, {
       harness: q.harness,
       maxResults: 5,
+      ...modeOpts,
     });
     const latencyMs = Date.now() - t0;
     process.stderr.write(`${latencyMs}ms\n`);
@@ -138,7 +150,7 @@ export async function runEval(
     let totalR = 0;
     for (const wq of whyQueries) {
       try {
-        const dec = await decideOnce(app, wq.query, { harness: wq.harness });
+        const dec = await decideOnce(app, wq.query, { harness: wq.harness, semantic: modeOpts.semantic });
         const citedSessions = dec.decisions.map((d) => d.session.sessionId);
         const evalScore = evaluateCitations(citedSessions, wq.relevantSessionIds);
         totalP += evalScore.citationPrecision;

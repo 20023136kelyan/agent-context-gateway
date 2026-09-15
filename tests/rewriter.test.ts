@@ -60,6 +60,11 @@ describe("resolveTopologyReferences", () => {
     expect(res.cleanedQuery).not.toMatch(/my sibling/i);
   });
 
+  it("reports which relation it resolved", () => {
+    expect(resolveTopologyReferences("What did my parent say?", childId, topo, "claude-code").relation).toBe("parent");
+    expect(resolveTopologyReferences("Did my sibling look?", childId, topo, "claude-code").relation).toBe("siblings");
+  });
+
   it("leaves query untouched when no topology reference is present", () => {
     const res = resolveTopologyReferences(
       "Window resizing performance in Electron",

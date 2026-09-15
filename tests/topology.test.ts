@@ -92,6 +92,18 @@ describe("topological search scopes", () => {
     for (const r of res.results) expect(r.provenance.sessionId).toBe(C2);
   });
 
+  it("resolves 'my parent' for a non-Claude caller with no harness filter", async () => {
+    const res = await searchOnce(app, "what did my parent say about workbench isolation", { callerSessionId: C1 });
+    expect(res.scope).toBe("parent");
+    expect(res.results.length).toBeGreaterThanOrEqual(1);
+    for (const r of res.results) expect(r.provenance.sessionId).toBe(P);
+  });
+
+  it("reports the relation a conversational reference resolved to", async () => {
+    const res = await searchOnce(app, "did any child agent test workbench isolation", { callerSessionId: P });
+    expect(res.scope).toBe("children");
+  });
+
   it("auto routes parent-hint queries, defaults otherwise", async () => {
     const routed = await searchOnce(app, "what did my parent decide about workbench", { scope: "auto", callerSessionId: C1 });
     expect(routed.scope).toBe("parent");

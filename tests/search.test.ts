@@ -10,6 +10,7 @@ import { CursorStore } from "../src/indexing/store.js";
 import { syncAll } from "../src/indexing/sync.js";
 import { SearchService } from "../src/search/search.js";
 import { normalizeQuery } from "../src/search/query.js";
+import type { VectorStore } from "../src/indexing/vectors.js";
 import { extractArtifacts, extractCommitShas, extractPrUrls, extractFileRefs } from "../src/adapters/text.js";
 
 let claudeDir: string;
@@ -183,6 +184,53 @@ describe("SearchService", () => {
       }
     } finally {
       index.close();
+    }
+  });
+
+  it("semantic:false never touches the vector store", async () => {
+    const { svc, index } = service();
+    const calls: string[] = [];
+    svc.attachVectors({
+      count: async () => (calls.push("count"), 1),
+      nearest: async () => (calls.push("nearest"), []),
+    } as unknown as VectorStore);
+    try {
+      const res = await svc.search("collaboration workbench", { semantic: false });
+      expect(res.results.length).toBeGreaterThanOrEqual(1);
+      expect(calls).toEqual([]);
+    } finally {
+      index.close();
+    }
+  });
+
+  it("never lets un-reranked candidates outrank the reranked head", async () => {
+    const root2 = await mkdtemp(join(tmpdir(), "acg-rerank-"));
+    const cdir = join(root2, "claude");
+    await mkdir(join(cdir, "p"), { recursive: true });
+    for (let i = 0; i < 24; i++) {
+      const id = `rrrrrrrr-0000-0000-0000-${String(i).padStart(12, "0")}`;
+      await writeFile(
+        join(cdir, "p", `${id}.jsonl`),
+        JSON.stringify({ type: "user", uuid: "u1", timestamp: "2026-09-10T10:00:00Z", sessionId: id, cwd: "/repo/p", message: { role: "user", content: `quokka ${"filler ".repeat(i)}note ${i}` } }),
+      );
+    }
+    const adapters = [new ClaudeAdapter(cdir)];
+    const idx = new TantivyIndex(join(root2, "index"));
+    await syncAll(adapters, idx, new CursorStore(join(root2, "index")));
+    const svc = new SearchService(adapters, idx);
+    try {
+      const plain = await svc.search("quokka", { maxResults: 24 });
+      expect(plain.results.length).toBeGreaterThan(15);
+      const head = new Set(plain.results.slice(0, 15).map((r) => r.provenance.turnId));
+      // A cross-encoder that rates every candidate weak: combined scores fall below the raw tail.
+      svc.setReranker({
+        rerank: async (_q, cands) => cands.map((c) => ({ id: c.id, originalScore: c.score, rerankScore: 0, combinedScore: 0.4 * c.score })),
+      });
+      const reranked = await svc.search("quokka", { maxResults: 5, rerank: true });
+      expect(reranked.results).toHaveLength(5);
+      for (const r of reranked.results) expect(head.has(r.provenance.turnId)).toBe(true);
+    } finally {
+      idx.close();
     }
   });
 
