@@ -6,10 +6,15 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
+import { promisify } from "node:util";
+import type { FastifyInstance } from "fastify";
 import { installGitHooks, handleGitCommitEvent } from "../src/git/hooks.js";
 import { createApp, closeApp, type GatewayApp } from "../src/app.js";
 import { searchOnce } from "../src/commands.js";
+import { buildHttpServer } from "../src/transports/http.js";
+
+const execFileAsync = promisify(execFile);
 
 describe("Git Hooks Installation", () => {
   let gitRepoDir: string;
@@ -88,5 +93,56 @@ describe("Git Commit Event Indexing & Search", () => {
     expect(top.provenance.turnId).toContain(realSha.slice(0, 8));
     expect(top.artifacts).toContain(`commit:${realSha.slice(0, 8)}`);
     expect(top.artifacts).toContain("useLiveSession.ts");
+  });
+});
+
+describe("installed hook delivers commits end-to-end", () => {
+  let app: GatewayApp;
+  let server: FastifyInstance;
+  let repo: string;
+  let port = 0;
+
+  beforeAll(async () => {
+    repo = await mkdtemp(join(tmpdir(), "acg-git-hook-e2e-"));
+    execFileSync("git", ["init", "-q", repo]);
+    execFileSync("git", ["-C", repo, "config", "user.email", "test@example.com"]);
+    execFileSync("git", ["-C", repo, "config", "user.name", "Test User"]);
+    // A pre-existing (husky-style) hook must survive install and keep running.
+    await writeFile(join(repo, ".git", "hooks", "post-commit"), '#!/bin/sh\ntouch "$(git rev-parse --git-dir)/pre-existing-hook-ran"\n', { mode: 0o755 });
+    const root = await mkdtemp(join(tmpdir(), "acg-git-hook-idx-"));
+    app = createApp({ indexDir: join(root, "index"), claudeDir: join(root, "empty-c"), codexDir: join(root, "empty-x"), backend: "tantivy", cursorDb: join(root, "no.vscdb") });
+    server = buildHttpServer(app);
+    await server.listen({ port: 0, host: "127.0.0.1" });
+    const addr = server.server.address();
+    port = typeof addr === "object" && addr ? addr.port : 0;
+  });
+
+  afterAll(async () => {
+    await server.close();
+    closeApp(app);
+  });
+
+  it("preserves an existing hook and reinstalls idempotently", () => {
+    const first = installGitHooks(repo);
+    expect(first.preserved).toEqual([join(repo, ".git", "hooks", "post-commit.pre-gateway")]);
+    const again = installGitHooks(repo);
+    expect(again.preserved).toEqual([]);
+    expect(existsSync(join(repo, ".git", "hooks", "post-commit.pre-gateway"))).toBe(true);
+  });
+
+  it("indexes multi-line messages with quotes and backslashes intact", async () => {
+    await writeFile(join(repo, "notes.md"), "hello");
+    execFileSync("git", ["-C", repo, "add", "."]);
+    const message = 'fix: handle "quoted" zebracorn names\n\nBody keeps a C:\\path and a second line';
+    await execFileAsync("git", ["-C", repo, "commit", "-q", "-m", message], {
+      env: { ...process.env, GATEWAY_PORT: String(port), GATEWAY_TOKEN: "" },
+    });
+    expect(existsSync(join(repo, ".git", "pre-existing-hook-ran"))).toBe(true);
+    const hits = app.index.search("zebracorn");
+    expect(hits).toHaveLength(1);
+    const [doc] = app.index.getTurnsByIds([hits[0].turnId]);
+    expect(doc.content).toContain('"quoted" zebracorn');
+    expect(doc.content).toContain("C:\\path and a second line");
+    expect(doc.fileRefs).toContain("notes.md");
   });
 });

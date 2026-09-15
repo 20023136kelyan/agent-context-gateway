@@ -3,7 +3,7 @@
  * Installs post-commit and post-merge hooks that automatically record commit SHAs,
  * branch names, commit messages, and touched files into the Context Gateway artifact graph.
  */
-import { existsSync, mkdirSync, writeFileSync, chmodSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, chmodSync, readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { turnId as makeTurnId } from "../core/id.js";
 import { extractFileRefs } from "../adapters/text.js";
@@ -18,7 +18,33 @@ export interface GitCommitEvent {
   timestamp: string;
 }
 
-export function installGitHooks(repoPath: string): { installed: string[]; error?: string } {
+/** Marks hooks we manage, so reinstalling never treats our own hook as a user hook. */
+const SENTINEL = "# context-gateway-hook";
+
+// Fields go through curl --data-urlencode: any message (newlines, quotes,
+// backslashes) arrives intact, unlike JSON assembled by shell interpolation.
+// A pre-existing hook is kept as <name>.pre-gateway and runs first.
+const HOOK_SCRIPT = `#!/bin/sh
+${SENTINEL} (installed by \`gateway git-hooks install\`)
+status=0
+if [ -x "$0.pre-gateway" ]; then
+  "$0.pre-gateway" "$@" || status=$?
+fi
+sha=$(git rev-parse HEAD 2>/dev/null) || exit $status
+branch=$(git branch --show-current 2>/dev/null)
+message=$(git log -1 --pretty=%B 2>/dev/null)
+stamp=$(git log -1 --pretty=%aI 2>/dev/null)
+files=$(git diff-tree --root --no-commit-id --name-only -r HEAD 2>/dev/null)
+repo=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -n "$GATEWAY_TOKEN" ]; then set -- -H "Authorization: Bearer $GATEWAY_TOKEN"; else set --; fi
+curl -s -o /dev/null -m 5 -X POST "http://127.0.0.1:\${GATEWAY_PORT:-3000}/hooks/git" "$@" \\
+  --data-urlencode "repo=$repo" --data-urlencode "sha=$sha" --data-urlencode "branch=$branch" \\
+  --data-urlencode "message=$message" --data-urlencode "files=$files" --data-urlencode "timestamp=$stamp" \\
+  >/dev/null 2>&1 || true
+exit $status
+`;
+
+export function installGitHooks(repoPath: string): { installed: string[]; preserved: string[] } {
   const gitDir = join(repoPath, ".git");
   if (!existsSync(gitDir)) {
     throw new Error(`not_a_git_repo: ${repoPath} (.git not found)`);
@@ -26,26 +52,19 @@ export function installGitHooks(repoPath: string): { installed: string[]; error?
   const hooksDir = join(gitDir, "hooks");
   mkdirSync(hooksDir, { recursive: true });
 
-  const scriptContent = `#!/bin/sh
-# Context Gateway git hook — records commits and modified files into artifact graph
-set -e
-SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
-BRANCH=$(git branch --show-current 2>/dev/null || echo "")
-MSG=$(git log -1 --pretty=%B 2>/dev/null || echo "")
-FILES=$(git diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null | tr '\\n' ',' | sed 's/,$//')
-
-if [ -n "$SHA" ]; then
-  curl -s -X POST "http://127.0.0.1:3000/hooks/git" \\
-    -H "Content-Type: application/json" \\
-    -d "{\\"repo\\":\\"$(pwd)\\",\\"sha\\":\\"$SHA\\",\\"branch\\":\\"$BRANCH\\",\\"message\\":\\"$MSG\\",\\"files\\":\\"$FILES\\"}" \\
-    >/dev/null 2>&1 || true
-fi
-`;
-
   const installed: string[] = [];
+  const preserved: string[] = [];
   for (const hookName of ["post-commit", "post-merge"]) {
     const hookPath = join(hooksDir, hookName);
-    writeFileSync(hookPath, scriptContent, { mode: 0o755 });
+    const backup = `${hookPath}.pre-gateway`;
+    if (existsSync(hookPath) && !readFileSync(hookPath, "utf8").includes(SENTINEL)) {
+      if (existsSync(backup)) {
+        throw new Error(`bad_request: both ${hookPath} and ${backup} exist; merge them by hand, then re-run install`);
+      }
+      renameSync(hookPath, backup);
+      preserved.push(backup);
+    }
+    writeFileSync(hookPath, HOOK_SCRIPT, { mode: 0o755 });
     try {
       chmodSync(hookPath, 0o755);
     } catch {
@@ -54,7 +73,7 @@ fi
     installed.push(hookPath);
   }
 
-  return { installed };
+  return { installed, preserved };
 }
 
 /**

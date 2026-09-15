@@ -18,6 +18,10 @@ function toStatus(e: unknown): { code: number; message: string } {
 
 export function buildHttpServer(app: GatewayApp): FastifyInstance {
   const fastify = Fastify({ logger: false });
+  // Git hooks post URL-encoded fields (see git/hooks.ts).
+  fastify.addContentTypeParser("application/x-www-form-urlencoded", { parseAs: "string" }, (_req, body, done) => {
+    done(null, Object.fromEntries(new URLSearchParams(body as string)));
+  });
 
   // P2e token auth: when GATEWAY_TOKEN is set, every route except liveness
   // needs `Authorization: Bearer <token>`. MCP/CLI-local paths are unaffected
@@ -240,7 +244,8 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
       sha: b.sha,
       branch: b.branch ?? "main",
       message: b.message ?? "",
-      files: Array.isArray(b.files) ? b.files : String(b.files ?? "").split(",").filter(Boolean),
+      // Hooks send one path per line; JSON callers may send a comma list.
+      files: Array.isArray(b.files) ? b.files : String(b.files ?? "").split(/\r?\n|,/).map((f) => f.trim()).filter(Boolean),
       timestamp: b.timestamp ?? new Date().toISOString(),
     };
     return handleGitCommitEvent(app, event);
