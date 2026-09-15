@@ -72,6 +72,8 @@ export class MlxEmbedder {
     const child = spawn(this.pythonPath, [this.scriptPath], { stdio: ["pipe", "pipe", "pipe"] });
     this.child = child;
     child.unref();
+    (child.stdin as unknown as { unref?: () => void } | null)?.unref?.();
+    this.setBusy(child, true); // a caller is awaiting startup
     child.stdin?.on("error", () => {
       // EPIPE after the worker died — the close handler reports it.
     });
@@ -84,6 +86,7 @@ export class MlxEmbedder {
         if (!req || resp.id === undefined) return;
         this.pending.delete(resp.id);
         clearTimeout(req.timer);
+        if (this.pending.size === 0) this.setBusy(child, false);
         if (resp.error) req.reject(new Error(resp.error));
         else req.resolve(resp.embeddings ?? []);
       } catch {
@@ -98,6 +101,7 @@ export class MlxEmbedder {
         if (settled) return;
         settled = true;
         clearTimeout(grace);
+        if (this.pending.size === 0) this.setBusy(child, false);
         if (err) reject(err);
         else resolve();
       };
@@ -121,6 +125,17 @@ export class MlxEmbedder {
       });
     });
     return this.starting;
+  }
+
+  /**
+   * An idle worker must not keep the process alive (a CLI or script that
+   * embedded once would never exit); a busy one must, since a caller awaits it.
+   */
+  private setBusy(child: ChildProcess, busy: boolean): void {
+    for (const stream of [child.stdout, child.stderr] as unknown as ({ ref?: () => void; unref?: () => void } | null)[]) {
+      if (busy) stream?.ref?.();
+      else stream?.unref?.();
+    }
   }
 
   /** Fail everything waiting on this worker and back off before the next spawn. */
@@ -151,6 +166,7 @@ export class MlxEmbedder {
       }, this.requestTimeoutMs);
       timer.unref?.();
       this.pending.set(id, { resolve, reject, timer });
+      this.setBusy(child, true);
       child.stdin!.write(JSON.stringify({ id, texts }) + "\n");
     });
   }
