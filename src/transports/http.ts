@@ -178,7 +178,9 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
     const q = req.query as { window?: string };
     try {
       if (q.window !== undefined) {
-        return await getContext(app, p.harness, p.id, decodeURIComponent(p.turnId));
+        const w = Number(q.window);
+        const window = Number.isInteger(w) && w >= 0 ? Math.min(w, 10) : 3;
+        return await getContext(app, p.harness, p.id, decodeURIComponent(p.turnId), window);
       }
       return await getTurn(app, p.harness, p.id, decodeURIComponent(p.turnId));
     } catch (e) {
@@ -356,10 +358,26 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
   return fastify;
 }
 
-export async function serveHttp(app: GatewayApp, port = 3000): Promise<FastifyInstance> {
+export function isLoopbackHost(host: string): boolean {
+  return host === "localhost" || host === "::1" || /^127\./.test(host);
+}
+
+/** Anything reachable off this machine exposes agent histories: refuse it without a token. */
+function assertBindable(host: string): void {
+  if (!isLoopbackHost(host) && !process.env.GATEWAY_TOKEN) {
+    throw new Error(`bad_request: binding ${host} exposes agent histories to the network; set GATEWAY_TOKEN first`);
+  }
+}
+
+function boundPort(server: FastifyInstance, fallback: number): number {
+  const addr = server.server.address();
+  return typeof addr === "object" && addr ? addr.port : fallback;
+}
+
+export async function serveHttp(app: GatewayApp, port = 3000, host = "127.0.0.1"): Promise<FastifyInstance> {
+  assertBindable(host);
   const server = buildHttpServer(app);
-  // MVP security: loopback only. Never bind 0.0.0.0 (remote = Phase 2 + auth).
-  await server.listen({ port, host: "127.0.0.1" });
+  await server.listen({ port, host });
   return server;
 }
 
@@ -367,10 +385,11 @@ export async function serveHttp(app: GatewayApp, port = 3000): Promise<FastifyIn
  * Production serve wrapper: owns the global port file + cleanup.
  * serveHttp itself stays side-effect-free so tests/scripts can't clobber it.
  */
-export async function serveProduction(app: GatewayApp, port = 3000): Promise<FastifyInstance> {
+export async function serveProduction(app: GatewayApp, port = 3000, host = "127.0.0.1"): Promise<FastifyInstance> {
+  assertBindable(host);
   const server = buildHttpServer(app);
   server.addHook("onClose", async () => clearServeInfo());
-  await server.listen({ port, host: "127.0.0.1" });
-  writeServeInfo({ port, pid: process.pid });
+  await server.listen({ port, host });
+  writeServeInfo({ port: boundPort(server, port), pid: process.pid, host });
   return server;
 }

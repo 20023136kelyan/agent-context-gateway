@@ -71,6 +71,15 @@ describe("TemporalStore", () => {
     expect(derived[0].supersedingTurnId).toBe("turn-new-arch");
     expect(store.isSuperseded("turn-old-arch")).toBe(true);
   });
+
+  it("skips determiners when deriving the target ('replaced the …' doesn't target 'the')", async () => {
+    const fresh = new TemporalStore(join(await mkdtemp(join(tmpdir(), "acg-temp-det-")), "invalidations.jsonl"));
+    const turns: Turn[] = [
+      { id: "old-1", sessionId: "s1", harness: "codex", timestamp: "2026-08-01T10:00:00Z", role: "assistant", content: "We use the new build system for the app", raw: {}, seq: 0 },
+      { id: "new-1", sessionId: "s2", harness: "codex", timestamp: "2026-09-01T10:00:00Z", role: "assistant", content: "We replaced the editor widget with a lighter one", raw: {}, seq: 1 },
+    ];
+    expect(fresh.deriveFromTurns(turns)).toEqual([]);
+  });
 });
 
 describe("search with bi-temporal invalidation", () => {
@@ -159,5 +168,11 @@ describe("search with bi-temporal invalidation", () => {
     const old = res.results.find((r) => r.provenance.sessionId === "s1");
     expect(old).toBeDefined();
     expect(old?.isSuperseded).toBe(false);
+  });
+
+  it("asOf also excludes turns written after that instant", async () => {
+    const res = await searchOnce(app, "Monaco editor code", { asOf: "2026-08-15T00:00:00Z" });
+    expect(res.results.some((r) => r.provenance.sessionId === "s2")).toBe(false);
+    await expect(searchOnce(app, "Monaco", { asOf: "not a date" })).rejects.toThrow("bad_request");
   });
 });

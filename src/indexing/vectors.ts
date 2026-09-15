@@ -34,15 +34,8 @@ export class VectorStore {
             // ignore
           }
         }
-      } else if (name === "turns") {
-        // Legacy table (typically 1024)
-        try {
-          const t = await store.db.openTable("turns");
-          store.tables.set(1024, t);
-        } catch {
-          // ignore
-        }
       }
+      // The pre-dimension "turns" table (partial Ollama embeddings) is ignored.
     }
     return store;
   }
@@ -55,11 +48,6 @@ export class VectorStore {
     if (names.includes(candidateName)) {
       const tbl = await this.db.openTable(candidateName);
       this.tables.set(dim, tbl);
-      return tbl;
-    }
-    if (dim === 1024 && names.includes("turns")) {
-      const tbl = await this.db.openTable("turns");
-      this.tables.set(1024, tbl);
       return tbl;
     }
     return null;

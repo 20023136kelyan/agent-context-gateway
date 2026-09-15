@@ -77,6 +77,15 @@ describe("HTTP", () => {
     expect(t.json().id).toBe(turnId);
   });
 
+  it("GET …/turns/:id?window=N honours N", async () => {
+    const server = buildHttpServer(app);
+    const search = await server.inject({ method: "GET", url: "/search?q=workbench%20private" });
+    const p = search.json().results[0].provenance;
+    const url = `/sessions/${p.harness}/${p.sessionId}/turns/${encodeURIComponent(p.turnId)}`;
+    expect((await server.inject({ method: "GET", url: `${url}?window=0` })).json()).toHaveLength(1);
+    expect((await server.inject({ method: "GET", url: `${url}?window=1` })).json().length).toBeGreaterThan(1);
+  });
+
   it("POST /sync reports indexed sessions", async () => {
     const server = buildHttpServer(app);
     const res = await server.inject({ method: "POST", url: "/sync" });

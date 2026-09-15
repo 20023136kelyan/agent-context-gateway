@@ -46,18 +46,6 @@ export function rrfBaseScore(lexRank: number, vecRank: number, vecSim?: number, 
   return Math.min(1.0, base);
 }
 
-/** Legacy normalization helper retained for backward compatibility. */
-export function normalizeBase(score: number): number {
-  if (!Number.isFinite(score) || score <= 0) return 0;
-  return score / (score + 1);
-}
-
-/** Cosine similarity [-1,1] -> [0,1]; undefined (no vector) -> neutral 0.5. */
-export function normalizeVector(sim: number | undefined): number {
-  if (sim === undefined || !Number.isFinite(sim)) return 0.5;
-  return Math.min(1, Math.max(0, (sim + 1) / 2));
-}
-
 export function recencyScore(turnTs: string, nowMs: number): number {
   const t = Date.parse(turnTs);
   if (!Number.isFinite(t)) return 0;
@@ -83,42 +71,21 @@ export function entityScore(
   return 0;
 }
 
-/**
- * Calculates final score combining RRF base score with domain and context boosts.
- * Supports both RRF base score (preferred) and legacy parameter orders.
- */
+/** Final score: the RRF base (already in [0, 1]) plus context boosts, floored at 0. */
 export function finalScore(
-  baseOrRrf: number,
+  rrfBase: number,
   projectMatch: boolean,
   turnTs: string,
   nq: NormalizedQuery,
   turnContent: string,
   turnFileRefs: string[],
   nowMs: number,
-  repoMatchOrVecSim?: boolean | number,
-  feedbackDeltaOrRepoMatch?: number | boolean,
-  maybeFeedbackDelta?: number,
+  repoMatch = false,
+  feedbackDelta = 0,
 ): number {
-  let baseScore = baseOrRrf;
-  let repoMatch = false;
-  let feedbackDelta = 0;
-
-  if (typeof repoMatchOrVecSim === "number") {
-    // Legacy signature: (base, projectMatch, turnTs, nq, turnContent, turnFileRefs, nowMs, vecSim, repoMatch, feedbackDelta)
-    const vecSim = repoMatchOrVecSim;
-    baseScore = 0.4 * normalizeBase(baseOrRrf) + 0.25 * normalizeVector(vecSim);
-    repoMatch = typeof feedbackDeltaOrRepoMatch === "boolean" ? feedbackDeltaOrRepoMatch : false;
-    feedbackDelta = typeof maybeFeedbackDelta === "number" ? maybeFeedbackDelta : 0;
-  } else {
-    // Clean RRF signature: baseScore is already in [0, 1]
-    repoMatch = typeof repoMatchOrVecSim === "boolean" ? repoMatchOrVecSim : false;
-    feedbackDelta = typeof feedbackDeltaOrRepoMatch === "number" ? feedbackDeltaOrRepoMatch : 0;
-    baseScore = 0.65 * baseScore;
-  }
-
   return Math.max(
     0,
-    baseScore +
+    0.65 * rrfBase +
       0.1 * (projectMatch ? 1 : 0) +
       0.1 * (repoMatch ? 1 : 0) +
       0.1 * recencyScore(turnTs, nowMs) +

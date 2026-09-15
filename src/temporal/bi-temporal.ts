@@ -12,6 +12,7 @@
 import { readFileSync, appendFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import type { Turn } from "../core/models.js";
+import { STOP } from "../search/query.js";
 
 export interface InvalidationRecord {
   id: string;
@@ -23,13 +24,20 @@ export interface InvalidationRecord {
   sourceSessionId: string;
 }
 
+// An optional determiner is skipped so "replaced the editor" targets "editor", not "the".
+const DETERMINER = "(?:(?:the|a|an|our|my|this|that|these|those|its|their|your)\\s+)?";
 const SUPERSEDE_CUES = [
-  /\b(?:replaces?|replacing|replaced)\s+([A-Za-z0-9_.-]+)\b/i,
-  /\b(?:deprecated?|deprecating)\s+([A-Za-z0-9_.-]+)\b/i,
-  /\b(?:no\s+longer\s+using|abandoning|abandoned|dropped|dropping)\s+([A-Za-z0-9_.-]+)\b/i,
-  /\b(?:swapped\s+out|migrated\s+away\s+from|switching\s+away\s+from)\s+([A-Za-z0-9_.-]+)\b/i,
-  /\b(?:supersedes?|superseded)\s+([A-Za-z0-9_.-]+)\b/i,
-];
+  "(?:replaces?|replacing|replaced)",
+  "(?:deprecated?|deprecating)",
+  "(?:no\\s+longer\\s+using|abandoning|abandoned|dropped|dropping)",
+  "(?:swapped\\s+out|migrated\\s+away\\s+from|switching\\s+away\\s+from)",
+  "(?:supersedes?|superseded)",
+].map((verb) => new RegExp(`\\b${verb}\\s+${DETERMINER}([A-Za-z0-9_.-]+)\\b`, "i"));
+
+const ADOPTION_CUE = /\b(agreed|decided|use|using|adopt|adopted)\b/i;
+
+/** Captures that can't name the thing being replaced. */
+const NON_TARGETS = new Set([...STOP, "it", "this", "that", "with", "all", "some", "any", "one", "old", "new"]);
 
 export class TemporalStore {
   private records = new Map<string, InvalidationRecord>(); // key: supersededTurnId
@@ -97,22 +105,24 @@ export class TemporalStore {
   deriveFromTurns(turns: Turn[]): InvalidationRecord[] {
     const newlyDerived: InvalidationRecord[] = [];
     const sorted = [...turns].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    // Once per turn, not once per (turn, earlier turn) pair.
+    const lowered = sorted.map((t) => t.content.toLowerCase());
+    const adopts = sorted.map((t) => ADOPTION_CUE.test(t.content));
 
     for (let i = 0; i < sorted.length; i++) {
       const curr = sorted[i];
       for (const pat of SUPERSEDE_CUES) {
         const m = curr.content.match(pat);
         if (!m) continue;
-        const targetEntity = m[1].toLowerCase();
-        if (targetEntity.length < 3) continue;
+        const targetEntity = m[1].toLowerCase().replace(/[.-]+$/, "");
+        if (targetEntity.length < 3 || NON_TARGETS.has(targetEntity)) continue;
+        // Whole-word mention: "kafka" must not match inside "kafkaesque".
+        const mention = new RegExp(`\\b${targetEntity.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
 
         // Look for earlier turns that adopted or agreed to that entity
         for (let j = 0; j < i; j++) {
           const prev = sorted[j];
-          if (
-            prev.content.toLowerCase().includes(targetEntity) &&
-            /\b(agreed|decided|use|using|adopt|adopted)\b/i.test(prev.content)
-          ) {
+          if (adopts[j] && mention.test(lowered[j])) {
             if (!this.records.has(prev.id)) {
               const rec = this.recordInvalidation({
                 supersededTurnId: prev.id,

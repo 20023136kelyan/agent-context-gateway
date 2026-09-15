@@ -15,16 +15,22 @@ export interface DiscoveredGateway {
   docCount?: number;
 }
 
-export function announce(port: number, info: { backend?: string; docCount?: number } = {}): { stop: () => void } {
+export function announce(
+  port: number,
+  info: { backend?: string; docCount?: number; host?: string } = {},
+): { stop: () => void } {
   const bonjour = new Bonjour();
+  const txt: Record<string, string> = {
+    backend: info.backend ?? "tantivy",
+    docs: String(info.docCount ?? 0),
+  };
+  // A specific bind address is the only one that answers; wildcards answer on any interface.
+  if (info.host && info.host !== "0.0.0.0" && info.host !== "::") txt.addr = info.host;
   const service = bonjour.publish({
     name: `context-gateway-${port}`,
     type: GATEWAY_SERVICE,
     port,
-    txt: {
-      backend: info.backend ?? "tantivy",
-      docs: String(info.docCount ?? 0),
-    },
+    txt,
   });
   return {
     stop: () => {
@@ -41,7 +47,7 @@ export function announce(port: number, info: { backend?: string; docCount?: numb
 function toDiscovered(service: Service): DiscoveredGateway | null {
   const port = service.port;
   if (!port) return null;
-  const host = service.referer?.address ?? service.host ?? "127.0.0.1";
+  const host = service.txt?.addr ?? service.referer?.address ?? service.host ?? "127.0.0.1";
   return {
     name: service.name,
     host,

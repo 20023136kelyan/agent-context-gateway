@@ -23,6 +23,8 @@ export function portFile(): string {
 export interface ServeInfo {
   port: number;
   pid: number;
+  /** Bind address (absent = 127.0.0.1). */
+  host?: string;
 }
 
 export function readServeInfo(): ServeInfo | null {
@@ -30,10 +32,20 @@ export function readServeInfo(): ServeInfo | null {
     if (!existsSync(portFile())) return null;
     const raw = JSON.parse(readFileSync(portFile(), "utf8")) as Partial<ServeInfo>;
     if (typeof raw.port !== "number") return null;
-    return { port: raw.port, pid: raw.pid ?? 0 };
+    return { port: raw.port, pid: raw.pid ?? 0, host: raw.host };
   } catch {
     return null;
   }
+}
+
+/** Where a local client connects to reach a server bound to `host`. */
+export function connectHost(host?: string): string {
+  if (!host || host === "0.0.0.0" || host === "::") return "127.0.0.1";
+  return host;
+}
+
+function baseUrl(port: number, host: string): string {
+  return `http://${host.includes(":") ? `[${host}]` : host}:${port}`;
 }
 
 export function writeServeInfo(info: ServeInfo): void {
@@ -49,9 +61,9 @@ export function clearServeInfo(): void {
 }
 
 /** Probe a live server; null when absent/stale (caller falls back to local). */
-export async function probeServer(port: number, timeoutMs = 800): Promise<boolean> {
+export async function probeServer(port: number, timeoutMs = 800, host = "127.0.0.1"): Promise<boolean> {
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(timeoutMs) });
+    const res = await fetch(`${baseUrl(port, host)}/health`, { signal: AbortSignal.timeout(timeoutMs) });
     return res.ok;
   } catch {
     return false;
@@ -67,14 +79,14 @@ export class HttpError extends Error {
   }
 }
 
-export async function remoteCall(port: number, method: string, path: string, body?: unknown): Promise<unknown> {
+export async function remoteCall(port: number, method: string, path: string, body?: unknown, host = "127.0.0.1"): Promise<unknown> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const token = process.env.GATEWAY_TOKEN;
   if (token) headers.Authorization = `Bearer ${token}`;
   let res: Response;
   try {
-    res = await fetch(`http://127.0.0.1:${port}${path}`, {
+    res = await fetch(`${baseUrl(port, host)}${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),

@@ -4,7 +4,7 @@ import { Command } from "commander";
 import { createApp, closeApp, type GatewayApp } from "./app.js";
 import { listSources, listSessions, searchOnce, decideOnce, getRelated, traverseArtifacts, listInvalidations, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, recordFeedback, getSession, getTurn, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "./commands.js";
 import { addRemote, removeRemote, loadRemotes } from "./remotes.js";
-import { readServeInfo, probeServer, remoteCall, HttpError } from "./remote.js";
+import { readServeInfo, probeServer, remoteCall, connectHost, HttpError } from "./remote.js";
 
 const program = new Command();
 program.name("gateway").description("Agent Context Gateway — federated search over native agent histories");
@@ -34,9 +34,10 @@ async function fetchRemote(method: string, path: string, body?: unknown): Promis
   if (program.opts().indexDir || program.opts().backend) return null; // explicit local
   const info = readServeInfo();
   if (!info) return null;
-  if (!(await probeServer(info.port))) return null; // stale port file -> local
+  const host = connectHost(info.host);
+  if (!(await probeServer(info.port, 800, host))) return null; // stale port file -> local
   try {
-    return await remoteCall(info.port, method, path, body);
+    return await remoteCall(info.port, method, path, body, host);
   } catch (e) {
     // Old server without this route -> local fallback has it. Transport
     // failures mean the probe just raced a shutdown -> local too.
@@ -399,13 +400,26 @@ program
 
 program
   .command("serve")
-  .description("Start loopback HTTP API (127.0.0.1 only)")
+  .description("Start the HTTP API (loopback by default)")
   .option("--port <n>", "", "3000")
+  .option("--host <addr>", "bind address; anything but loopback requires GATEWAY_TOKEN", "127.0.0.1")
   .option("--watch", "watch native histories and re-sync on change")
-  .option("--embed", "with --watch: also embed new turns (needs ollama)")
-  .option("--announce", "broadcast on LAN via mDNS (opt-in; off by default for privacy)")
+  .option("--embed", "with --watch: also embed new turns")
+  .option("--announce", "broadcast on LAN via mDNS (needs a non-loopback --host; off by default for privacy)")
   .action(async (cmdOpts) => {
-    const { serveProduction } = await import("./transports/http.js");
+    const { serveProduction, isLoopbackHost } = await import("./transports/http.js");
+    const host = String(cmdOpts.host ?? "127.0.0.1");
+    const port = Number(cmdOpts.port ?? 3000);
+    if (!isLoopbackHost(host) && !process.env.GATEWAY_TOKEN) {
+      console.error(`refusing to bind ${host}: that exposes agent histories to the network. Set GATEWAY_TOKEN first.`);
+      process.exitCode = 1;
+      return;
+    }
+    if (cmdOpts.announce && isLoopbackHost(host)) {
+      console.error("--announce needs --host <LAN address or 0.0.0.0>: a loopback-bound gateway can't be reached from the LAN.");
+      process.exitCode = 1;
+      return;
+    }
     const app = appFromGlobals();
     let watchers: { close(): void }[] = [];
     if (cmdOpts.watch) {
@@ -421,13 +435,13 @@ program
       });
       console.error(`watching native histories${cmdOpts.embed ? " (+embed)" : ""}`);
     }
-    const server = await serveProduction(app, Number(cmdOpts.port ?? 3000));
-    console.error(`gateway http on http://127.0.0.1:${cmdOpts.port ?? 3000}`);
+    const server = await serveProduction(app, port, host);
+    console.error(`gateway http on http://${host}:${port}`);
     let announcer: { stop(): void } | null = null;
     if (cmdOpts.announce) {
       const { announce } = await import("./discovery/mdns.js");
-      announcer = announce(Number(cmdOpts.port ?? 3000), { backend: app.backend });
-      console.error("announcing _context-gateway._tcp on LAN (opt-in)");
+      announcer = announce(port, { backend: app.backend, docCount: app.index.docCount(), host });
+      console.error("announcing _context-gateway._tcp on LAN (opt-in; clients need GATEWAY_TOKEN)");
     }
     const shutdown = async () => {
       announcer?.stop();

@@ -52,3 +52,27 @@ describe("serve discovery", () => {
     writeServeInfo({ port: PORT, pid: process.pid });
   });
 });
+
+describe("LAN binding (--host)", () => {
+  it("refuses a non-loopback bind without GATEWAY_TOKEN", async () => {
+    delete process.env.GATEWAY_TOKEN;
+    await expect(serveProduction(app, 0, "0.0.0.0")).rejects.toThrow("GATEWAY_TOKEN");
+  });
+
+  it("with a token, binds all interfaces and records the host for local clients", async () => {
+    process.env.GATEWAY_TOKEN = "lan-secret";
+    let lan: FastifyInstance | null = null;
+    try {
+      lan = await serveProduction(app, 0, "0.0.0.0");
+      const addr = lan.server.address();
+      const port = typeof addr === "object" && addr ? addr.port : 0;
+      expect(readServeInfo()).toMatchObject({ port, host: "0.0.0.0" });
+      expect(await probeServer(port)).toBe(true);
+      const body = (await remoteCall(port, "GET", "/search?q=xyzzy")) as { results: unknown[] };
+      expect(body.results.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      await lan?.close();
+      delete process.env.GATEWAY_TOKEN;
+    }
+  });
+});

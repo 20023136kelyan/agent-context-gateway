@@ -158,6 +158,12 @@ export class SearchService {
     const maxTokens = opts.maxTokens ?? 2000;
     const half = Math.floor(maxTurns / 2);
     const nowMs = Date.now();
+    let asOf: string | undefined;
+    if (opts.asOf) {
+      const d = new Date(opts.asOf);
+      if (Number.isNaN(d.getTime())) throw new Error(`bad_request: invalid asOf "${opts.asOf}" (want an ISO timestamp)`);
+      asOf = d.toISOString(); // normalized so string comparison against turn timestamps is exact
+    }
 
     // Session map for project/agent/sourcePath (cached briefly; refreshed on a miss).
     let { map: sessions, cached: sessionsCached } = await this.sessionMap();
@@ -303,9 +309,10 @@ export class SearchService {
       const stored = storedById.get(hit.turnId);
       if (!stored) continue;
 
-      // Temporal post-filters.
+      // Temporal post-filters ("before" is exclusive; asOf hides turns written later).
       if (nq.after && stored.timestamp < nq.after) continue;
-      if (nq.before && stored.timestamp > nq.before) continue;
+      if (nq.before && stored.timestamp >= nq.before) continue;
+      if (asOf && stored.timestamp > asOf) continue;
 
       // Reciprocal Rank Fusion of sparse lexical + dense vector ranks
       const lexRank = lexRanks.get(hit.turnId) ?? 0;
@@ -325,7 +332,7 @@ export class SearchService {
       );
 
       // Bi-temporal invalidation: demote superseded turns unless includeSuperseded is true
-      const inv = this.temporal?.getInvalidation(hit.turnId, opts.asOf);
+      const inv = this.temporal?.getInvalidation(hit.turnId, asOf);
       if (inv && opts.includeSuperseded !== true) {
         score = Math.max(0, score - 0.35);
       }
@@ -413,7 +420,7 @@ export class SearchService {
         const center = order.get(s.turn.id) ?? 0;
         const window = turns.slice(Math.max(0, center - half), center + half + 1);
         for (const w of window) claimed.add(w.id);
-        packaged.push(this.package(s, window, session, opts.asOf));
+        packaged.push(this.package(s, window, session, asOf));
         if (packaged.length >= maxResults * 3) break; // over-collect, trim below
       }
     }
