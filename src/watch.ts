@@ -10,7 +10,7 @@ import { join } from "node:path";
 import type { GatewayApp } from "./app.js";
 import { syncAllDetailed } from "./indexing/sync.js";
 import { notifyNewTurns } from "./commands.js";
-import { embedMissing } from "./indexing/embed-sync.js";
+import { embedSessionTurns, resolveEmbeddingEngine } from "./indexing/embed-sync.js";
 
 export function defaultWatchDirs(): string[] {
   return [join(homedir(), ".claude", "projects"), join(homedir(), ".codex", "sessions")];
@@ -45,11 +45,22 @@ export function watchSources(app: GatewayApp, opts: WatchOptions = {}): FSWatche
         syncAllDetailed(app.adapters, app.index, app.cursors, { detectNew: app.subscriptions.all().length > 0 }),
       );
       await notifyNewTurns(app, indexed.flatMap((s) => s.newTurns ?? [])).catch((e) => opts.onError?.(e));
+      if (res.sessionsIndexed > 0) app.search.invalidateSessions();
       let embedded: number | undefined;
       const vectors = app.vectors;
-      if (opts.embed && vectors) {
-        const er = await app.vectorLock.run(() => embedMissing(app.adapters, vectors)).catch(() => null);
-        embedded = er?.turnsEmbedded;
+      if (opts.embed && vectors && indexed.length > 0) {
+        // Only the sessions this sync touched — never a full backfill per tick.
+        embedded = await app.vectorLock
+          .run(async () => {
+            const engine = await resolveEmbeddingEngine();
+            let n = 0;
+            for (const { adapter, session } of indexed) {
+              n += (await embedSessionTurns(adapter, session, vectors, undefined, engine)).embedded;
+            }
+            await vectors.maybeOptimize();
+            return n;
+          })
+          .catch(() => undefined);
       }
       opts.onSync?.({ sessionsIndexed: res.sessionsIndexed, turnsIndexed: res.turnsIndexed, embedded });
     } catch (e) {

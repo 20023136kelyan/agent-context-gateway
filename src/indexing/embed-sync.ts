@@ -29,8 +29,10 @@ export interface BackfillOptions {
 }
 
 const BATCH = 64;
+/** Rows buffered per vector-store write: each LanceDB write adds a fragment + version. */
+const WRITE_BATCH = 512;
 
-async function activeEngine(): Promise<EmbeddingEngine> {
+export async function resolveEmbeddingEngine(): Promise<EmbeddingEngine> {
   const status = await embeddingsAvailable();
   if (status.engine === "none") throw new Error("embeddings-unavailable");
   return status.engine;
@@ -46,15 +48,16 @@ export async function embedSessionTurns(
   const turns = await adapter.listTurns(session.id).catch(() => []);
   if (turns.length === 0) return { embedded: 0, skipped: 0 };
   // One engine per call: dedup must check the table that engine writes to.
-  const eng = engine ?? (await activeEngine());
+  const eng = engine ?? (await resolveEmbeddingEngine());
   const have = await vectors.existing(turns.map((t) => t.id), ENGINE_DIM[eng]).catch(() => new Set<string>());
   const missing = turns.filter((t) => !have.has(t.id) && t.content.trim().length > 0);
   let embedded = 0;
+  let pending: Parameters<VectorStore["upsert"]>[0] = [];
   for (let i = 0; i < missing.length; i += batchSize) {
     const batch = missing.slice(i, i + batchSize);
     const vecs = await embedTextsWith(eng, batch.map((t) => t.content));
-    await vectors.upsert(
-      batch.map((t, j) => ({
+    pending.push(
+      ...batch.map((t, j) => ({
         id: t.id,
         vector: vecs[j],
         harness: t.harness,
@@ -64,7 +67,12 @@ export async function embedSessionTurns(
       })),
     );
     embedded += batch.length;
+    if (pending.length >= WRITE_BATCH) {
+      await vectors.upsert(pending);
+      pending = [];
+    }
   }
+  if (pending.length > 0) await vectors.upsert(pending);
   return { embedded, skipped: turns.length - missing.length };
 }
 
@@ -105,5 +113,7 @@ export async function embedMissing(
       currentSessionId: session.id,
     });
   }
+  // Compact the fragments the run wrote and index ids for future dedup lookups.
+  if (turnsEmbedded > 0) await vectors.optimize();
   return { sessionsScanned, turnsEmbedded, turnsSkipped, embedded: true };
 }

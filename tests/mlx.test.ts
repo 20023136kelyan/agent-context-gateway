@@ -10,6 +10,12 @@ import { embeddingsAvailable, embedTexts, embedQuery } from "../src/embeddings/p
 import { ClaudeAdapter } from "../src/adapters/claude.js";
 import { VectorStore } from "../src/indexing/vectors.js";
 import { embedSessionTurns } from "../src/indexing/embed-sync.js";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { pathToFileURL } from "node:url";
+import * as lancedb from "@lancedb/lancedb";
+
+const execFileAsync = promisify(execFile);
 
 describe("MLX Embedding Engine (Apple Silicon GPU)", () => {
   it("detects MLX availability on this machine", async () => {
@@ -72,12 +78,56 @@ describe("MLX worker resilience", () => {
     await expect(embedder.embedTexts(["x"])).rejects.toThrow(/cooling down/);
   });
 
+  it("an idle worker doesn't keep the process alive after embedding", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "acg-mlx-exit-"));
+    const fakeWorker = join(dir, "python");
+    await writeFile(
+      fakeWorker,
+      [
+        "#!/usr/bin/env node",
+        'process.stderr.write("MLX worker ready\\n");',
+        'require("readline").createInterface({ input: process.stdin }).on("line", (l) => {',
+        "  const { id, texts } = JSON.parse(l);",
+        '  process.stdout.write(JSON.stringify({ id, embeddings: texts.map(() => [0.5]) }) + "\\n");',
+        "});",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    const script = join(dir, "embed-once.mts");
+    const mlxUrl = pathToFileURL(join(process.cwd(), "src", "embeddings", "mlx.ts")).href;
+    await writeFile(
+      script,
+      [
+        `import { MlxEmbedder } from ${JSON.stringify(mlxUrl)};`,
+        `const e = new MlxEmbedder({ pythonPath: ${JSON.stringify(fakeWorker)}, scriptPath: ${JSON.stringify(fakeWorker)} });`,
+        'console.log(JSON.stringify(await e.embedTexts(["x"])));',
+      ].join("\n"),
+    );
+    // Before the fix the child hung on the worker's pipes until killed by this timeout.
+    const { stdout } = await execFileAsync(process.execPath, ["--import", "tsx", script], { timeout: 15000, cwd: process.cwd() });
+    expect(stdout.trim()).toBe("[[0.5]]");
+  }, 30000);
+
   it("a wedged worker times out instead of hanging the caller", async () => {
     const dir = await mkdtemp(join(tmpdir(), "acg-mlx-wedged-"));
     const python = join(dir, "python");
     await writeFile(python, "#!/bin/sh\necho 'MLX worker ready' >&2\nexec sleep 30\n", { mode: 0o755 });
     const embedder = new MlxEmbedder({ pythonPath: python, scriptPath: python, requestTimeoutMs: 300 });
     await expect(embedder.embedTexts(["x"])).rejects.toThrow(/timed out/);
+  });
+});
+
+describe("vector store maintenance", () => {
+  it("optimize() indexes ids and keeps lookups exact", async () => {
+    const dir = join(await mkdtemp(join(tmpdir(), "acg-vec-opt-")), "v");
+    const vectors = await VectorStore.open(dir);
+    await vectors.upsert(
+      ["a", "b", "c"].map((id) => ({ id, vector: [0.1, 0.2, 0.3], harness: "codex", sessionId: "s", projectId: "p", timestampMs: 0 })),
+    );
+    await vectors.optimize();
+    const table = await (await lancedb.connect(dir)).openTable("turns_3");
+    expect((await table.listIndices()).some((i) => i.columns.includes("id"))).toBe(true);
+    expect([...(await vectors.existing(["a", "c", "zzz"], 3))].sort()).toEqual(["a", "c"]);
   });
 });
 

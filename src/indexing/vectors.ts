@@ -17,6 +17,7 @@ export class VectorStore {
   private db!: lancedb.Connection;
   private tables = new Map<number, lancedb.Table>();
   private defaultDim = 384;
+  private rowsSinceOptimize = 0;
   private constructor(private dir: string) {}
 
   static async open(dir: string): Promise<VectorStore> {
@@ -98,6 +99,31 @@ export class VectorStore {
     } else {
       await table.mergeInsert("id").whenMatchedUpdateAll().whenNotMatchedInsertAll().execute(rows);
     }
+    this.rowsSinceOptimize += rows.length;
+  }
+
+  /**
+   * Compact small fragments and refresh indices; creates the scalar index on
+   * `id` (dedup lookups) on first use. Best-effort: queries stay correct without it.
+   */
+  async optimize(): Promise<void> {
+    for (const tbl of this.tables.values()) {
+      try {
+        const indices = await tbl.listIndices();
+        if (!indices.some((i) => i.columns.includes("id"))) {
+          await tbl.createIndex("id", { config: lancedb.Index.btree() });
+        }
+        await tbl.optimize();
+      } catch {
+        // ignore — an unoptimized table is slower, not wrong
+      }
+    }
+    this.rowsSinceOptimize = 0;
+  }
+
+  /** optimize() once enough rows accumulated (for frequent small writers like the watcher). */
+  async maybeOptimize(threshold = 5000): Promise<void> {
+    if (this.rowsSinceOptimize >= threshold) await this.optimize();
   }
 
   /** IDs already embedded in the `dim` table (incremental backfill of new turns only). */
