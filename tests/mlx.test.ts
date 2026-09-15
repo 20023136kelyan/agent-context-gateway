@@ -5,7 +5,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { getSharedMlxEmbedder, MLX_DIM } from "../src/embeddings/mlx.js";
+import { getSharedMlxEmbedder, MlxEmbedder, MLX_DIM } from "../src/embeddings/mlx.js";
 import { embeddingsAvailable, embedTexts, embedQuery } from "../src/embeddings/provider.js";
 import { ClaudeAdapter } from "../src/adapters/claude.js";
 import { VectorStore } from "../src/indexing/vectors.js";
@@ -44,6 +44,40 @@ describe("MLX Embedding Engine (Apple Silicon GPU)", () => {
   it("embedQuery returns a single 384-dim vector", async () => {
     const vec = await embedQuery("collaboration workspace");
     expect(vec.length).toBe(MLX_DIM);
+  });
+});
+
+describe("MLX worker resilience", () => {
+  it("finds the worker script next to the module, whatever the cwd", async () => {
+    const repoRoot = process.cwd();
+    process.chdir(tmpdir());
+    try {
+      const embedder = new MlxEmbedder();
+      expect(embedder.scriptPath).toBe(join(repoRoot, "src", "embeddings", "mlx-worker.py"));
+      expect(await embedder.isAvailable()).toBe(true);
+    } finally {
+      process.chdir(repoRoot);
+    }
+  });
+
+  it("a worker that dies at startup fails fast, then cools down instead of respawning", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "acg-mlx-dead-"));
+    const python = join(dir, "python");
+    await writeFile(python, "#!/bin/sh\necho 'ModuleNotFoundError: mlx_embedding_models' >&2\nexit 1\n", { mode: 0o755 });
+    const embedder = new MlxEmbedder({ pythonPath: python, scriptPath: python });
+    const t0 = Date.now();
+    await expect(embedder.embedTexts(["x"])).rejects.toThrow(/exited with code 1: ModuleNotFoundError/);
+    expect(Date.now() - t0).toBeLessThan(3000);
+    expect(await embedder.isAvailable()).toBe(false);
+    await expect(embedder.embedTexts(["x"])).rejects.toThrow(/cooling down/);
+  });
+
+  it("a wedged worker times out instead of hanging the caller", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "acg-mlx-wedged-"));
+    const python = join(dir, "python");
+    await writeFile(python, "#!/bin/sh\necho 'MLX worker ready' >&2\nexec sleep 30\n", { mode: 0o755 });
+    const embedder = new MlxEmbedder({ pythonPath: python, scriptPath: python, requestTimeoutMs: 300 });
+    await expect(embedder.embedTexts(["x"])).rejects.toThrow(/timed out/);
   });
 });
 
