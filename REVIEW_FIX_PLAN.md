@@ -11,6 +11,13 @@ Baseline commit: `c3ef061` · `tsc --noEmit`: clean · tests: 110/111 pass. The 
 - No drive-by refactors inside a fix commit. Cleanup has its own phase.
 - Performance items are measured before/after (eval latency p50/p95, plus targeted timings noted per item).
 
+## Decisions (answered 2026-09-16)
+
+- **D1 Legacy vectors**: drop the 1024-dim `turns` table once `turns_384` is fully backfilled. MLX failure then degrades to lexical-only instead of a partial, stale table. (Deleting it is confirmed again at the time.)
+- **D2 Subscriptions**: implement delivery (item 3.6).
+- **D3 ACL without a principal**: apply the `*` rule when one exists; stay open when there is none (item 5.2).
+- **D4 Federation**: make LAN serving real: opt-in bind address, mandatory token off-loopback, announce advertises the bound address (item 5.3).
+
 ## Phase 1: Data correctness (index missing or holding wrong data)
 
 | ID | Problem | Fix | Test | Files |
@@ -27,7 +34,7 @@ Baseline commit: `c3ef061` · `tsc --noEmit`: clean · tests: 110/111 pass. The 
 |---|---|---|---|---|
 | 2.1 | `sync --rebuild` builds a fresh `SearchService` and re-attaches only vectors: ACL, topology, feedback, temporal silently disabled until restart. | One `wireSearch(app)` used by `createApp` and rebuild (or `SearchService.setIndex`), so attachments can't be forgotten. | Rebuild, then search as an ACL-restricted principal → still filtered. | `app.ts`, `commands.ts`, `search/search.ts` |
 | 2.2 | Watcher sync, `POST /sync`, `syncSession`, and git events can run concurrently over one writer and cursor store; rebuild can close the index under a running sync. | App-level async mutex around all index writes. | Rebuild concurrent with a sync → both complete, doc count consistent. | `app.ts`, `watch.ts`, `commands.ts`, `git/hooks.ts` |
-| 2.3 | Loopback HTTP API has no Host/Origin checks and no token by default: CSRF (`POST /sync?rebuild=true`, `/feedback`) and DNS-rebinding reads of `/search`. | `onRequest`: allow only `127.0.0.1:<port>` / `localhost:<port>` Hosts (extendable via `GATEWAY_ALLOWED_HOSTS`); reject non-GET requests carrying a non-loopback `Origin`. Swift app and CLI unaffected. | `inject` with `Host: evil.test` → 403; POST with `Origin: https://evil.test` → 403; normal CLI/Swift requests → 200. | `transports/http.ts` |
+| 2.3 | Loopback HTTP API has no Host/Origin checks and no token by default: CSRF (`POST /sync?rebuild=true`, `/feedback`) and DNS-rebinding reads of `/search`. | `onRequest`: allow only `127.0.0.1:<port>` / `localhost:<port>` Hosts, plus the bound LAN address when 5.3 is enabled (extendable via `GATEWAY_ALLOWED_HOSTS`); reject non-GET requests carrying a non-loopback `Origin`. Swift app and CLI unaffected. | `inject` with `Host: evil.test` → 403; POST with `Origin: https://evil.test` → 403; normal CLI/Swift requests → 200. | `transports/http.ts` |
 
 ## Phase 3: Search correctness
 
@@ -38,7 +45,7 @@ Baseline commit: `c3ef061` · `tsc --noEmit`: clean · tests: 110/111 pass. The 
 | 3.3 | Rerank rescored only the top 15 and re-sorted them against raw tail scores (different scales): the tail can outrank reranked results. | Reranked slice keeps its order; tail is placed after it (scores mapped below the reranked minimum). | Stub reranker scoring everything low → top results still come from the reranked slice. | `search/search.ts` |
 | 3.4 | Topology rewrite uses the harness *filter* as the caller's harness (defaults to `claude-code`); resolved targets always report scope `parent`. | Resolve the caller's harness from the session map before rewriting; rewriter returns the matched relation. | Codex caller with a parent link, no harness filter → "my parent" resolves; child reference reports `children`. | `search/search.ts`, `search/rewriter.ts` |
 | 3.5 | Eval `--mode lexical` still attaches vectors via `searchOnce`; all modes run the same pipeline, so the committed baseline can't compare them. | `SearchOptions.semantic` (default true) honored by `SearchService` and `searchOnce`; runner maps modes: `lexical` (no vectors), `hybrid` (vectors + RRF), `rerank` (hybrid + cross-encoder; `rrf` kept as an alias of `hybrid`). Regenerate `tests/eval/baseline.json`. | Lexical mode → vector store never queried (spy). | `search/search.ts`, `commands.ts`, `eval/runner.ts`, `scripts/run-eval.ts` |
-| 3.6 | Subscriptions are stored but never evaluated or delivered (`notifyTurns` has no caller). | **Decision D2.** If implement: sync returns newly indexed turns → `notifyTurns` → webhook POST (http/https only, timeout, fire-and-forget) + last N notifications kept per subscription. If remove: drop the MCP tool, HTTP routes, and README claim. | Implement: new matching turn → webhook receives payload. | `collaboration/live.ts`, `indexing/sync.ts`, `watch.ts` |
+| 3.6 | Subscriptions are stored but never evaluated or delivered (`notifyTurns` has no caller). | **D2: implement.** `syncAll` reports turns that are new to the index (ids absent before the batch); watcher and `POST /sync` pass them to `notifyTurns`; matching uses `normalizeQuery` terms (same stop-words as search). Webhook delivery: http/https only, 5s timeout, fire-and-forget with errors logged; last 20 notifications kept per subscription and returned by `GET /subscriptions` and the MCP list. | New matching turn → local test webhook receives the payload; non-matching turn → nothing; bad URL scheme rejected at subscribe time. | `collaboration/live.ts`, `indexing/sync.ts`, `watch.ts`, `transports/http.ts`, `transports/mcp.ts` |
 
 ## Phase 4: Performance
 
@@ -60,24 +67,18 @@ Measure first: `npm run eval -- --mode hybrid` latency (p50/p95) before Phase 4 
 | ID | Item | Plan |
 |---|---|---|
 | 5.1 | SQLite FTS external-content table has no UPDATE trigger (upserts desync FTS). | Add `docs_au` trigger; one-time `INSERT INTO docs_fts(docs_fts) VALUES('rebuild')` migration. |
-| 5.2 | ACL is skipped entirely when no principal is passed. | **Decision D3.** |
-| 5.3 | `serve --announce` advertises on the LAN while binding 127.0.0.1. | **Decision D4.** |
+| 5.2 | ACL is skipped entirely when no principal is passed. | **D3:** anonymous callers get the `*` rule when one exists; no `*` rule → open (local use unchanged). Tests: `*` rule restricts anonymous search; no rules → unchanged results. |
+| 5.3 | `serve --announce` advertises on the LAN while binding 127.0.0.1. | **D4:** `serve --host <addr>` (default `127.0.0.1`). A non-loopback bind refuses to start without `GATEWAY_TOKEN`; off-loopback `/health` returns only `{ok}` without a token; the bound host joins the 2.3 allowlist; `--announce` advertises the bound address and refuses on a loopback bind. Remotes keep sending their stored token. Tests: non-loopback bind without token → startup error; with token → unauthenticated `/search` 401, authenticated 200. |
 | 5.4 | Decision anchoring rejects any turn containing `?` (code, URLs). | Question test on the anchor sentence, not the whole turn. |
 | 5.5 | Neural judge reports `neural-judge` even when the reranker fell back. | Surface fallback; keep `heuristic` method in that case. |
 | 5.6 | `GET …/turns/:id?window=N` ignores N; `asOf` doesn't exclude turns created after `asOf`; "between A and B" excludes day B. | Small targeted fixes + tests. |
-| 5.7 | Dead code: legacy `finalScore` overload (`normalizeBase`/`normalizeVector`), `registry.ts` duplicates `app.ts`, `deriveFromTurns` unused (and would mass-invalidate on "replaced the …"). | Delete, or wire with fixes for `deriveFromTurns`. |
-| 5.8 | README "Known MVP limits" section contradicts shipped phases. | Rewrite after fixes land. |
-
-## Decisions needed
-
-- **D1**: Legacy 1024-dim `turns` table (Ollama): keep as the Ollama-fallback table, or drop it once `turns_384` is fully backfilled?
-- **D2**: Subscriptions: implement delivery (webhook + stored notifications) or remove the feature?
-- **D3**: ACL without a principal: stay open (local-first default), apply the `*` rule, or require a principal whenever rules exist?
-- **D4**: Federation/announce: make LAN binding real (opt-in host + mandatory token) or disable `--announce` until then?
+| 5.7 | Dead code: legacy `finalScore` overload (`normalizeBase`/`normalizeVector`), `registry.ts` duplicates `app.ts`, `deriveFromTurns` unused (and would mass-invalidate on "replaced the …"); legacy `turns` table handling in `VectorStore` becomes dead after D1. | Delete, or wire with fixes for `deriveFromTurns`. |
+| 5.8 | README "Known MVP limits" section contradicts shipped phases. | Rewrite after fixes land; document `--host`, token requirement, subscriptions. |
 
 ## After the fixes (operational)
 
 1. `gateway sync --rebuild` (fixes 1.1 and 1.4 change what gets indexed).
 2. `gateway backfill` to fill `turns_384` (~96k turns at ~150/s ≈ 11 min).
-3. Re-run eval per mode and commit the new `tests/eval/baseline.json`.
-4. Restart the launchd server: `launchctl kickstart -k gui/$(id -u)/com.context-gateway.serve`.
+3. D1: once `turns_384` covers the index, drop the legacy `turns` table (confirm first).
+4. Re-run eval per mode and commit the new `tests/eval/baseline.json`.
+5. Restart the launchd server: `launchctl kickstart -k gui/$(id -u)/com.context-gateway.serve`.
