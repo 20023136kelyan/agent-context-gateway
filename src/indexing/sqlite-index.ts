@@ -70,6 +70,17 @@ export class SqliteIndex implements SearchIndex {
       CREATE INDEX IF NOT EXISTS idx_docs_repo ON docs(repo);
       CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT);
     `);
+    // External-content FTS needs an UPDATE trigger too: upserts (ON CONFLICT DO
+    // UPDATE) otherwise leave the old tokens indexed under the row.
+    const hadUpdateTrigger = !!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='docs_au'").get();
+    this.db.exec(`
+      CREATE TRIGGER IF NOT EXISTS docs_au AFTER UPDATE ON docs BEGIN
+        INSERT INTO docs_fts(docs_fts, rowid, content) VALUES('delete', old.rowid, old.content);
+        INSERT INTO docs_fts(rowid, content) VALUES (new.rowid, new.content);
+      END;
+    `);
+    // Databases written before the trigger may hold stale FTS rows: rebuild once.
+    if (!hadUpdateTrigger) this.db.exec("INSERT INTO docs_fts(docs_fts) VALUES('rebuild')");
     // Migrate pre-repo databases (SQLite has no ADD COLUMN IF NOT EXISTS).
     try {
       this.db.exec("ALTER TABLE docs ADD COLUMN repo TEXT NOT NULL DEFAULT ''");

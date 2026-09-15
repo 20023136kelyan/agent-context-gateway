@@ -141,6 +141,24 @@ describe("tantivy reader sharing (P2a background fix)", () => {
   });
 });
 
+describe("sqlite upserts", () => {
+  it("keep the full-text index in step with changed content", () => {
+    const index = new SqliteIndex(join(root, "index-sqlite-upsert"));
+    try {
+      const base = {
+        id: "claude-code:up-1:t1", sessionId: "up-1", harness: "claude-code" as const, timestamp: "2026-09-10T00:00:00Z",
+        role: "user" as const, raw: {}, seq: 0, projectId: "p", workspace: "/w", repo: null,
+      };
+      index.indexTurns([{ ...base, content: "alphaword original text" }], "/tmp/up.jsonl");
+      index.indexTurns([{ ...base, content: "omegaword rewritten text" }], "/tmp/up.jsonl");
+      expect(index.search("omegaword")).toHaveLength(1);
+      expect(index.search("alphaword")).toHaveLength(0);
+    } finally {
+      index.close();
+    }
+  });
+});
+
 describe("sync failure handling", () => {
   it("leaves a source unstamped when its turns fail to load, so the next sync retries", async () => {
     const dir = join(root, "flaky");
