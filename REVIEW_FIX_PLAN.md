@@ -124,22 +124,45 @@ Measured before/after (`scripts/bench.ts`, medians, 159 sessions / ~107k turns):
 
 ## Open observations (surfaced by the fixes, not in this plan's scope)
 
-Now that the eval modes are distinct pipelines (item 3.5), the numbers say something
-the old harness could not:
+**These numbers are pinned** (`--as-of 2026-09-14`, the day after the golden set's
+newest relevant turn). Nothing recorded above this section was. An unpinned run
+scores against whatever happens to be indexed that minute — including the session
+doing the evaluating, whose transcript quotes all 24 golden queries verbatim. The
+same code path scored **0.7846** unpinned in one session and **0.6740** hours later
+with no code change at all. Treat every earlier eval figure in this document,
+including the before/after table above, as indicative only.
 
-| Mode | NDCG@5 | MRR@5 | P@1 | median latency |
-|---|---:|---:|---:|---:|
-| lexical | 0.811 | 0.806 | 0.708 | 69 ms |
-| hybrid | 0.785 | 0.785 | 0.667 | 143 ms |
-| rerank | 0.858 | 0.861 | 0.792 | 2148 ms |
+| Mode (pinned) | NDCG@5 | MRR@5 | P@1 | paraphrase | median latency |
+|---|---:|---:|---:|---:|---:|
+| lexical | 0.854 | 0.868 | 0.792 | 0.648 | 90 ms |
+| hybrid | 0.818 | 0.816 | 0.708 | 0.596 | 97 ms |
+| rerank | 0.863 | 0.889 | 0.833 | 0.676 | 2189 ms |
 
-- **Vectors currently cost quality, not add it.** Hybrid ranks *below* lexical, and
-  the paraphrase domain — the one embeddings exist for — drops 0.565 → 0.525. Worth
-  investigating: the query vector is built from the stop-word-stripped `indexQuery`
-  rather than the natural question, and BGE-small expects a query instruction prefix.
-- **Reranking is the quality win** (0.858) but costs ~2.1 s per query; it's off by default.
-- **`decide` precision is poor on real data.** ALCE citation precision/recall are 0.000
-  in every mode. A spot check on a golden why-query returns verdicts whose conclusion
-  text is `1\t/**`: extraction anchors on file content quoted inside turns, because a
-  Read tool result arrives as a `user` turn and `speakable()` lets it through. The
-  extraction needs a tool-output/file-content filter before its confidence means anything.
+- **The BGE query prefix was half the vector problem, and it is fixed.** Queries now
+  carry BGE's retrieval instruction; passages stay bare, so no re-embedding was needed.
+  Worth +0.038 NDCG@5 on hybrid (0.780 → 0.818), paraphrase 0.538 → 0.596. The other
+  half of the old hypothesis — embed the natural question rather than the stripped
+  `indexQuery` — was measured and **dropped**: +0.003 (noise), and on a zero-overlap
+  paraphrase it drags the vector toward a distractor ("how SHOULD teammates jointly
+  EDIT" pulls to "Monaco EDITOR SHOULD be replaced").
+- **Vectors still cost quality.** Even prefixed, hybrid trails lexical by 0.036 (paired:
+  1 query better, 6 worse), and lexical wins the paraphrase domain outright — the one
+  embeddings exist for. `semantic` defaults to on, so the shipped default is worse than
+  lexical-only on this set. Changing that default is a product decision resting on 24
+  queries of evidence; not made here.
+- **Reranking is the quality win** (0.863) but costs ~2.2 s per query; off by default.
+- **`decide` no longer quotes files — and the citation metric punished that.** Tool
+  results reach the adapters as `user` lines, so a third of the Claude corpus (26,484 of
+  78,629 turns) was read as user speech and extraction anchored on file contents. Those
+  lines now carry role `tool`. Isolated on the pinned corpus, the fix *lowers* ALCE
+  citation precision 0.133 → 0.067 (recall flat) because the citations it removes are
+  raw file dumps — a Read result, a diffstat — that happen to sit in a relevant session.
+  ALCE scores session ids and never asks whether the cited text is a decision, so it was
+  paying for garbage. Retrieval is unaffected (0.8178 with and without): `role` is not a
+  ranking input.
+- **`decide`'s real weakness is the cue heuristics, not the tool leak.** Post-fix verdicts
+  are genuine prose but still not decisions ("Now I've got it grounded" for a
+  Monaco/CodeMirror query), at confidence 0.11–0.26. The 0.000 citations recorded earlier
+  were corpus contamination, not the anchoring bug — that attribution was wrong.
+- **The citation metric is too thin to gate on**: 5 why-queries, ≤3 citations each, so a
+  single citation moves the mean by 0.067 in either direction.
