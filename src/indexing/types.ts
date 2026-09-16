@@ -24,6 +24,14 @@ export interface IndexFilter {
   repo?: string;
   sessionId?: string;
   limit?: number;
+  /**
+   * Inclusive upper bound (epoch ms) on a turn's timestamp. Applied inside the
+   * backend query so that `limit` selects from the bounded corpus. Filtering
+   * after the search instead silently loses recall: newer turns take candidate
+   * slots and are then discarded, so the same `asOf` returns fewer results as
+   * the index grows.
+   */
+  maxTimestampMs?: number;
 }
 
 export interface IndexWriteOptions {

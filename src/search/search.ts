@@ -210,7 +210,15 @@ export class SearchService {
       }
     }
 
-    const baseFilters = { harness: opts.harness, projectId: opts.project, repo: opts.repo };
+    // asOf bounds the candidate pool inside both backends — lexical and vector —
+    // instead of filtering afterwards, so `limit` selects from the pinned corpus.
+    // The post-filter further down stays as a guard against stale stored docs.
+    const baseFilters = {
+      harness: opts.harness,
+      projectId: opts.project,
+      repo: opts.repo,
+      maxTimestampMs: asOf ? Date.parse(asOf) : undefined,
+    };
     const hits: IndexSearchHit[] = [];
     const lexRanks = new Map<string, number>();
     const pushHits = (hs: IndexSearchHit[]) => {
@@ -246,12 +254,15 @@ export class SearchService {
     // The sweep once recorded here (0.45 -> 0.8178 … 0.85 -> 0.8537 NDCG@5,
     // "quality rises monotonically as vectors are excluded") was measured while
     // every turn was truncated to BGE's first 512 tokens. Chunking voided that
-    // conclusion: turns are embedded in windows now (see chunkForEmbedding), and
-    // on the pinned golden set hybrid overtook lexical for the first time
-    // (0.868 vs 0.841 in one run, paraphrase 0.721 vs 0.611). Excluding vectors
-    // is no longer free, so 0.45 stays as the permissive value it was meant to
-    // be. The sweep has NOT been redone on the chunked index — if this is tuned
-    // later, measure it there rather than trusting the numbers above.
+    // conclusion: turns are embedded in windows now (see chunkForEmbedding).
+    // A first re-measurement suggested hybrid had overtaken lexical (0.868 vs
+    // 0.841) — withdrawn. That run applied asOf *after* the search, so the
+    // strongest vector hits (post-cutoff turns quoting the queries verbatim)
+    // were dropped only after consuming rank positions, muting the vector head.
+    // With asOf bounded inside the query, hybrid is 0.831 against lexical 0.841:
+    // vectors at full influence still cost a little quality here. 0.45 is left
+    // permissive, and re-sweeping it on the chunked, correctly-pinned index is
+    // now the obvious lever — do not trust the numbers above when tuning it.
     const MIN_VECTOR_SIM = 0.45;
     const vecRanks = new Map<string, number>();
     const vecSim = new Map<string, number>();

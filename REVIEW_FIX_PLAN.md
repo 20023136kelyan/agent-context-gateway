@@ -139,14 +139,20 @@ including the before/after table above, as indicative only.
 | hybrid | 0.818 | 0.816 | 0.708 | 0.596 | 97 ms |
 | hybrid + rerank | 0.863 | 0.889 | 0.833 | 0.676 | 2189 ms |
 
-Re-measured after chunking landed (same `--as-of`, 2026-09-16):
+Re-measured after chunking landed (same `--as-of`, 2026-09-16). **Superseded — every row
+here was measured while `asOf` was applied *after* the search, which muted the vector head
+(see the correction below). Kept for the record, not for decisions.**
 
-| Mode (pinned) | NDCG@5 | MRR@5 | P@1 | paraphrase | p50 |
+| Mode (broken pin) | NDCG@5 | MRR@5 | P@1 | paraphrase | p50 |
 |---|---:|---:|---:|---:|---:|
 | lexical | 0.841 | 0.847 | 0.792 | 0.611 | 74 ms |
 | hybrid | 0.868 | 0.899 | 0.833 | 0.721 | 90 ms |
 | lexical + rerank | 0.866 | 0.896 | 0.833 | 0.686 | 3016 ms |
-| **hybrid + rerank** | **0.895** | **0.910** | **0.875** | **0.742** | 3435 ms |
+| hybrid + rerank | 0.895 | 0.910 | 0.875 | 0.742 | 3435 ms |
+
+Only `lexical` and `hybrid` were re-measured under the corrected pin. **The two rerank
+rows have not been**, so 0.866 and 0.895 are unverified — do not quote either as the best
+configuration until they are re-run.
 
 **Pinning is weaker than this document claimed.** The earlier note here said
 `lexical` scored 0.8537 in two pinned runs an hour apart, so "pinning works". It
@@ -158,6 +164,38 @@ indexes new sessions, which reorders results *within* the pinned subset. So
 **cross-run deltas carry drift, and only within-run orderings are trustworthy.**
 Every figure in both tables should be read with that caveat.
 
+**`asOf` was also losing recall — a product bug, not just an eval artifact.** It was
+applied *after* `index.search()` returned, but `limit` is applied *inside*. Newer turns
+therefore took candidate slots and were then discarded, so the same `asOf` returned
+fewer results as the corpus grew. Now bounded inside the query (`IndexFilter.
+maxTimestampMs`, a Tantivy `rangeQuery` on the indexed `timestampMs` field, a
+`d.timestampMs<=?` predicate in SQLite, and the same bound pushed into LanceDB, which
+prefilters by default). Regression test: 60 newer high-scoring turns bury one older
+match; at `limit: 50` the old turn is unreachable before the fix, on both backends.
+
+**This corrected the numbers downward, and the correction is the point.** With the bound
+applied properly, pinned hybrid is **0.831**, not the 0.868 recorded above, while lexical
+is unchanged at 0.841:
+
+| Mode (correctly pinned) | NDCG@5 | MRR@5 | P@1 | paraphrase |
+|---|---:|---:|---:|---:|
+| lexical | 0.841 | 0.847 | 0.792 | 0.611 |
+| hybrid | 0.831 | 0.851 | 0.792 | 0.609 |
+
+The likely mechanism, consistent with a direct probe: the strongest vector hits were
+*post-cutoff* turns — this evaluator's own transcript, which quotes the golden queries
+verbatim (top similarity 0.809 unfiltered vs 0.694 filtered). Those hits consumed vector
+rank positions and were then dropped by the post-filter, leaving legitimate turns with
+worse ranks and weaker RRF influence. Correct pinning gives vectors their full influence,
+and hybrid gets *worse* — which is evidence the vector head is still not accurate enough
+on this corpus. **So "hybrid overtook lexical" is withdrawn**: it was an artifact of a
+broken pin. Production is unaffected (no `asOf` means no predicate); what changed is that
+the eval stopped flattering the vector path.
+
+Two pinned passes were bit-identical across every metric, but the index shrank 28 KB
+between them (a segment merge, not growth), so that is consistent with reproducibility
+rather than proof of it. The BM25-statistics drift above remains unfixed.
+
 - **The BGE query prefix was half the vector problem, and it is fixed.** Queries now
   carry BGE's retrieval instruction; passages stay bare, so no re-embedding was needed.
   Worth +0.038 NDCG@5 on hybrid (0.780 → 0.818), paraphrase 0.538 → 0.596. The other
@@ -165,12 +203,14 @@ Every figure in both tables should be read with that caveat.
   `indexQuery` — was measured and **dropped**: +0.003 (noise), and on a zero-overlap
   paraphrase it drags the vector toward a distractor ("how SHOULD teammates jointly
   EDIT" pulls to "Monaco EDITOR SHOULD be replaced").
-- **Vectors cost quality until chunking landed; now they earn it.** Before chunking,
-  hybrid trailed lexical by 0.036 and lost the paraphrase domain outright — the one
-  embeddings exist for — which made the shipped `semantic: true` default worse than
-  lexical-only. Both orderings have since reversed *within a single run*: hybrid 0.868
-  vs lexical 0.841, paraphrase 0.721 vs 0.611. The shipped default is no longer the
-  wrong one, and the question of flipping it is closed in favour of leaving it on.
+- **Vectors still cost quality on this set, and the apparent reversal did not survive a
+  correct pin.** Chunking genuinely helped — it is what made a stored vector describe the
+  text it is filed under — and under the old (post-filtered) pin hybrid appeared to
+  overtake lexical at 0.868 vs 0.841. Once `asOf` was bounded inside the query, hybrid
+  measured **0.831** against lexical's unchanged 0.841, paraphrase 0.609 vs 0.611. So the
+  ordering is where it always was: lexical narrowly ahead. The question of flipping the
+  shipped `semantic: true` default is therefore **still open**, and still resting on 24
+  queries of one corpus.
 - **The embedder never sees most of a long turn — this is the structural reason vectors
   lose.** BGE-small's window is 512 tokens (`model.max_length`), but `truncate()` keeps
   8000 chars and we embed the turn whole. Probed directly: appending 400 tokens of

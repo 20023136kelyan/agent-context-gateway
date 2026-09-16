@@ -172,6 +172,11 @@ export class SqliteIndex implements SearchIndex {
       filters.push("d.sessionId=?");
       params.push(opts.sessionId);
     }
+    // Bounds the corpus before LIMIT, so an asOf query keeps its recall.
+    if (opts?.maxTimestampMs !== undefined) {
+      filters.push("d.timestampMs<=?");
+      params.push(opts.maxTimestampMs);
+    }
     const where = filters.length ? `AND ${filters.join(" AND ")}` : "";
     const rows = this.db
       .prepare(

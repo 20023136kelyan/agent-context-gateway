@@ -101,6 +101,48 @@ for (const backend of backends) {
       }
     });
 
+    it("bounds an asOf corpus inside the query, so newer turns can't crowd out older ones", async () => {
+      const indexDir = join(root, `index-${backend.name}-asof`);
+      const index = backend.create(indexDir);
+      const cutoff = Date.parse("2026-06-01T00:00:00Z");
+      const mk = (id: string, iso: string, content: string) => ({
+        id,
+        sessionId: "s-asof",
+        harness: "codex" as const,
+        timestamp: iso,
+        role: "assistant" as const,
+        content,
+        raw: null,
+        seq: 0,
+        projectId: "p",
+        workspace: "/repo/p",
+        repo: null,
+      });
+      try {
+        // One old turn that matches weakly...
+        index.indexTurns([mk("codex:s-asof:old", "2026-01-01T00:00:00Z", "quokka")], "/src/asof", { commit: false });
+        // ...buried under 60 newer ones that score higher on the same term.
+        index.indexTurns(
+          Array.from({ length: 60 }, (_, i) =>
+            mk(`codex:s-asof:new-${i}`, "2026-09-01T00:00:00Z", "quokka quokka quokka quokka quokka"),
+          ),
+          "/src/asof",
+          { commit: false },
+        );
+        index.commit();
+
+        // Premise: unbounded, the newer turns fill every candidate slot.
+        expect(index.search("quokka", { limit: 50 })).toHaveLength(50);
+
+        // Bounded, the old turn is reachable — filtering after the search
+        // instead would have discarded all 50 newer hits and returned nothing.
+        const pinned = index.search("quokka", { limit: 50, maxTimestampMs: cutoff });
+        expect(pinned.map((h) => h.turnId)).toEqual(["codex:s-asof:old"]);
+      } finally {
+        index.close();
+      }
+    });
+
     it("defers writes until commit(); docCount() agrees with stats", async () => {
       const index = backend.create(join(root, `index-${backend.name}-3`));
       try {

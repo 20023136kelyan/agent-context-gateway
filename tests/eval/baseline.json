@@ -1,16 +1,16 @@
 {
   "mode": "hybrid",
-  "timestamp": "2026-09-16T09:07:03.067Z",
+  "timestamp": "2026-09-16T11:10:02.838Z",
   "asOf": "2026-09-14T00:00:00Z",
   "totalQueries": 24,
   "overall": {
     "domain": "overall",
     "count": 24,
-    "meanNdcg5": 0.8682,
-    "meanMrr5": 0.8993,
-    "meanP1": 0.8333,
-    "meanP5": 0.6542,
-    "p50LatencyMs": 95,
+    "meanNdcg5": 0.8306,
+    "meanMrr5": 0.8507,
+    "meanP1": 0.7917,
+    "meanP5": 0.6646,
+    "p50LatencyMs": 166,
     "p95LatencyMs": 711
   },
   "byDomain": {
@@ -20,9 +20,9 @@
       "meanNdcg5": 0.9416,
       "meanMrr5": 1,
       "meanP1": 1,
-      "meanP5": 0.8125,
-      "p50LatencyMs": 388,
-      "p95LatencyMs": 13406
+      "meanP5": 0.875,
+      "p50LatencyMs": 370,
+      "p95LatencyMs": 14754
     },
     "prose": {
       "domain": "prose",
@@ -31,18 +31,18 @@
       "meanMrr5": 1,
       "meanP1": 1,
       "meanP5": 0.7083,
-      "p50LatencyMs": 96,
-      "p95LatencyMs": 501
+      "p50LatencyMs": 164,
+      "p95LatencyMs": 542
     },
     "paraphrase": {
       "domain": "paraphrase",
       "count": 8,
-      "meanNdcg5": 0.7213,
-      "meanMrr5": 0.6979,
-      "meanP1": 0.5,
-      "meanP5": 0.4417,
-      "p50LatencyMs": 79,
-      "p95LatencyMs": 231
+      "meanNdcg5": 0.6085,
+      "meanMrr5": 0.5521,
+      "meanP1": 0.375,
+      "meanP5": 0.4104,
+      "p50LatencyMs": 166,
+      "p95LatencyMs": 202
     }
   },
   "queryResults": [
@@ -54,7 +54,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 13406,
+      "latencyMs": 14754,
       "topSessionIds": [
         "01a093f3-8ffe-7923-ac2c-dd806823f2f4"
       ],
@@ -68,7 +68,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 80,
+      "latencyMs": 269,
       "topSessionIds": [
         "01a094ca-d95f-7630-8290-12fb03ad1ce2",
         "01a093f3-8ffe-7923-ac2c-dd806823f2f4"
@@ -82,11 +82,10 @@
       "ndcg5": 1,
       "mrr5": 1,
       "p1": 1,
-      "p5": 0.5,
+      "p5": 1,
       "latencyMs": 711,
       "topSessionIds": [
-        "77d0c5a8-b18d-49d9-abae-88cd24197f9e",
-        "2e8ba422-4e8d-41a2-b970-e81f2324bbd0"
+        "77d0c5a8-b18d-49d9-abae-88cd24197f9e"
       ],
       "hit": true
     },
@@ -98,11 +97,11 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 0.3333333333333333,
-      "latencyMs": 452,
+      "latencyMs": 370,
       "topSessionIds": [
         "8a0205bd-2ec7-4937-a823-d5524ca6b0b2",
-        "5621e727-00ac-4f75-9330-9e174aee88bd",
-        "3c34009a-7c73-4e32-999f-4ca72b12fd8f"
+        "3c34009a-7c73-4e32-999f-4ca72b12fd8f",
+        "5621e727-00ac-4f75-9330-9e174aee88bd"
       ],
       "hit": true
     },
@@ -114,7 +113,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 0.6666666666666666,
-      "latencyMs": 95,
+      "latencyMs": 107,
       "topSessionIds": [
         "82f3fa01-16f5-42af-b29d-f663fb9fed22",
         "660a371e-f1c1-4878-9c47-f419d164a389",
@@ -130,7 +129,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 47,
+      "latencyMs": 81,
       "topSessionIds": [
         "82f3fa01-16f5-42af-b29d-f663fb9fed22",
         "2e8ba422-4e8d-41a2-b970-e81f2324bbd0"
@@ -145,7 +144,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 138,
+      "latencyMs": 152,
       "topSessionIds": [
         "01a094ca-d95f-7630-8290-12fb03ad1ce2"
       ],
@@ -159,7 +158,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 388,
+      "latencyMs": 600,
       "topSessionIds": [
         "6bba75f6-4f0a-4e05-ae9a-689d61d18865"
       ],
@@ -173,7 +172,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 0.5,
-      "latencyMs": 96,
+      "latencyMs": 164,
       "topSessionIds": [
         "019f73a0-9b73-77a0-ac30-2984a0443ab5",
         "019fd320-3baa-7921-acc7-ff3cafefe793"
@@ -188,7 +187,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 0.6666666666666666,
-      "latencyMs": 362,
+      "latencyMs": 439,
       "topSessionIds": [
         "14d5bd8d-1201-41cd-bec1-520ba3ddd94e",
         "b6bab407-1420-4b57-adf3-78635411d95f",
@@ -204,7 +203,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 76,
+      "latencyMs": 111,
       "topSessionIds": [
         "9827d094-d37b-4efe-bf3c-7222e1a22e0a",
         "e989fc8b-ec07-4cfc-b405-d95f9b61459d"
@@ -219,7 +218,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 138,
+      "latencyMs": 178,
       "topSessionIds": [
         "dc7f31f8-01e4-4bc0-a472-981088cb27bd",
         "3d589c11-4bfc-45e2-ab86-f5965d3d2097",
@@ -237,7 +236,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 0.6666666666666666,
-      "latencyMs": 48,
+      "latencyMs": 88,
       "topSessionIds": [
         "14d5bd8d-1201-41cd-bec1-520ba3ddd94e",
         "ced1642f-f945-40f8-a133-86b86e57b643",
@@ -253,7 +252,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 0.3333333333333333,
-      "latencyMs": 48,
+      "latencyMs": 80,
       "topSessionIds": [
         "9827d094-d37b-4efe-bf3c-7222e1a22e0a",
         "3d589c11-4bfc-45e2-ab86-f5965d3d2097",
@@ -269,7 +268,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 0.5,
-      "latencyMs": 501,
+      "latencyMs": 542,
       "topSessionIds": [
         "01a072d3-4315-7d72-adcf-af6b64b1a5c7",
         "01a06e80-f027-79b2-ae34-66e80c6237a9"
@@ -284,7 +283,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 64,
+      "latencyMs": 109,
       "topSessionIds": [
         "019f6a57-040b-7e20-9848-96e3e65607a3"
       ],
@@ -298,7 +297,7 @@
       "mrr5": 0.3333333333333333,
       "p1": 0,
       "p5": 0.25,
-      "latencyMs": 125,
+      "latencyMs": 202,
       "topSessionIds": [
         "01a02418-9c71-7223-927d-185d6ead3439",
         "019f73a0-9b73-77a0-ac30-2984a0443ab5",
@@ -311,18 +310,16 @@
       "id": "paraphrase-18",
       "domain": "paraphrase",
       "query": "How should teammates jointly edit together?",
-      "ndcg5": 0.20210734650054757,
-      "mrr5": 0.25,
+      "ndcg5": 0,
+      "mrr5": 0,
       "p1": 0,
-      "p5": 0.25,
-      "latencyMs": 79,
+      "p5": 0,
+      "latencyMs": 166,
       "topSessionIds": [
         "019f73a0-9b73-77a0-ac30-2984a0443ab5",
-        "9192279c-576d-4b29-9610-1ef195106405",
-        "840cd718-13c6-4a95-a80d-9534f9e5558c",
-        "6bba75f6-4f0a-4e05-ae9a-689d61d18865"
+        "73fc2b04-dce6-4fc1-9007-662dd8101b02"
       ],
-      "hit": true
+      "hit": false
     },
     {
       "id": "paraphrase-19",
@@ -332,7 +329,7 @@
       "mrr5": 0.5,
       "p1": 0,
       "p5": 0.25,
-      "latencyMs": 51,
+      "latencyMs": 130,
       "topSessionIds": [
         "2e8ba422-4e8d-41a2-b970-e81f2324bbd0",
         "77d0c5a8-b18d-49d9-abae-88cd24197f9e",
@@ -345,16 +342,16 @@
       "id": "paraphrase-20",
       "domain": "paraphrase",
       "query": "Why is dragging window borders sluggish or dropping frames?",
-      "ndcg5": 0.6309297535714575,
-      "mrr5": 0.5,
+      "ndcg5": 0.5,
+      "mrr5": 0.3333333333333333,
       "p1": 0,
       "p5": 0.25,
-      "latencyMs": 60,
+      "latencyMs": 152,
       "topSessionIds": [
         "660a371e-f1c1-4878-9c47-f419d164a389",
+        "019f73a0-9b73-77a0-ac30-2984a0443ab5",
         "77d0c5a8-b18d-49d9-abae-88cd24197f9e",
-        "2e8ba422-4e8d-41a2-b970-e81f2324bbd0",
-        "82f3fa01-16f5-42af-b29d-f663fb9fed22"
+        "2e8ba422-4e8d-41a2-b970-e81f2324bbd0"
       ],
       "hit": true
     },
@@ -366,11 +363,11 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 0.3333333333333333,
-      "latencyMs": 56,
+      "latencyMs": 171,
       "topSessionIds": [
         "8a0205bd-2ec7-4937-a823-d5524ca6b0b2",
-        "5621e727-00ac-4f75-9330-9e174aee88bd",
-        "3c34009a-7c73-4e32-999f-4ca72b12fd8f"
+        "3c34009a-7c73-4e32-999f-4ca72b12fd8f",
+        "5621e727-00ac-4f75-9330-9e174aee88bd"
       ],
       "hit": true
     },
@@ -378,16 +375,16 @@
       "id": "paraphrase-22",
       "domain": "paraphrase",
       "query": "Why did we choose to swap out Monaco for another editor?",
-      "ndcg5": 1,
-      "mrr5": 1,
-      "p1": 1,
+      "ndcg5": 0.43067655807339306,
+      "mrr5": 0.25,
+      "p1": 0,
       "p5": 0.2,
-      "latencyMs": 64,
+      "latencyMs": 107,
       "topSessionIds": [
-        "8a0205bd-2ec7-4937-a823-d5524ca6b0b2",
         "e91059ed-bb68-4cbb-b1e6-8110026c37b7",
-        "10c06720-8489-4e10-b8de-722da4443672",
         "3c34009a-7c73-4e32-999f-4ca72b12fd8f",
+        "10c06720-8489-4e10-b8de-722da4443672",
+        "8a0205bd-2ec7-4937-a823-d5524ca6b0b2",
         "77d0c5a8-b18d-49d9-abae-88cd24197f9e"
       ],
       "hit": true
@@ -400,7 +397,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 88,
+      "latencyMs": 162,
       "topSessionIds": [
         "019f73a0-9b73-77a0-ac30-2984a0443ab5"
       ],
@@ -414,7 +411,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 231,
+      "latencyMs": 198,
       "topSessionIds": [
         "019f73a0-9b73-77a0-ac30-2984a0443ab5"
       ],

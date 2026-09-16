@@ -142,7 +142,7 @@ export class VectorStore {
   async nearest(
     vector: number[],
     limit = 50,
-    filter?: { harness?: string; projectId?: string; sessionId?: string },
+    filter?: { harness?: string; projectId?: string; sessionId?: string; maxTimestampMs?: number },
   ): Promise<VectorHit[]> {
     const dim = vector.length;
     const table = await this.getTableForDim(dim);
@@ -154,6 +154,10 @@ export class VectorStore {
     if (filter?.harness) preds.push(`harness = ${esc(filter.harness)}`);
     if (filter?.projectId) preds.push(`projectId = ${esc(filter.projectId)}`);
     if (filter?.sessionId) preds.push(`sessionId = ${esc(filter.sessionId)}`);
+    // Same bound as the lexical side: KNN returns its top-K from the whole
+    // store, so without this a pinned query spends candidate slots on turns it
+    // will discard, and the surviving pool shrinks as the corpus grows.
+    if (Number.isFinite(filter?.maxTimestampMs)) preds.push(`timestampMs <= ${Math.floor(filter!.maxTimestampMs!)}`);
     if (preds.length) q = q.filter(preds.join(" AND "));
     const rows = await q.select(["id", "_distance"]).toArray();
 

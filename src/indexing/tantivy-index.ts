@@ -19,7 +19,7 @@ import { mkdirSync, existsSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import type { Turn } from "../core/models.js";
-import type { IndexStats, SearchIndex, IndexSearchHit, IndexWriteOptions } from "./types.js";
+import type { IndexStats, SearchIndex, IndexSearchHit, IndexWriteOptions, IndexFilter } from "./types.js";
 
 const require = createRequire(import.meta.url);
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -208,10 +208,7 @@ export class TantivyIndex implements SearchIndex {
     this.commit();
   }
 
-  search(
-    query: string,
-    opts?: { harness?: string; projectId?: string; repo?: string; sessionId?: string; limit?: number },
-  ): IndexSearchHit[] {
+  search(query: string, opts?: IndexFilter): IndexSearchHit[] {
     if (!query.trim()) return [];
     const clauses: object[] = [];
     // Lenient parse: unknown operators become errors list instead of throwing.
@@ -223,6 +220,17 @@ export class TantivyIndex implements SearchIndex {
     if (opts?.repo) clauses.push({ occur: Occur.Must, query: Query.termQuery(schema(), "repo", opts.repo) });
     if (opts?.sessionId)
       clauses.push({ occur: Occur.Must, query: Query.termQuery(schema(), "sessionId", opts.sessionId) });
+    if (opts?.maxTimestampMs !== undefined) {
+      // Bounds the corpus before `limit` rather than after, so an asOf query
+      // does not lose recall to newer turns taking candidate slots.
+      // FieldType is a `const enum`: erased at runtime (the module exports {}),
+      // so the type comes from the schema, never from `FieldType.I64`.
+      const s = schema();
+      clauses.push({
+        occur: Occur.Must,
+        query: Query.rangeQuery(s, "timestampMs", s.getFieldType("timestampMs"), 0, opts.maxTimestampMs, true, true),
+      });
+    }
     const combined = clauses.length === 1 ? textQuery : Query.booleanQuery(clauses);
     this.index.reload();
     const searcher = this.index.searcher();
