@@ -13,6 +13,20 @@ import { createInterface } from "node:readline";
 export const MLX_DIM = 384;
 export const MLX_MODEL = "bge-small";
 
+/**
+ * BGE is trained for asymmetric retrieval: passages are embedded bare, queries
+ * carry this instruction. Embedding a question like a passage puts it in the
+ * wrong region of the space, which is why hybrid search ranked below lexical.
+ * Stored vectors are unprefixed, so this needs no re-embedding of the corpus.
+ *
+ * Measured on the golden set (24 queries, corpus pinned to 2026-09-14):
+ * hybrid NDCG@5 0.780 -> 0.818, paraphrase 0.538 -> 0.596, P@1 0.667 -> 0.708;
+ * 4 queries better, 1 worse. It does NOT close the gap to lexical-only
+ * (0.854 on the same pinned corpus): vectors still cost quality on this set,
+ * and the prefix only makes them cost less. See the plan's open observations.
+ */
+export const BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: ";
+
 /** Wait this long for the ready line; after that requests are sent anyway (they queue on stdin during a slow first load). */
 const READY_GRACE_MS = 8000;
 /** After the worker dies, report unavailable (provider falls back) for this long instead of respawning per call. */
@@ -172,7 +186,7 @@ export class MlxEmbedder {
   }
 
   async embedQuery(query: string): Promise<number[]> {
-    const [vec] = await this.embedTexts([query]);
+    const [vec] = await this.embedTexts([BGE_QUERY_PREFIX + query]);
     return vec;
   }
 

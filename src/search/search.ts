@@ -249,6 +249,13 @@ export class SearchService {
     let hasVectors = false;
     if (opts.semantic !== false && this.vectors && (await this.vectors.count().catch(() => 0)) > 0) {
       try {
+        // The embedder gets the same stripped terms the lexical index gets.
+        // A/B'd on the golden set (24 queries, corpus pinned to 2026-09-14):
+        // embedding the natural question instead is worth +0.003 NDCG@5 —
+        // noise — and on a zero-lexical-overlap paraphrase it drags the vector
+        // toward a distractor ("how SHOULD teammates jointly EDIT" pulls to
+        // "Monaco EDITOR SHOULD be replaced"). The win was the query prefix
+        // (see BGE_QUERY_PREFIX), not the word order.
         const qv = await embedQuery(nq.indexQuery);
         let vhits: { turnId: string; similarity: number }[] = [];
         if (scopeSessions) {

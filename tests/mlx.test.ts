@@ -108,6 +108,29 @@ describe("MLX worker resilience", () => {
     expect(stdout.trim()).toBe("[[0.5]]");
   }, 30000);
 
+  it("queries carry the BGE instruction prefix; passages stay bare", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "acg-mlx-prefix-"));
+    const fakeWorker = join(dir, "python");
+    // Encodes into the vector whether the text arrived prefixed.
+    await writeFile(
+      fakeWorker,
+      [
+        "#!/usr/bin/env node",
+        'process.stderr.write("MLX worker ready\\n");',
+        'const PREFIX = "Represent this sentence for searching relevant passages: ";',
+        'require("readline").createInterface({ input: process.stdin }).on("line", (l) => {',
+        "  const { id, texts } = JSON.parse(l);",
+        '  process.stdout.write(JSON.stringify({ id, embeddings: texts.map((t) => [t.startsWith(PREFIX) ? 1 : 0]) }) + "\\n");',
+        "});",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    const embedder = new MlxEmbedder({ pythonPath: fakeWorker, scriptPath: fakeWorker });
+    expect(await embedder.embedQuery("why did we replace Monaco")).toEqual([1]);
+    expect(await embedder.embedTexts(["a stored passage"])).toEqual([[0]]);
+    embedder.close();
+  }, 30000);
+
   it("a wedged worker times out instead of hanging the caller", async () => {
     const dir = await mkdtemp(join(tmpdir(), "acg-mlx-wedged-"));
     const python = join(dir, "python");
