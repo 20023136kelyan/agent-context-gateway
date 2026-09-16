@@ -75,6 +75,41 @@ Measure first: `npm run eval -- --mode hybrid` latency (p50/p95) before Phase 4 
 | 5.7 | Dead code: legacy `finalScore` overload (`normalizeBase`/`normalizeVector`), `registry.ts` duplicates `app.ts`, `deriveFromTurns` unused (and would mass-invalidate on "replaced the …"); legacy `turns` table handling in `VectorStore` becomes dead after D1. | Delete, or wire with fixes for `deriveFromTurns`. |
 | 5.8 | README "Known MVP limits" section contradicts shipped phases. | Rewrite after fixes land; document `--host`, token requirement, subscriptions. |
 
+## Outcome (2026-09-16)
+
+All five phases are implemented on `review-fixes`, one commit per item or tight group,
+each with regression tests that fail on `c3ef061` and pass after. Suite: 154 tests
+(from 111), `tsc --noEmit` clean.
+
+Deviations and extras found while implementing:
+
+- **4.6 reverted.** Batching the cross-encoder made it *slower* (15 pairs: 2.7 s
+  batched vs 1.7 s one pass per pair) because every pair is padded to the longest.
+  Reverted with the measurement recorded in the code comment.
+- **4.8 re-sized after measuring.** The first bound (128 sessions / 50M chars) was
+  below the working set — the corpus is 106M chars with a single 51M-char Codex
+  session — and thrashed: 24 queries went 4.0 s → 31 s. Now 256 sessions / 200M
+  chars; the whole corpus retains 222 MB of heap. A `truncate()` copy meant to cut
+  retention was tried and dropped: measured identical heap.
+- **Extra bug (git hook):** `diff-tree` needs `--root` or a repo's first commit
+  records no files.
+- **Extra bug (MLX):** an idle worker's pipes kept Node alive, so any process that
+  embedded once (CLI search, run-eval, bench) finished its work and never exited.
+- **Extra bug (Tantivy):** `search()` was computing a total match count that no
+  caller used.
+
+Measured before/after (`scripts/bench.ts`, medians, 159 sessions / ~107k turns):
+
+| Operation | Before | After |
+|---|---:|---:|
+| `index.stats()` (every search) | 37.5 ms | 0.2 ms |
+| Codex `listTurns` ×5, warm | 21 ms | 0.1 ms |
+| 24 golden queries, lexical | 3957 ms | 2692 ms |
+| 24 golden queries, hybrid | 1972 ms | 822 ms |
+| `extractDecisions`, 2529 turns | 308 ms | 44 ms |
+| Cold full sync | 52.7 s | 12.8 s |
+| Incremental sync, no changes | 46.8 ms | 14.3 ms |
+
 ## After the fixes (operational)
 
 1. `gateway sync --rebuild` (fixes 1.1 and 1.4 change what gets indexed).
