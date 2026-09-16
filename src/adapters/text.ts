@@ -81,6 +81,31 @@ export function claudeContentToText(content: unknown): string {
   return "";
 }
 
+/**
+ * True when a Claude `user` line carries only tool_result blocks. Such a line
+ * is tool output (a file read, a command's stdout) wearing the user role, not
+ * something a person said. Consumers that reason about what was *stated* —
+ * decision extraction — must not read it as an utterance.
+ */
+export function isToolResultContent(content: unknown): boolean {
+  if (!Array.isArray(content)) return false;
+  let sawToolResult = false;
+  for (const b of content) {
+    if (typeof b === "string") {
+      if (b.trim()) return false; // real prose alongside the results
+      continue;
+    }
+    if (!b || typeof b !== "object") continue;
+    const block = b as Record<string, unknown>;
+    if (block.type === "tool_result") {
+      sawToolResult = true;
+      continue;
+    }
+    if (typeof block.text === "string" && block.text.trim()) return false;
+  }
+  return sawToolResult;
+}
+
 export function claudeToolNames(content: unknown): string[] {
   if (!Array.isArray(content)) return [];
   const names: string[] = [];

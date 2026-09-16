@@ -11,6 +11,7 @@ import { decideOnce } from "../src/commands.js";
 import { syncAll } from "../src/indexing/sync.js";
 import { CursorStore } from "../src/indexing/store.js";
 import type { Turn } from "../src/core/models.js";
+import { ClaudeAdapter } from "../src/adapters/claude.js";
 
 const t = (seq: number, role: Turn["role"], content: string, ts = "2026-09-10T10:00:00Z"): Turn => ({
   id: `x:s:${seq}`, sessionId: "s", harness: "codex", timestamp: ts, role, content, raw: {}, seq,
@@ -45,6 +46,24 @@ describe("extractDecisions", () => {
       t(1, "tool", "actions[0] click: ok — element selected"),
     ];
     expect(extractDecisions("s", turns)).toEqual([]);
+  });
+
+  it("file contents echoed back by a tool never anchor (real Claude shape)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "acg-dec-claude-"));
+    const sid = "eeeeeeee-1111-2222-3333-444444444444";
+    await mkdir(join(dir, "proj"), { recursive: true });
+    const lines = [
+      JSON.stringify({ type: "user", uuid: "u1", timestamp: "2026-09-10T10:00:00Z", sessionId: sid, cwd: "/repo/proj", message: { role: "user", content: "Why did we swap the editor?" } }),
+      // A Read result — source code that happens to contain decision cues.
+      JSON.stringify({ type: "user", uuid: "u2", timestamp: "2026-09-10T10:01:00Z", sessionId: sid, cwd: "/repo/proj", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "1\t/**\n2\t * We decided to keep Monaco here because the license was fine\n3\t */" }] } }),
+      JSON.stringify({ type: "assistant", uuid: "a1", timestamp: "2026-09-10T10:02:00Z", sessionId: sid, cwd: "/repo/proj", message: { role: "assistant", content: [{ type: "text", text: "We decided to replace Monaco with CodeMirror because the MIT license avoids legal review" }] } }),
+    ];
+    await writeFile(join(dir, "proj", `${sid}.jsonl`), lines.join("\n"));
+    const turns = await new ClaudeAdapter(dir).listTurns(sid);
+    const decisions = extractDecisions(sid, turns, ["monaco", "replace"]);
+    expect(decisions.map((d) => d.conclusion.content)).toEqual([
+      "We decided to replace Monaco with CodeMirror because the MIT license avoids legal review",
+    ]);
   });
 
   it("relevance gate demotes verdicts that ignore the query", () => {

@@ -39,6 +39,12 @@ beforeAll(async () => {
       sessionId: CLAUDE_SESSION, cwd: "/repo/cozea",
       message: { role: "assistant", content: [{ type: "tool_use", name: "Read", input: {} }, { type: "text", text: "checked src/collab/hub.ts" }] },
     }),
+    // A tool result: wears the "user" type natively, but it is file content.
+    JSON.stringify({
+      parentUuid: "a-2", type: "user", uuid: "u-2", timestamp: "2026-09-01T10:03:00Z",
+      sessionId: CLAUDE_SESSION, cwd: "/repo/cozea",
+      message: { role: "user", content: [{ type: "tool_result", tool_use_id: "t-1", content: "1\t/** We decided the workbench stays private */" }] },
+    }),
   ];
   await writeFile(join(claudeDir, "my-proj", `${CLAUDE_SESSION}.jsonl`), claudeLines.join("\n"));
 
@@ -72,10 +78,13 @@ describe("ClaudeAdapter", () => {
   it("parses user/assistant turns, skips metadata, extracts fileRefs + tools", async () => {
     const a = new ClaudeAdapter(claudeDir);
     const turns = await a.listTurns(CLAUDE_SESSION);
-    expect(turns.map((t) => t.role)).toEqual(["user", "assistant", "assistant"]);
+    // The trailing tool_result line is tool output, not the user speaking.
+    expect(turns.map((t) => t.role)).toEqual(["user", "assistant", "assistant", "tool"]);
     expect(turns[0].content).toContain("collaboration");
     expect(turns[1].fileRefs).toContain("PR #169");
     expect(turns[2].toolNames).toContain("Read");
+    // Still indexed and searchable — only its role changed.
+    expect(turns[3].content).toContain("workbench stays private");
     // stable IDs + provenance fields
     for (const t of turns) {
       expect(t.id).toContain("claude-code");

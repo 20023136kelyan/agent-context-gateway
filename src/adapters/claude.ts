@@ -12,7 +12,7 @@ import { homedir } from "node:os";
 import type { Harness, Session, Turn, TurnRole } from "../core/models.js";
 import { turnId as makeTurnId } from "../core/id.js";
 import type { ContextAdapter, FileCursor } from "./types.js";
-import { truncate, extractFileRefs, claudeContentToText, claudeToolNames, TURN_CACHE_SESSIONS, TURN_CACHE_CHARS, turnChars } from "./text.js";
+import { truncate, extractFileRefs, claudeContentToText, claudeToolNames, isToolResultContent, TURN_CACHE_SESSIONS, TURN_CACHE_CHARS, turnChars } from "./text.js";
 import { LruCache } from "../core/lru.js";
 import { repoRoot } from "./repo.js";
 
@@ -227,7 +227,12 @@ export class ClaudeAdapter implements ContextAdapter {
   private lineToTurn(o: ClaudeLine, sessionId: string, path: string, offset: number, seq: number): Turn | null {
     const t = o.type;
     if (t !== "user" && t !== "assistant" && t !== "system") return null;
-    const role: TurnRole = t === "user" ? "user" : t === "assistant" ? "assistant" : "system";
+    // Tool results arrive as `user` lines. They are file contents and command
+    // output, not the user speaking, so they get the role that says so — a
+    // third of this corpus is these, and reading them as utterances made
+    // decision extraction quote source files back as "decisions".
+    const toolOutput = t === "user" && isToolResultContent(o.message?.content);
+    const role: TurnRole = toolOutput ? "tool" : t === "user" ? "user" : t === "assistant" ? "assistant" : "system";
     const contentRaw = claudeContentToText(o.message?.content);
     const content = truncate(contentRaw.trim());
     if (!content) return null;
