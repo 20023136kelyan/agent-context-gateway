@@ -110,10 +110,36 @@ Measured before/after (`scripts/bench.ts`, medians, 159 sessions / ~107k turns):
 | Cold full sync | 52.7 s | 12.8 s |
 | Incremental sync, no changes | 46.8 ms | 14.3 ms |
 
-## After the fixes (operational)
+## After the fixes (operational) — done 2026-09-16
 
-1. `gateway sync --rebuild` (fixes 1.1 and 1.4 change what gets indexed).
-2. `gateway backfill` to fill `turns_384` (~96k turns at ~150/s ≈ 11 min).
-3. D1: once `turns_384` covers the index, drop the legacy `turns` table (confirm first).
-4. Re-run eval per mode and commit the new `tests/eval/baseline.json`.
-5. Restart the launchd server: `launchctl kickstart -k gui/$(id -u)/com.context-gateway.serve`.
+1. ✅ Restarted the launchd server on the new code.
+2. ✅ `sync --rebuild`: 159 sessions, 107,236 turns, 100,084 docs, 0 failed.
+3. ✅ Backfill: 82,546 turns embedded. The first run aborted at session 55 on a
+   LanceDB "ambiguous merge insert" — Claude reuses turn uuids inside a file and
+   the 512-row write buffer made a batch carry an id twice; `VectorStore.upsert`
+   now dedupes (separate commit + test). `turns_384` holds 100,244 rows with a
+   scalar `id` index.
+4. ✅ D1: legacy `turns.lance` (12,211 rows, 53 MB) deleted after coverage was confirmed.
+5. ✅ Eval re-run per mode; `tests/eval/baseline.json` regenerated from hybrid.
+
+## Open observations (surfaced by the fixes, not in this plan's scope)
+
+Now that the eval modes are distinct pipelines (item 3.5), the numbers say something
+the old harness could not:
+
+| Mode | NDCG@5 | MRR@5 | P@1 | median latency |
+|---|---:|---:|---:|---:|
+| lexical | 0.811 | 0.806 | 0.708 | 69 ms |
+| hybrid | 0.785 | 0.785 | 0.667 | 143 ms |
+| rerank | 0.858 | 0.861 | 0.792 | 2148 ms |
+
+- **Vectors currently cost quality, not add it.** Hybrid ranks *below* lexical, and
+  the paraphrase domain — the one embeddings exist for — drops 0.565 → 0.525. Worth
+  investigating: the query vector is built from the stop-word-stripped `indexQuery`
+  rather than the natural question, and BGE-small expects a query instruction prefix.
+- **Reranking is the quality win** (0.858) but costs ~2.1 s per query; it's off by default.
+- **`decide` precision is poor on real data.** ALCE citation precision/recall are 0.000
+  in every mode. A spot check on a golden why-query returns verdicts whose conclusion
+  text is `1\t/**`: extraction anchors on file content quoted inside turns, because a
+  Read tool result arrives as a `user` turn and `speakable()` lets it through. The
+  extraction needs a tool-output/file-content filter before its confidence means anything.
