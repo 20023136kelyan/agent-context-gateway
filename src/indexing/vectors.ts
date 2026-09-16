@@ -6,12 +6,19 @@
  * turns_1024 for Ollama Qwen) so model swaps never crash with dimension mismatch.
  */
 import * as lancedb from "@lancedb/lancedb";
+import { chunkTurnId } from "../core/id.js";
 
 export interface VectorHit {
   turnId: string;
   /** Cosine similarity in [-1, 1], higher is better. */
   similarity: number;
 }
+
+/**
+ * A long turn owns several window rows, which would otherwise crowd distinct
+ * turns out of the top K. Over-fetch by this factor, then collapse.
+ */
+const CHUNK_FANOUT = 4;
 
 export class VectorStore {
   private db!: lancedb.Connection;
@@ -141,7 +148,7 @@ export class VectorStore {
     const table = await this.getTableForDim(dim);
     if (!table) return [];
 
-    let q = table.query().nearestTo(vector).distanceType("cosine").limit(limit);
+    let q = table.query().nearestTo(vector).distanceType("cosine").limit(limit * CHUNK_FANOUT);
     const preds: string[] = [];
     const esc = (s: string) => `'${s.replace(/'/g, "''")}'`;
     if (filter?.harness) preds.push(`harness = ${esc(filter.harness)}`);
@@ -149,10 +156,22 @@ export class VectorStore {
     if (filter?.sessionId) preds.push(`sessionId = ${esc(filter.sessionId)}`);
     if (preds.length) q = q.filter(preds.join(" AND "));
     const rows = await q.select(["id", "_distance"]).toArray();
-    return (rows as { id: string; _distance: number }[]).map((r) => ({
-      turnId: r.id,
-      similarity: 1 - r._distance, // LanceDB cosine distance = 1 - cosine similarity
-    }));
+
+    // Collapse windows to turns, keeping each turn's best-scoring window: a turn
+    // is relevant when *any* part of it matches, and averaging would dilute the
+    // strong local match that chunking exists to expose. Callers upstream index
+    // turns by id, so a window id must never escape this method.
+    const best = new Map<string, number>();
+    for (const r of rows as { id: string; _distance: number }[]) {
+      const turn = chunkTurnId(r.id);
+      const similarity = 1 - r._distance; // LanceDB cosine distance = 1 - cosine similarity
+      const prev = best.get(turn);
+      if (prev === undefined || similarity > prev) best.set(turn, similarity);
+    }
+    return [...best.entries()]
+      .map(([turnId, similarity]) => ({ turnId, similarity }))
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, limit);
   }
 
   async close(): Promise<void> {

@@ -8,6 +8,8 @@ import { tmpdir } from "node:os";
 import { getSharedMlxEmbedder, MlxEmbedder, MLX_DIM } from "../src/embeddings/mlx.js";
 import { embeddingsAvailable, embedTexts, embedQuery } from "../src/embeddings/provider.js";
 import { ClaudeAdapter } from "../src/adapters/claude.js";
+import { chunkForEmbedding, EMBED_CHUNK_CHARS } from "../src/adapters/text.js";
+import { embedChunkId, chunkTurnId } from "../src/core/id.js";
 import { VectorStore } from "../src/indexing/vectors.js";
 import { embedSessionTurns } from "../src/indexing/embed-sync.js";
 import { execFile } from "node:child_process";
@@ -164,6 +166,60 @@ describe("vector store maintenance", () => {
     expect((await table.listIndices()).some((i) => i.columns.includes("id"))).toBe(true);
     expect([...(await vectors.existing(["a", "c", "zzz"], 3))].sort()).toEqual(["a", "c"]);
   });
+
+  it("collapses a turn's windows into one hit, scored by its best window", async () => {
+    const dir = join(await mkdtemp(join(tmpdir(), "acg-vec-collapse-")), "v");
+    const vectors = await VectorStore.open(dir);
+    const turn = "claude-code:s1:u-1";
+    const row = (id: string, vector: number[]) => ({ id, vector, harness: "claude-code", sessionId: "s1", projectId: "p", timestampMs: 0 });
+    await vectors.upsert([
+      row(embedChunkId(turn, 0), [1, 0, 0]), // the head, unrelated to the query
+      row(embedChunkId(turn, 1), [0, 1, 0]), // the tail, which answers it
+      row("claude-code:s1:u-2", [0, 0, 1]),
+    ]);
+    const hits = await vectors.nearest([0, 1, 0], 10);
+    const mine = hits.filter((h) => h.turnId === turn);
+    expect(mine).toHaveLength(1); // one hit per turn, not per window
+    expect(mine[0].similarity).toBeCloseTo(1, 5); // the best window, not the head and not a mean
+    expect(hits.map((h) => h.turnId)).toContain("claude-code:s1:u-2"); // other turns survive
+  });
+});
+
+describe("embedding windows", () => {
+  it("leaves a turn that already fits as a single window", () => {
+    expect(chunkForEmbedding("a short verdict")).toEqual(["a short verdict"]);
+    expect(chunkForEmbedding("   ")).toEqual([]);
+  });
+
+  it("splits a long turn into windows that each fit the model's context", () => {
+    const text = Array.from({ length: 300 }, (_, i) => `line ${i} about collaboration architecture`).join("\n");
+    const chunks = chunkForEmbedding(text);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const c of chunks) expect(c.length).toBeLessThanOrEqual(EMBED_CHUNK_CHARS);
+  });
+
+  it("keeps the tail the 512-token window used to discard", () => {
+    const filler = "the quarterly budget review is scheduled for friday. ".repeat(120);
+    const text = `${filler}\n\nFINAL VERDICT: adopt CodeMirror over Monaco.`;
+    expect(text.length).toBeGreaterThan(EMBED_CHUNK_CHARS * 2);
+    const chunks = chunkForEmbedding(text);
+    expect(chunks.some((c) => c.includes("FINAL VERDICT: adopt CodeMirror over Monaco."))).toBe(true);
+  });
+
+  it("loses no sentence at a window boundary (overlap covers the cut)", () => {
+    const sentences = Array.from({ length: 200 }, (_, i) => `sentence ${i} carrying distinct content.`);
+    const chunks = chunkForEmbedding(sentences.join(" "));
+    for (const s of sentences) expect(chunks.some((c) => c.includes(s))).toBe(true);
+  });
+
+  it("window 0 keeps the bare turn id, so rows written before chunking stay valid", () => {
+    const tid = "claude-code:sess-1:u-1";
+    expect(embedChunkId(tid, 0)).toBe(tid);
+    expect(embedChunkId(tid, 3)).toBe(`${tid}#3`);
+    expect(chunkTurnId(embedChunkId(tid, 3))).toBe(tid);
+    expect(chunkTurnId(tid)).toBe(tid);
+    expect(chunkTurnId("zep:od#d:t1")).toBe("zep:od#d:t1"); // a `#` that isn't ours
+  });
 });
 
 describe("vector backfill dedup", () => {
@@ -188,4 +244,33 @@ describe("vector backfill dedup", () => {
     expect(res.embedded).toBe(1);
     expect((await vectors.existing(turns.map((t) => t.id), MLX_DIM)).size).toBe(1);
   });
+
+  it("embeds a long turn in windows, adding only the ones a pre-chunking corpus lacks", async () => {
+    const root = await mkdtemp(join(tmpdir(), "acg-vec-windows-"));
+    const claudeDir = join(root, "claude");
+    const sid = "cdcdcdcd-1111-2222-3333-444444444444";
+    await mkdir(join(claudeDir, "p"), { recursive: true });
+    const long = `${"the collaboration workbench stays private. ".repeat(150)}\n\nFINAL: adopt CodeMirror.`;
+    await writeFile(
+      join(claudeDir, "p", `${sid}.jsonl`),
+      JSON.stringify({ type: "assistant", uuid: "a1", timestamp: "2026-09-10T10:00:00Z", sessionId: sid, cwd: "/repo/p", message: { role: "assistant", content: [{ type: "text", text: long }] } }),
+    );
+    const adapter = new ClaudeAdapter(claudeDir);
+    const [session] = await adapter.listSessions();
+    const [turn] = await adapter.listTurns(sid);
+    const windows = chunkForEmbedding(turn.content).length;
+    expect(windows).toBeGreaterThan(1);
+
+    const vectors = await VectorStore.open(join(root, "vectors"));
+    // A corpus embedded before chunking existed: the whole turn under its bare id.
+    await vectors.upsert([{ id: turn.id, vector: new Array(MLX_DIM).fill(0.01), harness: turn.harness, sessionId: sid, projectId: "p", timestampMs: 0 }]);
+
+    const res = await embedSessionTurns(adapter, session, vectors, 64, "mlx");
+    expect(res.embedded).toBe(1); // counted in turns, though several windows were written
+    expect(await vectors.count()).toBe(windows); // window 0 reused, the tail backfilled
+
+    const again = await embedSessionTurns(adapter, session, vectors, 64, "mlx");
+    expect(again.embedded).toBe(0); // and it stays resumable
+    expect(await vectors.count()).toBe(windows);
+  }, 60000);
 });

@@ -1,10 +1,16 @@
 /**
- * Vector backfill: embed only turns missing from the store (stable IDs make
- * appends cheap). Resumable: re-running embeds just the remainder.
- * 39 embeds/s on M4 GPU -> full 100k-turn backfill ≈ 45 min; run in background.
+ * Vector backfill: embed only the windows missing from the store (stable IDs
+ * make appends cheap). Resumable: re-running embeds just the remainder.
+ *
+ * The unit is an embedding window, not a turn — a turn longer than BGE's
+ * context becomes several rows (see `chunkForEmbedding`), so a corpus yields
+ * more rows than turns and a backfill costs correspondingly more than the
+ * 39 turns/s an M4 GPU managed when each turn was one embed. Run in background.
  */
 import type { ContextAdapter } from "../adapters/types.js";
-import type { Session } from "../core/models.js";
+import type { Session, Turn } from "../core/models.js";
+import { chunkForEmbedding } from "../adapters/text.js";
+import { embedChunkId } from "../core/id.js";
 import { embedTextsWith, embeddingsAvailable, ENGINE_DIM, type EmbeddingEngine } from "../embeddings/provider.js";
 import type { VectorStore } from "./vectors.js";
 
@@ -49,31 +55,43 @@ export async function embedSessionTurns(
   if (turns.length === 0) return { embedded: 0, skipped: 0 };
   // One engine per call: dedup must check the table that engine writes to.
   const eng = engine ?? (await resolveEmbeddingEngine());
-  const have = await vectors.existing(turns.map((t) => t.id), ENGINE_DIM[eng]).catch(() => new Set<string>());
-  const missing = turns.filter((t) => !have.has(t.id) && t.content.trim().length > 0);
-  let embedded = 0;
+
+  // One row per embedding window, not per turn: whole-turn embedding fed the
+  // model only the first ~512 tokens. Empty turns chunk to nothing and drop out
+  // here, which is the old `content.trim()` filter.
+  const planned: { id: string; text: string; turn: Turn }[] = [];
+  for (const t of turns) {
+    chunkForEmbedding(t.content).forEach((text, i) => planned.push({ id: embedChunkId(t.id, i), text, turn: t }));
+  }
+  // Asking per window rather than per turn is what upgrades an existing corpus:
+  // a long turn embedded before chunking has window 0 and gains only its tail.
+  const have = await vectors.existing(planned.map((p) => p.id), ENGINE_DIM[eng]).catch(() => new Set<string>());
+  const missing = planned.filter((p) => !have.has(p.id));
+
+  const touched = new Set<string>();
   let pending: Parameters<VectorStore["upsert"]>[0] = [];
   for (let i = 0; i < missing.length; i += batchSize) {
     const batch = missing.slice(i, i + batchSize);
-    const vecs = await embedTextsWith(eng, batch.map((t) => t.content));
+    const vecs = await embedTextsWith(eng, batch.map((p) => p.text));
     pending.push(
-      ...batch.map((t, j) => ({
-        id: t.id,
+      ...batch.map((p, j) => ({
+        id: p.id,
         vector: vecs[j],
-        harness: t.harness,
-        sessionId: t.sessionId,
+        harness: p.turn.harness,
+        sessionId: p.turn.sessionId,
         projectId: session.projectId,
-        timestampMs: Date.parse(t.timestamp) || 0,
+        timestampMs: Date.parse(p.turn.timestamp) || 0,
       })),
     );
-    embedded += batch.length;
+    for (const p of batch) touched.add(p.turn.id);
     if (pending.length >= WRITE_BATCH) {
       await vectors.upsert(pending);
       pending = [];
     }
   }
   if (pending.length > 0) await vectors.upsert(pending);
-  return { embedded, skipped: turns.length - missing.length };
+  // Counted in turns, not windows, so these stay comparable across the change.
+  return { embedded: touched.size, skipped: turns.length - touched.size };
 }
 
 export async function embedMissing(

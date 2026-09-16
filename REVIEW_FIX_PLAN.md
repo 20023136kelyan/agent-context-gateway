@@ -139,8 +139,24 @@ including the before/after table above, as indicative only.
 | hybrid | 0.818 | 0.816 | 0.708 | 0.596 | 97 ms |
 | hybrid + rerank | 0.863 | 0.889 | 0.833 | 0.676 | 2189 ms |
 
-Reproducibility check: `lexical` scored 0.8537 in two separate pinned runs an hour
-apart, against an index that grew between them. Pinning works.
+Re-measured after chunking landed (same `--as-of`, 2026-09-16):
+
+| Mode (pinned) | NDCG@5 | MRR@5 | P@1 | paraphrase | p50 |
+|---|---:|---:|---:|---:|---:|
+| lexical | 0.841 | 0.847 | 0.792 | 0.611 | 74 ms |
+| hybrid | 0.868 | 0.899 | 0.833 | 0.721 | 90 ms |
+| lexical + rerank | 0.866 | 0.896 | 0.833 | 0.686 | 3016 ms |
+| **hybrid + rerank** | **0.895** | **0.910** | **0.875** | **0.742** | 3435 ms |
+
+**Pinning is weaker than this document claimed.** The earlier note here said
+`lexical` scored 0.8537 in two pinned runs an hour apart, so "pinning works". It
+scored **0.841** in the run above — though nothing in the lexical path changed
+(`chunkForEmbedding` is called only from `embed-sync`, `chunkTurnId` only from
+`vectors.ts`). `--as-of` filters which turns may be *returned*; it does not pin
+the BM25 corpus statistics. IDF and average document length shift as the watcher
+indexes new sessions, which reorders results *within* the pinned subset. So
+**cross-run deltas carry drift, and only within-run orderings are trustworthy.**
+Every figure in both tables should be read with that caveat.
 
 - **The BGE query prefix was half the vector problem, and it is fixed.** Queries now
   carry BGE's retrieval instruction; passages stay bare, so no re-embedding was needed.
@@ -149,11 +165,12 @@ apart, against an index that grew between them. Pinning works.
   `indexQuery` — was measured and **dropped**: +0.003 (noise), and on a zero-overlap
   paraphrase it drags the vector toward a distractor ("how SHOULD teammates jointly
   EDIT" pulls to "Monaco EDITOR SHOULD be replaced").
-- **Vectors still cost quality.** Even prefixed, hybrid trails lexical by 0.036 (paired:
-  1 query better, 6 worse), and lexical wins the paraphrase domain outright — the one
-  embeddings exist for. `semantic` defaults to on, so the shipped default is worse than
-  lexical-only on this set. Changing that default is a product decision resting on 24
-  queries of evidence; not made here.
+- **Vectors cost quality until chunking landed; now they earn it.** Before chunking,
+  hybrid trailed lexical by 0.036 and lost the paraphrase domain outright — the one
+  embeddings exist for — which made the shipped `semantic: true` default worse than
+  lexical-only. Both orderings have since reversed *within a single run*: hybrid 0.868
+  vs lexical 0.841, paraphrase 0.721 vs 0.611. The shipped default is no longer the
+  wrong one, and the question of flipping it is closed in favour of leaving it on.
 - **The embedder never sees most of a long turn — this is the structural reason vectors
   lose.** BGE-small's window is 512 tokens (`model.max_length`), but `truncate()` keeps
   8000 chars and we embed the turn whole. Probed directly: appending 400 tokens of
@@ -164,8 +181,12 @@ apart, against an index that grew between them. Pinning works.
   No threshold tuning reaches this: the fix is to split turns into ≤512-token chunks, embed
   each, and keep the best-scoring chunk per turn (which also makes `MIN_VECTOR_SIM`
   meaningful, since today a long turn's similarity is computed against a fragment).
-  Until that lands, every measurement of "do embeddings help" — including the +0.038 above —
-  is measuring a crippled index, not the model.
+  **This has now landed** (`chunkForEmbedding`, 1600-char windows with 200-char overlap;
+  window 0 keeps the bare turn id so existing rows stay valid and a long turn embedded
+  earlier gains only its missing tail; `VectorStore.nearest` over-fetches 4× and max-pools
+  windows back to turns). The backfill grew the store 100,244 → 139,403 rows (+39,159
+  windows, +39%) in 768s. Every measurement of "do embeddings help" taken before this —
+  including the +0.038 from the query prefix — was measuring a crippled index, not the model.
 - **The similarity gate is not a lever, and today it does nothing.** `MIN_VECTOR_SIM = 0.45`
   never fires: all 1200 candidates (24 queries × 50) clear it, so the "prevents spurious
   vector hits" comment describes a mechanism that does not operate. Swept on the pinned
@@ -173,8 +194,9 @@ apart, against an index that grew between them. Pinning works.
   monotonically better the more vectors are excluded. The 0.85 endpoint equals lexical-only
   to four decimals because only 17 of 1200 candidates survive and 21 of 24 queries get no
   vector input at all: it *is* lexical, wearing a costume. Left at 0.45 rather than shipping
-  "vectors off" disguised as a tuned threshold. There is no threshold at which 512-token
-  embeddings help here.
+  "vectors off" disguised as a tuned threshold. **That whole sweep is void**: it measured a
+  truncated index, and on the chunked index excluding vectors is no longer free. The gate
+  has not been re-swept — if it is ever tuned, it must be measured on the chunked index.
 - **The prefix gain is reordering, not filtering.** Checked directly: prefixed and bare
   queries both pass 1200/1200 candidates, so the +0.038 is not the gate suppressing weak
   hits. Worth noting the BAAI card says `bge-*-v1.5` was improved to work *without* the
@@ -235,5 +257,12 @@ apart, against an index that grew between them. Pinning works.
   are genuine prose but still not decisions ("Now I've got it grounded" for a
   Monaco/CodeMirror query), at confidence 0.11–0.26. The 0.000 citations recorded earlier
   were corpus contamination, not the anchoring bug — that attribution was wrong.
+  **Contamination is no longer a sufficient explanation either.** On the chunked corpus,
+  pinned, all four modes score citation precision *and* recall 0.000 — where the previous
+  pinned hybrid baseline recorded 0.067/0.200. Chunking cannot be the cause: `lexical`
+  reports 0.000 too, and nothing in this change touches the lexical path. It is the same
+  BM25-statistics drift described above, amplified by a metric thin enough that one
+  citation swings the mean by 0.067. `decide` is not producing citable decisions, and this
+  metric is too unstable to tell us when that changes.
 - **The citation metric is too thin to gate on**: 5 why-queries, ≤3 citations each, so a
   single citation moves the mean by 0.067 in either direction.

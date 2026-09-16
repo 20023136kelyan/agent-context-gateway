@@ -19,6 +19,69 @@ export function truncate(s: string, max = MAX_CONTENT): string {
   return s.slice(0, max) + "…[truncated]";
 }
 
+/**
+ * ~500 tokens at the ~3.2 chars/token that code-heavy turns tokenize to,
+ * leaving room under BGE-small's 512-token window. Prose runs nearer 3.9
+ * chars/token, so prose chunks land further inside the window, never outside.
+ */
+export const EMBED_CHUNK_CHARS = 1600;
+/** A sentence cut by a window boundary is still whole in the neighbouring one. */
+export const EMBED_CHUNK_OVERLAP = 200;
+/**
+ * Guard, not a policy: `truncate` already bounds a turn at MAX_CONTENT, which
+ * yields at most 9 windows even at the shortest stride. A caller passing
+ * unbounded text gets cut off rather than embedding a novel.
+ */
+export const EMBED_MAX_CHUNKS = 12;
+
+/**
+ * Pull the cut back to a natural boundary, but never shrink a window by more
+ * than a quarter — an unbounded search would let one unlucky window collapse
+ * the stride and emit a chunk per sentence.
+ */
+function breakBefore(s: string, start: number, end: number): number {
+  const floor = start + Math.floor((end - start) * 0.75);
+  for (const sep of ["\n\n", "\n", ". ", " "]) {
+    const i = s.lastIndexOf(sep, end);
+    if (i >= floor) return i + sep.length;
+  }
+  return end;
+}
+
+/**
+ * Split a turn into windows the embedder can actually read.
+ *
+ * BGE-small reads at most 512 tokens and silently drops the rest: appending
+ * 400 tokens to an 842-token document returns a bit-identical vector
+ * (cos = 1.00000, against 0.874 for a short control). Since turns are kept to
+ * 8000 chars and were embedded whole, ~32% of every indexed character was
+ * invisible to the model — concentrated in the long turns that hold plans and
+ * verdicts — while BM25 read all of it. Embedding each window instead is what
+ * makes a stored vector describe the text it is filed under.
+ */
+export function chunkForEmbedding(
+  text: string,
+  max = EMBED_CHUNK_CHARS,
+  overlap = EMBED_CHUNK_OVERLAP,
+): string[] {
+  const s = text.trim();
+  if (!s) return [];
+  if (s.length <= max) return [s];
+  const out: string[] = [];
+  let start = 0;
+  while (start < s.length && out.length < EMBED_MAX_CHUNKS) {
+    let end = Math.min(start + max, s.length);
+    if (end < s.length) end = breakBefore(s, start, end);
+    const piece = s.slice(start, end).trim();
+    if (piece) out.push(piece);
+    if (end >= s.length) break;
+    // Step from the cut, never from a fixed stride: a boundary that pulled the
+    // window back would otherwise skip the text between `end` and the stride.
+    start = Math.max(start + 1, end - overlap);
+  }
+  return out;
+}
+
 // The trailing lookahead stops ".json" matching as ".js" (and ".tsx" as ".ts").
 const FILE_RE = /(?:PR\s+#\d+|src\/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+|[A-Za-z0-9_./-]+\.(?:tsx|ts|jsx|json|js|py|rs|go|md))(?![A-Za-z0-9])/g;
 

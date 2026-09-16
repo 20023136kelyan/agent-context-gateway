@@ -243,13 +243,15 @@ export class SearchService {
     // Minimum similarity gate: KNN always returns top-K even for unrelated
     // queries. Only hits with genuine semantic affinity (>=0.45) enter RRF,
     // preventing spurious vector hits from polluting lexical-only domains.
-    // Swept on the golden set (pinned corpus): 0.45 -> 0.8178, 0.70 -> 0.8217,
-    // 0.78 -> 0.8470, 0.85 -> 0.8537 NDCG@5. Quality rises monotonically as
-    // vectors are excluded, and 0.85 merely reproduces lexical-only (identical
-    // NDCG on 24/24 queries) because just 17 of 1200 candidates survive it.
-    // So the gate is not a tuning lever: with turns truncated to BGE's 512-token
-    // window, no threshold makes these vectors contribute. Left at 0.45 rather
-    // than disguising "vectors off" as a tuned threshold — fix chunking first.
+    // The sweep once recorded here (0.45 -> 0.8178 … 0.85 -> 0.8537 NDCG@5,
+    // "quality rises monotonically as vectors are excluded") was measured while
+    // every turn was truncated to BGE's first 512 tokens. Chunking voided that
+    // conclusion: turns are embedded in windows now (see chunkForEmbedding), and
+    // on the pinned golden set hybrid overtook lexical for the first time
+    // (0.868 vs 0.841 in one run, paraphrase 0.721 vs 0.611). Excluding vectors
+    // is no longer free, so 0.45 stays as the permissive value it was meant to
+    // be. The sweep has NOT been redone on the chunked index — if this is tuned
+    // later, measure it there rather than trusting the numbers above.
     const MIN_VECTOR_SIM = 0.45;
     const vecRanks = new Map<string, number>();
     const vecSim = new Map<string, number>();

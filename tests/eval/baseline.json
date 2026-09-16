@@ -1,48 +1,48 @@
 {
   "mode": "hybrid",
-  "timestamp": "2026-09-16T01:44:41.790Z",
+  "timestamp": "2026-09-16T09:07:03.067Z",
   "asOf": "2026-09-14T00:00:00Z",
   "totalQueries": 24,
   "overall": {
     "domain": "overall",
     "count": 24,
-    "meanNdcg5": 0.8178,
-    "meanMrr5": 0.816,
-    "meanP1": 0.7083,
-    "meanP5": 0.6799,
-    "p50LatencyMs": 97,
-    "p95LatencyMs": 700
+    "meanNdcg5": 0.8682,
+    "meanMrr5": 0.8993,
+    "meanP1": 0.8333,
+    "meanP5": 0.6542,
+    "p50LatencyMs": 95,
+    "p95LatencyMs": 711
   },
   "byDomain": {
     "code": {
       "domain": "code",
       "count": 8,
-      "meanNdcg5": 0.9055,
-      "meanMrr5": 0.9375,
-      "meanP1": 0.875,
-      "meanP5": 0.8542,
-      "p50LatencyMs": 351,
-      "p95LatencyMs": 13485
+      "meanNdcg5": 0.9416,
+      "meanMrr5": 1,
+      "meanP1": 1,
+      "meanP5": 0.8125,
+      "p50LatencyMs": 388,
+      "p95LatencyMs": 13406
     },
     "prose": {
       "domain": "prose",
       "count": 8,
-      "meanNdcg5": 0.9516,
-      "meanMrr5": 0.9375,
-      "meanP1": 0.875,
-      "meanP5": 0.7604,
-      "p50LatencyMs": 80,
-      "p95LatencyMs": 510
+      "meanNdcg5": 0.9416,
+      "meanMrr5": 1,
+      "meanP1": 1,
+      "meanP5": 0.7083,
+      "p50LatencyMs": 96,
+      "p95LatencyMs": 501
     },
     "paraphrase": {
       "domain": "paraphrase",
       "count": 8,
-      "meanNdcg5": 0.5963,
-      "meanMrr5": 0.5729,
-      "meanP1": 0.375,
-      "meanP5": 0.425,
-      "p50LatencyMs": 66,
-      "p95LatencyMs": 164
+      "meanNdcg5": 0.7213,
+      "meanMrr5": 0.6979,
+      "meanP1": 0.5,
+      "meanP5": 0.4417,
+      "p50LatencyMs": 79,
+      "p95LatencyMs": 231
     }
   },
   "queryResults": [
@@ -54,7 +54,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 13485,
+      "latencyMs": 13406,
       "topSessionIds": [
         "01a093f3-8ffe-7923-ac2c-dd806823f2f4"
       ],
@@ -68,10 +68,10 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 302,
+      "latencyMs": 80,
       "topSessionIds": [
-        "01a093f3-8ffe-7923-ac2c-dd806823f2f4",
-        "01a094ca-d95f-7630-8290-12fb03ad1ce2"
+        "01a094ca-d95f-7630-8290-12fb03ad1ce2",
+        "01a093f3-8ffe-7923-ac2c-dd806823f2f4"
       ],
       "hit": true
     },
@@ -83,7 +83,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 0.5,
-      "latencyMs": 501,
+      "latencyMs": 711,
       "topSessionIds": [
         "77d0c5a8-b18d-49d9-abae-88cd24197f9e",
         "2e8ba422-4e8d-41a2-b970-e81f2324bbd0"
@@ -94,15 +94,15 @@
       "id": "code-4",
       "domain": "code",
       "query": "monaco editor replacement codemirror",
-      "ndcg5": 0.6309297535714575,
-      "mrr5": 0.5,
-      "p1": 0,
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
       "p5": 0.3333333333333333,
-      "latencyMs": 351,
+      "latencyMs": 452,
       "topSessionIds": [
-        "3c34009a-7c73-4e32-999f-4ca72b12fd8f",
         "8a0205bd-2ec7-4937-a823-d5524ca6b0b2",
-        "5621e727-00ac-4f75-9330-9e174aee88bd"
+        "5621e727-00ac-4f75-9330-9e174aee88bd",
+        "3c34009a-7c73-4e32-999f-4ca72b12fd8f"
       ],
       "hit": true
     },
@@ -110,14 +110,15 @@
       "id": "code-5",
       "domain": "code",
       "query": "preview generic browser contents surface slot",
-      "ndcg5": 1,
+      "ndcg5": 0.9197207891481876,
       "mrr5": 1,
       "p1": 1,
-      "p5": 1,
-      "latencyMs": 275,
+      "p5": 0.6666666666666666,
+      "latencyMs": 95,
       "topSessionIds": [
-        "2e8ba422-4e8d-41a2-b970-e81f2324bbd0",
-        "82f3fa01-16f5-42af-b29d-f663fb9fed22"
+        "82f3fa01-16f5-42af-b29d-f663fb9fed22",
+        "660a371e-f1c1-4878-9c47-f419d164a389",
+        "2e8ba422-4e8d-41a2-b970-e81f2324bbd0"
       ],
       "hit": true
     },
@@ -129,7 +130,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 700,
+      "latencyMs": 47,
       "topSessionIds": [
         "82f3fa01-16f5-42af-b29d-f663fb9fed22",
         "2e8ba422-4e8d-41a2-b970-e81f2324bbd0"
@@ -144,7 +145,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 178,
+      "latencyMs": 138,
       "topSessionIds": [
         "01a094ca-d95f-7630-8290-12fb03ad1ce2"
       ],
@@ -158,7 +159,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 160,
+      "latencyMs": 388,
       "topSessionIds": [
         "6bba75f6-4f0a-4e05-ae9a-689d61d18865"
       ],
@@ -171,10 +172,11 @@
       "ndcg5": 1,
       "mrr5": 1,
       "p1": 1,
-      "p5": 1,
-      "latencyMs": 79,
+      "p5": 0.5,
+      "latencyMs": 96,
       "topSessionIds": [
-        "019f73a0-9b73-77a0-ac30-2984a0443ab5"
+        "019f73a0-9b73-77a0-ac30-2984a0443ab5",
+        "019fd320-3baa-7921-acc7-ff3cafefe793"
       ],
       "hit": true
     },
@@ -185,13 +187,12 @@
       "ndcg5": 0.9197207891481876,
       "mrr5": 1,
       "p1": 1,
-      "p5": 0.5,
-      "latencyMs": 91,
+      "p5": 0.6666666666666666,
+      "latencyMs": 362,
       "topSessionIds": [
         "14d5bd8d-1201-41cd-bec1-520ba3ddd94e",
         "b6bab407-1420-4b57-adf3-78635411d95f",
-        "ced1642f-f945-40f8-a133-86b86e57b643",
-        "a9aaa0f7-8f9a-4864-b588-36c86408e357"
+        "ced1642f-f945-40f8-a133-86b86e57b643"
       ],
       "hit": true
     },
@@ -203,10 +204,10 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 80,
+      "latencyMs": 76,
       "topSessionIds": [
-        "e989fc8b-ec07-4cfc-b405-d95f9b61459d",
-        "9827d094-d37b-4efe-bf3c-7222e1a22e0a"
+        "9827d094-d37b-4efe-bf3c-7222e1a22e0a",
+        "e989fc8b-ec07-4cfc-b405-d95f9b61459d"
       ],
       "hit": true
     },
@@ -218,7 +219,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 165,
+      "latencyMs": 138,
       "topSessionIds": [
         "dc7f31f8-01e4-4bc0-a472-981088cb27bd",
         "3d589c11-4bfc-45e2-ab86-f5965d3d2097",
@@ -236,7 +237,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 0.6666666666666666,
-      "latencyMs": 43,
+      "latencyMs": 48,
       "topSessionIds": [
         "14d5bd8d-1201-41cd-bec1-520ba3ddd94e",
         "ced1642f-f945-40f8-a133-86b86e57b643",
@@ -251,13 +252,12 @@
       "ndcg5": 1,
       "mrr5": 1,
       "p1": 1,
-      "p5": 0.25,
-      "latencyMs": 42,
+      "p5": 0.3333333333333333,
+      "latencyMs": 48,
       "topSessionIds": [
         "9827d094-d37b-4efe-bf3c-7222e1a22e0a",
         "3d589c11-4bfc-45e2-ab86-f5965d3d2097",
-        "e989fc8b-ec07-4cfc-b405-d95f9b61459d",
-        "dc7f31f8-01e4-4bc0-a472-981088cb27bd"
+        "e989fc8b-ec07-4cfc-b405-d95f9b61459d"
       ],
       "hit": true
     },
@@ -265,15 +265,14 @@
       "id": "prose-15",
       "domain": "prose",
       "query": "Crossand App mobile flutter react native",
-      "ndcg5": 0.6934264036172708,
-      "mrr5": 0.5,
-      "p1": 0,
-      "p5": 0.6666666666666666,
-      "latencyMs": 510,
+      "ndcg5": 0.6131471927654584,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 0.5,
+      "latencyMs": 501,
       "topSessionIds": [
-        "01a06e80-f027-79b2-ae34-66e80c6237a9",
         "01a072d3-4315-7d72-adcf-af6b64b1a5c7",
-        "01a069a7-20a6-7e43-ab54-438007741708"
+        "01a06e80-f027-79b2-ae34-66e80c6237a9"
       ],
       "hit": true
     },
@@ -285,7 +284,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 48,
+      "latencyMs": 64,
       "topSessionIds": [
         "019f6a57-040b-7e20-9848-96e3e65607a3"
       ],
@@ -298,12 +297,13 @@
       "ndcg5": 0.3065735963827292,
       "mrr5": 0.3333333333333333,
       "p1": 0,
-      "p5": 0.3333333333333333,
-      "latencyMs": 97,
+      "p5": 0.25,
+      "latencyMs": 125,
       "topSessionIds": [
         "01a02418-9c71-7223-927d-185d6ead3439",
         "019f73a0-9b73-77a0-ac30-2984a0443ab5",
-        "01a093f3-8ffe-7923-ac2c-dd806823f2f4"
+        "01a093f3-8ffe-7923-ac2c-dd806823f2f4",
+        "01a023fc-e999-7230-b7c5-3a675ccba842"
       ],
       "hit": true
     },
@@ -314,14 +314,13 @@
       "ndcg5": 0.20210734650054757,
       "mrr5": 0.25,
       "p1": 0,
-      "p5": 0.2,
-      "latencyMs": 58,
+      "p5": 0.25,
+      "latencyMs": 79,
       "topSessionIds": [
         "019f73a0-9b73-77a0-ac30-2984a0443ab5",
         "9192279c-576d-4b29-9610-1ef195106405",
         "840cd718-13c6-4a95-a80d-9534f9e5558c",
-        "6bba75f6-4f0a-4e05-ae9a-689d61d18865",
-        "e91059ed-bb68-4cbb-b1e6-8110026c37b7"
+        "6bba75f6-4f0a-4e05-ae9a-689d61d18865"
       ],
       "hit": true
     },
@@ -332,12 +331,13 @@
       "ndcg5": 0.6309297535714575,
       "mrr5": 0.5,
       "p1": 0,
-      "p5": 0.3333333333333333,
-      "latencyMs": 44,
+      "p5": 0.25,
+      "latencyMs": 51,
       "topSessionIds": [
         "2e8ba422-4e8d-41a2-b970-e81f2324bbd0",
         "77d0c5a8-b18d-49d9-abae-88cd24197f9e",
-        "82f3fa01-16f5-42af-b29d-f663fb9fed22"
+        "82f3fa01-16f5-42af-b29d-f663fb9fed22",
+        "660a371e-f1c1-4878-9c47-f419d164a389"
       ],
       "hit": true
     },
@@ -345,17 +345,16 @@
       "id": "paraphrase-20",
       "domain": "paraphrase",
       "query": "Why is dragging window borders sluggish or dropping frames?",
-      "ndcg5": 1,
-      "mrr5": 1,
-      "p1": 1,
-      "p5": 0.2,
-      "latencyMs": 52,
+      "ndcg5": 0.6309297535714575,
+      "mrr5": 0.5,
+      "p1": 0,
+      "p5": 0.25,
+      "latencyMs": 60,
       "topSessionIds": [
+        "660a371e-f1c1-4878-9c47-f419d164a389",
         "77d0c5a8-b18d-49d9-abae-88cd24197f9e",
         "2e8ba422-4e8d-41a2-b970-e81f2324bbd0",
-        "82f3fa01-16f5-42af-b29d-f663fb9fed22",
-        "660a371e-f1c1-4878-9c47-f419d164a389",
-        "019f73a0-9b73-77a0-ac30-2984a0443ab5"
+        "82f3fa01-16f5-42af-b29d-f663fb9fed22"
       ],
       "hit": true
     },
@@ -363,15 +362,15 @@
       "id": "paraphrase-21",
       "domain": "paraphrase",
       "query": "Monaco editor replace CodeMirror",
-      "ndcg5": 0.6309297535714575,
-      "mrr5": 0.5,
-      "p1": 0,
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
       "p5": 0.3333333333333333,
-      "latencyMs": 52,
+      "latencyMs": 56,
       "topSessionIds": [
-        "3c34009a-7c73-4e32-999f-4ca72b12fd8f",
         "8a0205bd-2ec7-4937-a823-d5524ca6b0b2",
-        "5621e727-00ac-4f75-9330-9e174aee88bd"
+        "5621e727-00ac-4f75-9330-9e174aee88bd",
+        "3c34009a-7c73-4e32-999f-4ca72b12fd8f"
       ],
       "hit": true
     },
@@ -379,19 +378,19 @@
       "id": "paraphrase-22",
       "domain": "paraphrase",
       "query": "Why did we choose to swap out Monaco for another editor?",
-      "ndcg5": 0,
-      "mrr5": 0,
-      "p1": 0,
-      "p5": 0,
-      "latencyMs": 66,
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 0.2,
+      "latencyMs": 64,
       "topSessionIds": [
+        "8a0205bd-2ec7-4937-a823-d5524ca6b0b2",
         "e91059ed-bb68-4cbb-b1e6-8110026c37b7",
         "10c06720-8489-4e10-b8de-722da4443672",
         "3c34009a-7c73-4e32-999f-4ca72b12fd8f",
-        "019f73a0-9b73-77a0-ac30-2984a0443ab5",
         "77d0c5a8-b18d-49d9-abae-88cd24197f9e"
       ],
-      "hit": false
+      "hit": true
     },
     {
       "id": "paraphrase-23",
@@ -401,7 +400,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 83,
+      "latencyMs": 88,
       "topSessionIds": [
         "019f73a0-9b73-77a0-ac30-2984a0443ab5"
       ],
@@ -415,7 +414,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 164,
+      "latencyMs": 231,
       "topSessionIds": [
         "019f73a0-9b73-77a0-ac30-2984a0443ab5"
       ],
@@ -423,7 +422,7 @@
     }
   ],
   "decisionCitations": {
-    "meanPrecision": 0.0667,
-    "meanRecall": 0.2
+    "meanPrecision": 0,
+    "meanRecall": 0
   }
 }
