@@ -47,6 +47,8 @@ export interface DomainAggregate {
 export interface EvalRunResult {
   mode: string;
   timestamp: string;
+  /** Corpus cutoff this run was pinned to; absent means "whatever was indexed at run time", which is not reproducible. */
+  asOf?: string;
   totalQueries: number;
   overall: DomainAggregate;
   byDomain: Record<string, DomainAggregate>;
@@ -95,9 +97,13 @@ export async function runEval(
   app: GatewayApp,
   queries: GoldenQuery[],
   mode: EvalMode,
+  opts: { asOf?: string } = {},
 ): Promise<EvalRunResult> {
   const queryResults: QueryEvalResult[] = [];
   const modeOpts = modeOptions(mode);
+  // Pins the corpus: without it, sessions indexed after the golden set was
+  // authored (this evaluator's own transcript included) compete with truth.
+  const asOf = opts.asOf;
 
   for (const [idx, q] of queries.entries()) {
     const t0 = Date.now();
@@ -105,6 +111,7 @@ export async function runEval(
     const res = await searchOnce(app, q.query, {
       harness: q.harness,
       maxResults: 5,
+      asOf,
       ...modeOpts,
     });
     const latencyMs = Date.now() - t0;
@@ -150,7 +157,7 @@ export async function runEval(
     let totalR = 0;
     for (const wq of whyQueries) {
       try {
-        const dec = await decideOnce(app, wq.query, { harness: wq.harness, semantic: modeOpts.semantic });
+        const dec = await decideOnce(app, wq.query, { harness: wq.harness, semantic: modeOpts.semantic, asOf });
         const citedSessions = dec.decisions.map((d) => d.session.sessionId);
         const evalScore = evaluateCitations(citedSessions, wq.relevantSessionIds);
         totalP += evalScore.citationPrecision;
@@ -168,6 +175,7 @@ export async function runEval(
   return {
     mode,
     timestamp: new Date().toISOString(),
+    asOf,
     totalQueries: queries.length,
     overall,
     byDomain,
@@ -180,6 +188,7 @@ export function formatMarkdownTable(run: EvalRunResult): string {
   const lines: string[] = [];
   lines.push(`### Evaluation Run: ${run.mode} (${run.totalQueries} queries)`);
   lines.push(`*Timestamp: ${run.timestamp}*`);
+  lines.push(run.asOf ? `*Corpus as of: ${run.asOf}*` : `*Corpus: unpinned (not reproducible — pass --as-of)*`);
   lines.push("");
   lines.push("| Domain | Queries | NDCG@5 | MRR@5 | P@1 | P@5 | p50 (ms) | p95 (ms) |");
   lines.push("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");

@@ -1,16 +1,17 @@
 {
   "mode": "hybrid",
-  "timestamp": "2026-09-16T00:19:58.100Z",
+  "timestamp": "2026-09-16T01:44:41.790Z",
+  "asOf": "2026-09-14T00:00:00Z",
   "totalQueries": 24,
   "overall": {
     "domain": "overall",
     "count": 24,
-    "meanNdcg5": 0.7846,
-    "meanMrr5": 0.7847,
-    "meanP1": 0.6667,
-    "meanP5": 0.6563,
-    "p50LatencyMs": 143,
-    "p95LatencyMs": 3103
+    "meanNdcg5": 0.8178,
+    "meanMrr5": 0.816,
+    "meanP1": 0.7083,
+    "meanP5": 0.6799,
+    "p50LatencyMs": 97,
+    "p95LatencyMs": 700
   },
   "byDomain": {
     "code": {
@@ -19,29 +20,29 @@
       "meanNdcg5": 0.9055,
       "meanMrr5": 0.9375,
       "meanP1": 0.875,
-      "meanP5": 0.8021,
-      "p50LatencyMs": 594,
-      "p95LatencyMs": 12621
+      "meanP5": 0.8542,
+      "p50LatencyMs": 351,
+      "p95LatencyMs": 13485
     },
     "prose": {
       "domain": "prose",
       "count": 8,
-      "meanNdcg5": 0.9234,
+      "meanNdcg5": 0.9516,
       "meanMrr5": 0.9375,
       "meanP1": 0.875,
       "meanP5": 0.7604,
-      "p50LatencyMs": 143,
-      "p95LatencyMs": 378
+      "p50LatencyMs": 80,
+      "p95LatencyMs": 510
     },
     "paraphrase": {
       "domain": "paraphrase",
       "count": 8,
-      "meanNdcg5": 0.5249,
-      "meanMrr5": 0.4792,
-      "meanP1": 0.25,
-      "meanP5": 0.4063,
-      "p50LatencyMs": 101,
-      "p95LatencyMs": 137
+      "meanNdcg5": 0.5963,
+      "meanMrr5": 0.5729,
+      "meanP1": 0.375,
+      "meanP5": 0.425,
+      "p50LatencyMs": 66,
+      "p95LatencyMs": 164
     }
   },
   "queryResults": [
@@ -53,7 +54,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 12621,
+      "latencyMs": 13485,
       "topSessionIds": [
         "01a093f3-8ffe-7923-ac2c-dd806823f2f4"
       ],
@@ -67,7 +68,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 234,
+      "latencyMs": 302,
       "topSessionIds": [
         "01a093f3-8ffe-7923-ac2c-dd806823f2f4",
         "01a094ca-d95f-7630-8290-12fb03ad1ce2"
@@ -82,10 +83,10 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 0.5,
-      "latencyMs": 594,
+      "latencyMs": 501,
       "topSessionIds": [
         "77d0c5a8-b18d-49d9-abae-88cd24197f9e",
-        "e91059ed-bb68-4cbb-b1e6-8110026c37b7"
+        "2e8ba422-4e8d-41a2-b970-e81f2324bbd0"
       ],
       "hit": true
     },
@@ -96,12 +97,11 @@
       "ndcg5": 0.6309297535714575,
       "mrr5": 0.5,
       "p1": 0,
-      "p5": 0.25,
-      "latencyMs": 386,
+      "p5": 0.3333333333333333,
+      "latencyMs": 351,
       "topSessionIds": [
-        "6d5ffde0-72ef-4686-80ad-ed97abdbf012",
-        "8a0205bd-2ec7-4937-a823-d5524ca6b0b2",
         "3c34009a-7c73-4e32-999f-4ca72b12fd8f",
+        "8a0205bd-2ec7-4937-a823-d5524ca6b0b2",
         "5621e727-00ac-4f75-9330-9e174aee88bd"
       ],
       "hit": true
@@ -113,12 +113,11 @@
       "ndcg5": 1,
       "mrr5": 1,
       "p1": 1,
-      "p5": 0.6666666666666666,
-      "latencyMs": 473,
+      "p5": 1,
+      "latencyMs": 275,
       "topSessionIds": [
         "2e8ba422-4e8d-41a2-b970-e81f2324bbd0",
-        "82f3fa01-16f5-42af-b29d-f663fb9fed22",
-        "10c06720-8489-4e10-b8de-722da4443672"
+        "82f3fa01-16f5-42af-b29d-f663fb9fed22"
       ],
       "hit": true
     },
@@ -130,7 +129,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 529,
+      "latencyMs": 700,
       "topSessionIds": [
         "82f3fa01-16f5-42af-b29d-f663fb9fed22",
         "2e8ba422-4e8d-41a2-b970-e81f2324bbd0"
@@ -145,7 +144,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 3103,
+      "latencyMs": 178,
       "topSessionIds": [
         "01a094ca-d95f-7630-8290-12fb03ad1ce2"
       ],
@@ -159,7 +158,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 629,
+      "latencyMs": 160,
       "topSessionIds": [
         "6bba75f6-4f0a-4e05-ae9a-689d61d18865"
       ],
@@ -173,7 +172,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 356,
+      "latencyMs": 79,
       "topSessionIds": [
         "019f73a0-9b73-77a0-ac30-2984a0443ab5"
       ],
@@ -183,15 +182,16 @@
       "id": "prose-10",
       "domain": "prose",
       "query": "looking for a name for this store brand furniture Atelia",
-      "ndcg5": 1,
+      "ndcg5": 0.9197207891481876,
       "mrr5": 1,
       "p1": 1,
-      "p5": 0.6666666666666666,
-      "latencyMs": 378,
+      "p5": 0.5,
+      "latencyMs": 91,
       "topSessionIds": [
         "14d5bd8d-1201-41cd-bec1-520ba3ddd94e",
+        "b6bab407-1420-4b57-adf3-78635411d95f",
         "ced1642f-f945-40f8-a133-86b86e57b643",
-        "b6bab407-1420-4b57-adf3-78635411d95f"
+        "a9aaa0f7-8f9a-4864-b588-36c86408e357"
       ],
       "hit": true
     },
@@ -203,7 +203,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 162,
+      "latencyMs": 80,
       "topSessionIds": [
         "e989fc8b-ec07-4cfc-b405-d95f9b61459d",
         "9827d094-d37b-4efe-bf3c-7222e1a22e0a"
@@ -218,7 +218,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 86,
+      "latencyMs": 165,
       "topSessionIds": [
         "dc7f31f8-01e4-4bc0-a472-981088cb27bd",
         "3d589c11-4bfc-45e2-ab86-f5965d3d2097",
@@ -236,7 +236,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 0.6666666666666666,
-      "latencyMs": 50,
+      "latencyMs": 43,
       "topSessionIds": [
         "14d5bd8d-1201-41cd-bec1-520ba3ddd94e",
         "ced1642f-f945-40f8-a133-86b86e57b643",
@@ -252,7 +252,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 0.25,
-      "latencyMs": 70,
+      "latencyMs": 42,
       "topSessionIds": [
         "9827d094-d37b-4efe-bf3c-7222e1a22e0a",
         "3d589c11-4bfc-45e2-ab86-f5965d3d2097",
@@ -265,14 +265,15 @@
       "id": "prose-15",
       "domain": "prose",
       "query": "Crossand App mobile flutter react native",
-      "ndcg5": 0.38685280723454163,
+      "ndcg5": 0.6934264036172708,
       "mrr5": 0.5,
       "p1": 0,
-      "p5": 0.5,
-      "latencyMs": 143,
+      "p5": 0.6666666666666666,
+      "latencyMs": 510,
       "topSessionIds": [
         "01a06e80-f027-79b2-ae34-66e80c6237a9",
-        "01a072d3-4315-7d72-adcf-af6b64b1a5c7"
+        "01a072d3-4315-7d72-adcf-af6b64b1a5c7",
+        "01a069a7-20a6-7e43-ab54-438007741708"
       ],
       "hit": true
     },
@@ -284,7 +285,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 68,
+      "latencyMs": 48,
       "topSessionIds": [
         "019f6a57-040b-7e20-9848-96e3e65607a3"
       ],
@@ -298,7 +299,7 @@
       "mrr5": 0.3333333333333333,
       "p1": 0,
       "p5": 0.3333333333333333,
-      "latencyMs": 110,
+      "latencyMs": 97,
       "topSessionIds": [
         "01a02418-9c71-7223-927d-185d6ead3439",
         "019f73a0-9b73-77a0-ac30-2984a0443ab5",
@@ -310,17 +311,19 @@
       "id": "paraphrase-18",
       "domain": "paraphrase",
       "query": "How should teammates jointly edit together?",
-      "ndcg5": 0,
-      "mrr5": 0,
+      "ndcg5": 0.20210734650054757,
+      "mrr5": 0.25,
       "p1": 0,
-      "p5": 0,
-      "latencyMs": 101,
+      "p5": 0.2,
+      "latencyMs": 58,
       "topSessionIds": [
-        "6d5ffde0-72ef-4686-80ad-ed97abdbf012",
         "019f73a0-9b73-77a0-ac30-2984a0443ab5",
-        "10c06720-8489-4e10-b8de-722da4443672"
+        "9192279c-576d-4b29-9610-1ef195106405",
+        "840cd718-13c6-4a95-a80d-9534f9e5558c",
+        "6bba75f6-4f0a-4e05-ae9a-689d61d18865",
+        "e91059ed-bb68-4cbb-b1e6-8110026c37b7"
       ],
-      "hit": false
+      "hit": true
     },
     {
       "id": "paraphrase-19",
@@ -330,7 +333,7 @@
       "mrr5": 0.5,
       "p1": 0,
       "p5": 0.3333333333333333,
-      "latencyMs": 80,
+      "latencyMs": 44,
       "topSessionIds": [
         "2e8ba422-4e8d-41a2-b970-e81f2324bbd0",
         "77d0c5a8-b18d-49d9-abae-88cd24197f9e",
@@ -342,14 +345,16 @@
       "id": "paraphrase-20",
       "domain": "paraphrase",
       "query": "Why is dragging window borders sluggish or dropping frames?",
-      "ndcg5": 0.6309297535714575,
-      "mrr5": 0.5,
-      "p1": 0,
-      "p5": 0.3333333333333333,
-      "latencyMs": 78,
+      "ndcg5": 1,
+      "mrr5": 1,
+      "p1": 1,
+      "p5": 0.2,
+      "latencyMs": 52,
       "topSessionIds": [
-        "660a371e-f1c1-4878-9c47-f419d164a389",
         "77d0c5a8-b18d-49d9-abae-88cd24197f9e",
+        "2e8ba422-4e8d-41a2-b970-e81f2324bbd0",
+        "82f3fa01-16f5-42af-b29d-f663fb9fed22",
+        "660a371e-f1c1-4878-9c47-f419d164a389",
         "019f73a0-9b73-77a0-ac30-2984a0443ab5"
       ],
       "hit": true
@@ -361,12 +366,11 @@
       "ndcg5": 0.6309297535714575,
       "mrr5": 0.5,
       "p1": 0,
-      "p5": 0.25,
-      "latencyMs": 90,
+      "p5": 0.3333333333333333,
+      "latencyMs": 52,
       "topSessionIds": [
-        "6d5ffde0-72ef-4686-80ad-ed97abdbf012",
-        "8a0205bd-2ec7-4937-a823-d5524ca6b0b2",
         "3c34009a-7c73-4e32-999f-4ca72b12fd8f",
+        "8a0205bd-2ec7-4937-a823-d5524ca6b0b2",
         "5621e727-00ac-4f75-9330-9e174aee88bd"
       ],
       "hit": true
@@ -379,13 +383,13 @@
       "mrr5": 0,
       "p1": 0,
       "p5": 0,
-      "latencyMs": 78,
+      "latencyMs": 66,
       "topSessionIds": [
-        "6d5ffde0-72ef-4686-80ad-ed97abdbf012",
-        "019f73a0-9b73-77a0-ac30-2984a0443ab5",
         "e91059ed-bb68-4cbb-b1e6-8110026c37b7",
+        "10c06720-8489-4e10-b8de-722da4443672",
         "3c34009a-7c73-4e32-999f-4ca72b12fd8f",
-        "10c06720-8489-4e10-b8de-722da4443672"
+        "019f73a0-9b73-77a0-ac30-2984a0443ab5",
+        "77d0c5a8-b18d-49d9-abae-88cd24197f9e"
       ],
       "hit": false
     },
@@ -397,7 +401,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 137,
+      "latencyMs": 83,
       "topSessionIds": [
         "019f73a0-9b73-77a0-ac30-2984a0443ab5"
       ],
@@ -411,7 +415,7 @@
       "mrr5": 1,
       "p1": 1,
       "p5": 1,
-      "latencyMs": 108,
+      "latencyMs": 164,
       "topSessionIds": [
         "019f73a0-9b73-77a0-ac30-2984a0443ab5"
       ],
@@ -419,7 +423,7 @@
     }
   ],
   "decisionCitations": {
-    "meanPrecision": 0,
-    "meanRecall": 0
+    "meanPrecision": 0.0667,
+    "meanRecall": 0.2
   }
 }
