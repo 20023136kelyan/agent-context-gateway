@@ -118,6 +118,18 @@ describe("MLX worker resilience", () => {
 });
 
 describe("vector store maintenance", () => {
+  it("upsert tolerates a repeated id in one batch (Claude reuses uuids)", async () => {
+    const dir = join(await mkdtemp(join(tmpdir(), "acg-vec-dup-")), "v");
+    const vectors = await VectorStore.open(dir);
+    const row = (id: string, v: number) => ({ id, vector: [v, v, v], harness: "claude-code", sessionId: "s", projectId: "p", timestampMs: 0 });
+    await vectors.upsert([row("dup", 0.1), row("other", 0.2), row("dup", 0.3)]);
+    expect(await vectors.count()).toBe(2);
+    await vectors.upsert([row("dup", 0.4), row("dup", 0.5)]); // now matching an existing row
+    expect(await vectors.count()).toBe(2);
+    expect((await vectors.existing(["dup", "other"], 3)).size).toBe(2);
+  });
+
+
   it("optimize() indexes ids and keeps lookups exact", async () => {
     const dir = join(await mkdtemp(join(tmpdir(), "acg-vec-opt-")), "v");
     const vectors = await VectorStore.open(dir);

@@ -72,8 +72,11 @@ export class VectorStore {
     }[],
   ): Promise<void> {
     if (rows.length === 0) return;
-    const dim = rows[0].vector.length;
-    for (const r of rows) {
+    // Claude reuses uuids within one file, so a batch can carry an id twice and
+    // mergeInsert rejects ambiguous matches outright. Last occurrence wins.
+    const unique = [...new Map(rows.map((r) => [r.id, r])).values()];
+    const dim = unique[0].vector.length;
+    for (const r of unique) {
       if (r.vector.length !== dim) {
         throw new Error(`inconsistent vector dim: expected ${dim}, got ${r.vector.length}`);
       }
@@ -82,12 +85,12 @@ export class VectorStore {
     let table = await this.getTableForDim(dim);
     if (!table) {
       const tableName = `turns_${dim}`;
-      table = await this.db.createTable(tableName, rows);
+      table = await this.db.createTable(tableName, unique);
       this.tables.set(dim, table);
     } else {
-      await table.mergeInsert("id").whenMatchedUpdateAll().whenNotMatchedInsertAll().execute(rows);
+      await table.mergeInsert("id").whenMatchedUpdateAll().whenNotMatchedInsertAll().execute(unique);
     }
-    this.rowsSinceOptimize += rows.length;
+    this.rowsSinceOptimize += unique.length;
   }
 
   /**
