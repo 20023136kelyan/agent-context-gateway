@@ -8,6 +8,8 @@ import { loadGoldenQueries, modeOptions } from "../src/eval/runner.js";
 describe("eval modes", () => {
   it("map to distinct search pipelines (lexical really skips vectors)", () => {
     expect(modeOptions("lexical")).toEqual({ semantic: false, rerank: false });
+    // Lexical candidates + cross-encoder: the best configuration measured.
+    expect(modeOptions("lexical-rerank")).toEqual({ semantic: false, rerank: true });
     expect(modeOptions("hybrid")).toEqual({ semantic: true, rerank: false });
     expect(modeOptions("rrf")).toEqual(modeOptions("hybrid"));
     expect(modeOptions("rerank")).toEqual({ semantic: true, rerank: true });

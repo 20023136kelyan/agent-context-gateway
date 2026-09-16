@@ -59,11 +59,13 @@ export interface EvalRunResult {
   };
 }
 
-export type EvalMode = "lexical" | "hybrid" | "rerank" | "rrf";
+export type EvalMode = "lexical" | "lexical-rerank" | "hybrid" | "rerank" | "rrf";
 
 /** Search options per eval mode. "rrf" is the pre-rename alias of "hybrid" (vectors + RRF fusion). */
 export function modeOptions(mode: EvalMode): Required<Pick<SearchOptions, "semantic" | "rerank">> {
   if (mode === "lexical") return { semantic: false, rerank: false };
+  // Lexical candidates + cross-encoder: precision without vector noise in the pool.
+  if (mode === "lexical-rerank") return { semantic: false, rerank: true };
   if (mode === "rerank") return { semantic: true, rerank: true };
   return { semantic: true, rerank: false };
 }

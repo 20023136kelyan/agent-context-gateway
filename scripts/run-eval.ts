@@ -16,7 +16,7 @@ import { isAbsolute, join } from "node:path";
 import { createApp, closeApp, initVectors } from "../src/app.js";
 import { loadGoldenQueries, runEval, formatMarkdownTable, type EvalMode } from "../src/eval/runner.js";
 
-const MODES: EvalMode[] = ["lexical", "hybrid", "rerank", "rrf"];
+const MODES: EvalMode[] = ["lexical", "lexical-rerank", "hybrid", "rerank", "rrf"];
 
 async function main() {
   const args = process.argv.slice(2);
