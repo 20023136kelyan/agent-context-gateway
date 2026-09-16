@@ -134,9 +134,13 @@ including the before/after table above, as indicative only.
 
 | Mode (pinned) | NDCG@5 | MRR@5 | P@1 | paraphrase | median latency |
 |---|---:|---:|---:|---:|---:|
-| lexical | 0.854 | 0.868 | 0.792 | 0.648 | 90 ms |
+| lexical | 0.854 | 0.868 | 0.792 | 0.648 | 72 ms |
+| **lexical + rerank** | **0.866** | **0.896** | **0.833** | **0.686** | 2556 ms |
 | hybrid | 0.818 | 0.816 | 0.708 | 0.596 | 97 ms |
-| rerank | 0.863 | 0.889 | 0.833 | 0.676 | 2189 ms |
+| hybrid + rerank | 0.863 | 0.889 | 0.833 | 0.676 | 2189 ms |
+
+Reproducibility check: `lexical` scored 0.8537 in two separate pinned runs an hour
+apart, against an index that grew between them. Pinning works.
 
 - **The BGE query prefix was half the vector problem, and it is fixed.** Queries now
   carry BGE's retrieval instruction; passages stay bare, so no re-embedding was needed.
@@ -150,7 +154,27 @@ including the before/after table above, as indicative only.
   embeddings exist for. `semantic` defaults to on, so the shipped default is worse than
   lexical-only on this set. Changing that default is a product decision resting on 24
   queries of evidence; not made here.
-- **Reranking is the quality win** (0.863) but costs ~2.2 s per query; off by default.
+- **The embedder never sees most of a long turn — this is the structural reason vectors
+  lose.** BGE-small's window is 512 tokens (`model.max_length`), but `truncate()` keeps
+  8000 chars and we embed the turn whole. Probed directly: appending 400 tokens of
+  unrelated text to an 842-token document returns a *bit-identical* vector
+  (`cos = 1.00000`), while a short control moves (0.874). So everything past ~2000 chars is
+  silently discarded. That is 12% of Claude turns but **32% of every character we index**,
+  concentrated in the long turns that hold plans and verdicts — and BM25 reads all of it.
+  No threshold tuning reaches this: the fix is to split turns into ≤512-token chunks, embed
+  each, and keep the best-scoring chunk per turn (which also makes `MIN_VECTOR_SIM`
+  meaningful, since today a long turn's similarity is computed against a fragment).
+  Until that lands, every measurement of "do embeddings help" — including the +0.038 above —
+  is measuring a crippled index, not the model.
+- **Reranking over *lexical* candidates is the best configuration measured** (0.866,
+  P@1 0.833, paraphrase 0.686), and it beats plain lexical with **zero regressions**
+  (paired: 2 queries better, 0 worse). Giving the reranker vector candidates instead is
+  worse on every axis and loses a query outright (`paraphrase-17`, −0.080) — so the vector
+  pool is not useful even as reranker feed while turns are truncated. What keeps reranking
+  off by default is latency, not quality: ~2.5 s p50 against 72 ms for lexical. Worth
+  measuring before adopting it as the default, cheapest first: `RERANK_POOL` 15 → 8, an
+  adaptive trigger (only rerank when the top lexical scores are close), and caching scores
+  per (query, turnId). `lexical-rerank` is now an eval mode, so each is measurable.
 - **`decide` no longer quotes files — and the citation metric punished that.** Tool
   results reach the adapters as `user` lines, so a third of the Claude corpus (26,484 of
   78,629 turns) was read as user speech and extraction anchored on file contents. Those
