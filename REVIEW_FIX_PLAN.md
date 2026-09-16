@@ -150,9 +150,7 @@ here was measured while `asOf` was applied *after* the search, which muted the v
 | lexical + rerank | 0.866 | 0.896 | 0.833 | 0.686 | 3016 ms |
 | hybrid + rerank | 0.895 | 0.910 | 0.875 | 0.742 | 3435 ms |
 
-Only `lexical` and `hybrid` were re-measured under the corrected pin. **The two rerank
-rows have not been**, so 0.866 and 0.895 are unverified — do not quote either as the best
-configuration until they are re-run.
+All four modes have since been re-measured under the corrected pin; see the table below.
 
 **Pinning is weaker than this document claimed.** The earlier note here said
 `lexical` scored 0.8537 in two pinned runs an hour apart, so "pinning works". It
@@ -177,10 +175,21 @@ match; at `limit: 50` the old turn is unreachable before the fix, on both backen
 applied properly, pinned hybrid is **0.831**, not the 0.868 recorded above, while lexical
 is unchanged at 0.841:
 
-| Mode (correctly pinned) | NDCG@5 | MRR@5 | P@1 | paraphrase |
-|---|---:|---:|---:|---:|
-| lexical | 0.841 | 0.847 | 0.792 | 0.611 |
-| hybrid | 0.831 | 0.851 | 0.792 | 0.609 |
+| Mode (correctly pinned) | NDCG@5 | MRR@5 | P@1 | paraphrase | p50 |
+|---|---:|---:|---:|---:|---:|
+| lexical | 0.841 | 0.847 | 0.792 | 0.611 | ~120 ms |
+| hybrid | 0.831 | 0.851 | 0.792 | 0.609 | ~166 ms |
+| lexical + rerank | 0.861 | 0.889 | 0.833 | 0.669 | 3191 ms |
+| **hybrid + rerank** | **0.885** | **0.913** | **0.875** | **0.713** | 3160 ms |
+
+**Vectors earn their place only behind a reranker.** Unaided they cost a little (hybrid
+0.831 vs lexical 0.841); reranked they clearly pay (0.885 vs 0.861, paraphrase 0.713 vs
+0.669). That is coherent: vectors buy recall into the candidate pool and the cross-encoder
+supplies the precision to sort it out, whereas un-reranked their noise lands directly in
+the final ranking. Both rerank modes survived the corrected pin nearly intact (0.895 →
+0.885, 0.866 → 0.861), so the artifact was concentrated exactly where vectors ranked
+unaided. The withdrawal below therefore applies to the *un-reranked* comparison;
+`hybrid + rerank` remains the best configuration measured, at ~3.2 s per query.
 
 The likely mechanism, consistent with a direct probe: the strongest vector hits were
 *post-cutoff* turns — this evaluator's own transcript, which quotes the golden queries
@@ -207,10 +216,12 @@ rather than proof of it. The BM25-statistics drift above remains unfixed.
   correct pin.** Chunking genuinely helped — it is what made a stored vector describe the
   text it is filed under — and under the old (post-filtered) pin hybrid appeared to
   overtake lexical at 0.868 vs 0.841. Once `asOf` was bounded inside the query, hybrid
-  measured **0.831** against lexical's unchanged 0.841, paraphrase 0.609 vs 0.611. So the
-  ordering is where it always was: lexical narrowly ahead. The question of flipping the
-  shipped `semantic: true` default is therefore **still open**, and still resting on 24
-  queries of one corpus.
+  measured **0.831** against lexical's unchanged 0.841, paraphrase 0.609 vs 0.611 — so
+  un-reranked, the ordering is where it always was: lexical narrowly ahead. But the
+  comparison flips once a cross-encoder is in play (hybrid + rerank 0.885 vs
+  lexical + rerank 0.861). The shipped `semantic: true` default is therefore right when
+  reranking and marginally wrong without it, which makes the honest answer "it depends on
+  the pipeline" rather than a single flag — still on 24 queries of one corpus.
 - **The embedder never sees most of a long turn — this is the structural reason vectors
   lose.** BGE-small's window is 512 tokens (`model.max_length`), but `truncate()` keeps
   8000 chars and we embed the turn whole. Probed directly: appending 400 tokens of

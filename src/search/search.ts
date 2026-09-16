@@ -259,10 +259,12 @@ export class SearchService {
     // 0.841) — withdrawn. That run applied asOf *after* the search, so the
     // strongest vector hits (post-cutoff turns quoting the queries verbatim)
     // were dropped only after consuming rank positions, muting the vector head.
-    // With asOf bounded inside the query, hybrid is 0.831 against lexical 0.841:
-    // vectors at full influence still cost a little quality here. 0.45 is left
-    // permissive, and re-sweeping it on the chunked, correctly-pinned index is
-    // now the obvious lever — do not trust the numbers above when tuning it.
+    // With asOf bounded inside the query, hybrid is 0.831 against lexical 0.841
+    // — vectors at full influence cost a little when they rank unaided. Behind
+    // the cross-encoder they pay instead (0.885 vs 0.861), which is the case for
+    // leaving this permissive: the gate would starve the pool the reranker
+    // depends on. Re-sweeping it on the chunked, correctly-pinned index is the
+    // obvious lever — do not trust the pre-chunking numbers above when tuning.
     const MIN_VECTOR_SIM = 0.45;
     const vecRanks = new Map<string, number>();
     const vecSim = new Map<string, number>();
