@@ -166,6 +166,53 @@ apart, against an index that grew between them. Pinning works.
   meaningful, since today a long turn's similarity is computed against a fragment).
   Until that lands, every measurement of "do embeddings help" — including the +0.038 above —
   is measuring a crippled index, not the model.
+- **The similarity gate is not a lever, and today it does nothing.** `MIN_VECTOR_SIM = 0.45`
+  never fires: all 1200 candidates (24 queries × 50) clear it, so the "prevents spurious
+  vector hits" comment describes a mechanism that does not operate. Swept on the pinned
+  corpus, hybrid NDCG@5 goes 0.45 → 0.8178, 0.70 → 0.8217, 0.78 → 0.8470, 0.85 → 0.8537 —
+  monotonically better the more vectors are excluded. The 0.85 endpoint equals lexical-only
+  to four decimals because only 17 of 1200 candidates survive and 21 of 24 queries get no
+  vector input at all: it *is* lexical, wearing a costume. Left at 0.45 rather than shipping
+  "vectors off" disguised as a tuned threshold. There is no threshold at which 512-token
+  embeddings help here.
+- **The prefix gain is reordering, not filtering.** Checked directly: prefixed and bare
+  queries both pass 1200/1200 candidates, so the +0.038 is not the gate suppressing weak
+  hits. Worth noting the BAAI card says `bge-*-v1.5` was improved to work *without* the
+  instruction and omitting it causes only "slight degradation" — our +0.038 is larger than
+  the vendor leads you to expect, on 24 queries. Their own advice is to pick by task
+  performance, which is what was measured.
+
+### What the literature says (2026-09-16)
+
+- **Late chunking** ([2409.04701](https://arxiv.org/abs/2409.04701)) embeds the whole
+  document first and pools per chunk afterwards, keeping cross-chunk context. It *requires*
+  a long-context encoder, so it is unavailable to `bge-small-en-v1.5` (confirmed 512 tokens,
+  registry repo `BAAI/bge-small-en-v1.5`). The fork is plain pre-chunking (works today) vs
+  swapping to `jina-embeddings-v3` (8192 tokens, native late chunking, query/passage LoRA
+  adapters) or `nomic-embed-text` (8192) — at ~17× bge-small's parameters.
+- **BM25 beating dense is not anomalous** ([2604.01733](https://arxiv.org/html/2604.01733v1)):
+  BM25 outperforms `text-embedding-3-large` on financial text-and-table corpora, where exact
+  terminology dominates — much like code identifiers and file paths here. Note their dense
+  model has an 8191-token window and their hybrid *wins*; ours truncates at 512 and loses.
+- **Convex-combination fusion may beat RRF**: same benchmark reports CC α=0.5 Recall@5 0.726
+  vs RRF k=60 0.695. [2601.20131](https://arxiv.org/html/2601.20131v1) notes α≈0.5 is a good
+  default but "the optimal operating point is highly domain-dependent". We use RRF; worth an
+  A/B once vectors are worth fusing at all.
+- **Adaptive reranking is real, but the cheap trigger is not**
+  ([2606.25249](https://arxiv.org/html/2606.25249)): routing gives 1.15–53× lower median
+  latency, and only 11.6% of queries need a heavy reranker (59.2% need none). But BM25-derived
+  signals correlated only ρ=0.06–0.14 with the right routing decision, so they trained a
+  classifier on 306,544 queries. A "rerank when the top scores are close" heuristic is the
+  approach that paper found insufficient.
+- **`decide` should not be cue matching.** Decision detection in multi-party dialogue has
+  modelled *decision sub-dialogues with utterance roles* since Fernández et al. (SIGdial
+  2008), outperforming flat annotations; the LLM argument-mining survey
+  ([2506.16383](https://arxiv.org/html/2506.16383v1)) reports dialogue-act context,
+  chain-of-thought and graph methods over surface markers.
+- **Our citation metric is not ALCE.** Real ALCE scores citation precision/recall by NLI
+  *entailment* between cited text and the claim. `evaluateCitations` does set overlap on
+  session ids and never reads the cited text — which is exactly why it rewarded raw file
+  dumps. Rename it or implement entailment before treating it as a gate.
 - **Reranking over *lexical* candidates is the best configuration measured** (0.866,
   P@1 0.833, paraphrase 0.686), and it beats plain lexical with **zero regressions**
   (paired: 2 queries better, 0 worse). Giving the reranker vector candidates instead is
