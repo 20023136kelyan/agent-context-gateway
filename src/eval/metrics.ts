@@ -88,3 +88,22 @@ export function evaluateCitations(
   const citationRecall = groundSet.size === 0 ? 1 : citedUnique.size / groundSet.size;
   return { citationPrecision, citationRecall };
 }
+
+/**
+ * Is the TOP-ranked citation from a relevant session?
+ *
+ * Set-overlap citation precision cannot measure a decision judge. `decideOnce`
+ * draws candidates from at most three sessions chosen upstream by search, and a
+ * judge only reorders and rescores within that fixed set — it can never add or
+ * remove a session. So the cited SET is identical whatever the judge does, and
+ * precision/recall over it are constant across judges by construction.
+ *
+ * Rank position is the thing a judge actually controls, so that is what this
+ * measures: 1 when one of the top-k cited sessions is relevant, else 0. An
+ * empty citation list scores 0 — declining to answer is not precision.
+ */
+export function citationHitAtK(citedSessionIds: string[], groundTruthSessionIds: string[], k = 1): number {
+  if (citedSessionIds.length === 0 || groundTruthSessionIds.length === 0) return 0;
+  const ground = new Set(groundTruthSessionIds);
+  return citedSessionIds.slice(0, k).some((id) => ground.has(id)) ? 1 : 0;
+}

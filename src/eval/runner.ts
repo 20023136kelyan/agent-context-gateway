@@ -7,12 +7,22 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createApp, closeApp, initVectors, type GatewayApp } from "../app.js";
 import { searchOnce, decideOnce } from "../commands.js";
-import { ndcgAtK, mrrAtK, precisionAtK, evaluateCitations } from "./metrics.js";
+import { ndcgAtK, mrrAtK, precisionAtK, evaluateCitations, citationHitAtK } from "./metrics.js";
 import type { Harness } from "../core/models.js";
 import type { SearchOptions } from "../search/search.js";
+import { getSharedReranker, type CrossEncoderReranker } from "../search/rerank.js";
+import { JevReranker } from "../judgments/rerank-jev.js";
+import { JevDecisionJudge } from "../judgments/judge-jev.js";
+import { NeuralEntailmentJudge } from "../decisions/extract.js";
+import type { DecisionJudge } from "../decisions/extract.js";
 
 export interface GoldenQuery {
   id: string;
+  /** True when the target session actually contains an extractable decision.
+   *  Citation metrics use this when present, because selecting the subset by a
+   *  regex on the QUERY measures retrieval failure and calls it judge quality:
+   *  a query can start with "why" while its answer holds no decision at all. */
+  decisionQuery?: boolean;
   domain: "code" | "prose" | "paraphrase";
   query: string;
   harness?: Harness;
@@ -46,6 +56,14 @@ export interface DomainAggregate {
 
 export interface EvalRunResult {
   mode: string;
+  /** Index size at the start of the run. Compare across arms: if it moved, an
+   *  external writer (serve --watch) was committing mid-run and BM25 corpus
+   *  statistics drifted underneath the comparison. */
+  docCount?: number;
+  /** Which reranker and judge produced these numbers. A baseline that does not
+   *  say is a baseline that gets misread later. */
+  reranker?: string;
+  judgeMethod?: string;
   timestamp: string;
   /** Corpus cutoff this run was pinned to; absent means "whatever was indexed at run time", which is not reproducible. */
   asOf?: string;
@@ -56,10 +74,87 @@ export interface EvalRunResult {
   decisionCitations?: {
     meanPrecision: number;
     meanRecall: number;
+    /** Top cited session is relevant. Unlike the set metrics, this moves when a
+     *  judge reorders, which is the only thing a judge can do. */
+    meanHitAt1: number;
+    /** Queries where decide returned nothing at all — a retrieval failure, not
+     *  a judge failure, and the dominant term in the set metrics. */
+    emptyResults: number;
   };
 }
 
-export type EvalMode = "lexical" | "lexical-rerank" | "hybrid" | "rerank" | "rrf";
+export type EvalMode =
+  | "lexical"
+  | "lexical-rerank"
+  | "hybrid"
+  | "rerank"
+  | "rrf"
+  // Jev arms mirror the cross-encoder arms exactly, differing only in which
+  // reranker is installed, so a delta is attributable to the model alone.
+  | "lexical-jev"
+  | "jev"
+  | "lexical-jev-pairwise"
+  | "jev-pairwise"
+  // Judge arms vary only the decision judge, so decisionCitations is
+  // attributable to it; retrieval and reranking are held fixed at lexical.
+  | "judge-neural"
+  | "judge-jev"
+  | "judge-jev-noul";
+
+/**
+ * A fully-specified comparison arm.
+ *
+ * `{semantic, rerank}` stopped being sufficient once there is more than one
+ * reranker: a cross-encoder arm and a Jev arm have IDENTICAL SearchOptions and
+ * differ only in which object `setReranker` holds.
+ *
+ * `reranker` is deliberately NOT optional. `SearchService.setReranker` mutates a
+ * service shared across arms and there is no getter, so an arm that declines to
+ * set one silently inherits whatever the previous arm installed — and a later
+ * `rerank: true` arm would then measure the wrong model without any error.
+ * Every arm states its reranker; `runEval` sets it unconditionally.
+ */
+export interface EvalArm {
+  name: string;
+  search: Required<Pick<SearchOptions, "semantic" | "rerank">>;
+  reranker: () => Pick<CrossEncoderReranker, "rerank">;
+  judge?: () => DecisionJudge;
+}
+
+const JEV_ARMS: Record<string, { semantic: boolean; jevMode: "fanout" | "pairwise" }> = {
+  "lexical-jev": { semantic: false, jevMode: "fanout" },
+  jev: { semantic: true, jevMode: "fanout" },
+  "lexical-jev-pairwise": { semantic: false, jevMode: "pairwise" },
+  "jev-pairwise": { semantic: true, jevMode: "pairwise" },
+};
+
+const JUDGE_ARMS: Record<string, () => DecisionJudge> = {
+  "judge-neural": () => new NeuralEntailmentJudge(),
+  "judge-jev": () => new JevDecisionJudge(),
+  // Noul only: isolates the decision-state Score's contribution.
+  "judge-jev-noul": () => new JevDecisionJudge(undefined, false),
+};
+
+export function armFor(mode: EvalMode): EvalArm {
+  const judgeArm = JUDGE_ARMS[mode];
+  if (judgeArm) {
+    return {
+      name: mode,
+      search: { semantic: false, rerank: false },
+      reranker: () => getSharedReranker(),
+      judge: judgeArm,
+    };
+  }
+  const jev = JEV_ARMS[mode];
+  if (jev) {
+    return {
+      name: mode,
+      search: { semantic: jev.semantic, rerank: true },
+      reranker: () => new JevReranker(jev.jevMode),
+    };
+  }
+  return { name: mode, search: modeOptions(mode), reranker: () => getSharedReranker() };
+}
 
 /** Search options per eval mode. "rrf" is the pre-rename alias of "hybrid" (vectors + RRF fusion). */
 export function modeOptions(mode: EvalMode): Required<Pick<SearchOptions, "semantic" | "rerank">> {
@@ -67,6 +162,11 @@ export function modeOptions(mode: EvalMode): Required<Pick<SearchOptions, "seman
   // Lexical candidates + cross-encoder: precision without vector noise in the pool.
   if (mode === "lexical-rerank") return { semantic: false, rerank: true };
   if (mode === "rerank") return { semantic: true, rerank: true };
+  // Jev arms are described by armFor, not here; modeOptions keeps its original
+  // five-tuple contract, which tests/eval.test.ts asserts exactly.
+  const jev = JEV_ARMS[mode];
+  if (jev) return { semantic: jev.semantic, rerank: true };
+  if (JUDGE_ARMS[mode]) return { semantic: false, rerank: false };
   return { semantic: true, rerank: false };
 }
 
@@ -98,11 +198,16 @@ function aggregate(results: QueryEvalResult[], domain: string): DomainAggregate 
 export async function runEval(
   app: GatewayApp,
   queries: GoldenQuery[],
-  mode: EvalMode,
+  mode: EvalMode | EvalArm,
   opts: { asOf?: string } = {},
 ): Promise<EvalRunResult> {
   const queryResults: QueryEvalResult[] = [];
-  const modeOpts = modeOptions(mode);
+  const arm: EvalArm = typeof mode === "string" ? armFor(mode) : mode;
+  const modeOpts = arm.search;
+  // Unconditional: see EvalArm. An arm must never inherit the previous one's model.
+  const reranker = arm.reranker();
+  app.search.setReranker(reranker);
+  const judge = arm.judge?.();
   // Pins the corpus: without it, sessions indexed after the golden set was
   // authored (this evaluator's own transcript included) compete with truth.
   const asOf = opts.asOf;
@@ -152,18 +257,23 @@ export async function runEval(
   const overall = aggregate(queryResults, "overall");
 
   // ALCE-style decision citation evaluation on "why" queries
-  let decisionCitations: { meanPrecision: number; meanRecall: number } | undefined;
-  const whyQueries = queries.filter((q) => /why|decide|choose|stopped|replace/i.test(q.query));
+  let decisionCitations: EvalRunResult["decisionCitations"];
+  const flagged = queries.filter((q) => q.decisionQuery);
+  const whyQueries = flagged.length > 0 ? flagged : queries.filter((q) => /why|decide|choose|stopped|replace/i.test(q.query));
   if (whyQueries.length > 0) {
     let totalP = 0;
     let totalR = 0;
+    let totalHit1 = 0;
+    let empty = 0;
     for (const wq of whyQueries) {
       try {
-        const dec = await decideOnce(app, wq.query, { harness: wq.harness, semantic: modeOpts.semantic, asOf });
+        const dec = await decideOnce(app, wq.query, { harness: wq.harness, semantic: modeOpts.semantic, asOf, judge });
         const citedSessions = dec.decisions.map((d) => d.session.sessionId);
         const evalScore = evaluateCitations(citedSessions, wq.relevantSessionIds);
         totalP += evalScore.citationPrecision;
         totalR += evalScore.citationRecall;
+        totalHit1 += citationHitAtK(citedSessions, wq.relevantSessionIds, 1);
+        if (citedSessions.length === 0) empty += 1;
       } catch {
         // skip failed decision extraction
       }
@@ -171,11 +281,22 @@ export async function runEval(
     decisionCitations = {
       meanPrecision: Number((totalP / whyQueries.length).toFixed(4)),
       meanRecall: Number((totalR / whyQueries.length).toFixed(4)),
+      meanHitAt1: Number((totalHit1 / whyQueries.length).toFixed(4)),
+      emptyResults: empty,
     };
   }
 
   return {
-    mode,
+    mode: arm.name,
+    docCount: (() => {
+      try {
+        return app.index.docCount();
+      } catch {
+        return undefined;
+      }
+    })(),
+    reranker: reranker.constructor?.name ?? "unknown",
+    judgeMethod: judge?.method,
     timestamp: new Date().toISOString(),
     asOf,
     totalQueries: queries.length,
@@ -204,7 +325,12 @@ export function formatMarkdownTable(run: EvalRunResult): string {
   );
   if (run.decisionCitations) {
     lines.push("");
-    lines.push(`**ALCE Decision Citations:** Precision = ${run.decisionCitations.meanPrecision.toFixed(3)}, Recall = ${run.decisionCitations.meanRecall.toFixed(3)}`);
+    const dc = run.decisionCitations;
+    lines.push(
+      `**Decision Citations:** Hit@1 = ${dc.meanHitAt1.toFixed(3)} (judge-sensitive) · ` +
+        `Precision = ${dc.meanPrecision.toFixed(3)}, Recall = ${dc.meanRecall.toFixed(3)} (set overlap, judge-insensitive) · ` +
+        `empty = ${dc.emptyResults}`,
+    );
   }
   return lines.join("\n");
 }

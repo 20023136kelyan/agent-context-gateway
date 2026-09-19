@@ -1,0 +1,140 @@
+[
+  {
+    "id": "code-1",
+    "domain": "code",
+    "query": "websocket reconnect backoff cap",
+    "description": "backoffMs ceiling in src/net/reconnect.ts; session 011 mentions the reconnect branch without explaining it",
+    "relevantSessionIds": [
+      "f0000007-0000-4000-8000-000000000007"
+    ]
+  },
+  {
+    "id": "code-2",
+    "domain": "code",
+    "query": "presence cursor update batching interval",
+    "description": "PresenceChannel 50ms batching; session 011 name-drops presence batching with no detail",
+    "relevantSessionIds": [
+      "f0000008-0000-4000-8000-000000000008"
+    ]
+  },
+  {
+    "id": "code-3",
+    "domain": "code",
+    "query": "snapshot compaction retention policy",
+    "description": "compactSnapshots windows; session 011 mentions compact.ts without content",
+    "relevantSessionIds": [
+      "f0000009-0000-4000-8000-000000000009"
+    ]
+  },
+  {
+    "id": "code-4",
+    "domain": "code",
+    "query": "why does compaction never delete the newest snapshot",
+    "description": "the cold-document guard",
+    "relevantSessionIds": [
+      "f0000009-0000-4000-8000-000000000009"
+    ]
+  },
+  {
+    "id": "code-5",
+    "domain": "code",
+    "query": "equal jitter thundering herd on server restart",
+    "description": "jitter strategy in reconnect.ts",
+    "relevantSessionIds": [
+      "f0000007-0000-4000-8000-000000000007"
+    ]
+  },
+  {
+    "id": "prose-6",
+    "domain": "prose",
+    "query": "why did we reject Monaco as the editor",
+    "description": "decision session 001; session 010 has maximum term overlap and answers nothing",
+    "relevantSessionIds": [
+      "f0000001-0000-4000-8000-000000000001"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "prose-7",
+    "domain": "prose",
+    "query": "what replaced Supabase for authentication",
+    "description": "decision session 002; session 010 names both Supabase and WorkOS with no conclusion",
+    "relevantSessionIds": [
+      "f0000002-0000-4000-8000-000000000002"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "prose-8",
+    "domain": "prose",
+    "query": "why Yjs instead of operational transforms",
+    "description": "decision session 003; session 010 raises CRDT versus OT as an open item",
+    "relevantSessionIds": [
+      "f0000003-0000-4000-8000-000000000003"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "prose-9",
+    "domain": "prose",
+    "query": "editor choice bundle size budget",
+    "description": "the 2.3MB against 5MB rationale",
+    "relevantSessionIds": [
+      "f0000001-0000-4000-8000-000000000001"
+    ]
+  },
+  {
+    "id": "prose-10",
+    "domain": "prose",
+    "query": "enterprise SSO requirement drove the auth migration",
+    "description": "SAML requirement as the deciding factor",
+    "relevantSessionIds": [
+      "f0000002-0000-4000-8000-000000000002"
+    ]
+  },
+  {
+    "id": "paraphrase-11",
+    "domain": "paraphrase",
+    "query": "users complained the product felt slow on launch",
+    "description": "session 004 is about first contentful paint and locale chunking; query shares no stem with it",
+    "relevantSessionIds": [
+      "f0000004-0000-4000-8000-000000000004"
+    ]
+  },
+  {
+    "id": "paraphrase-12",
+    "domain": "paraphrase",
+    "query": "why did the same commands produce different results for different engineers",
+    "description": "session 005 is devcontainer toolchain pinning; query avoids laptop/setup/build stems",
+    "relevantSessionIds": [
+      "f0000005-0000-4000-8000-000000000005"
+    ]
+  },
+  {
+    "id": "paraphrase-13",
+    "domain": "paraphrase",
+    "query": "why were people losing their work",
+    "description": "session 006 is about the dirty flag cleared before server acknowledgement",
+    "relevantSessionIds": [
+      "f0000006-0000-4000-8000-000000000006"
+    ]
+  },
+  {
+    "id": "paraphrase-14",
+    "domain": "paraphrase",
+    "query": "what made the sluggish opening screen quicker",
+    "description": "session 004 again, different wording, no shared content words",
+    "relevantSessionIds": [
+      "f0000004-0000-4000-8000-000000000004"
+    ]
+  },
+  {
+    "id": "paraphrase-15",
+    "domain": "paraphrase",
+    "query": "eliminating works-on-my-machine failures",
+    "description": "session 005 again; query shares no stem with devcontainer/toolchain/identical",
+    "relevantSessionIds": [
+      "f0000005-0000-4000-8000-000000000005"
+    ]
+  }
+]
