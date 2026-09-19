@@ -43,4 +43,9 @@ export class LruCache<K, V> {
   get weight(): number {
     return this.totalWeight;
   }
+
+  clear(): void {
+    this.entries.clear();
+    this.totalWeight = 0;
+  }
 }

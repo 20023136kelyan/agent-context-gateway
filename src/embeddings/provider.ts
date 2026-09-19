@@ -13,6 +13,7 @@
  * that sends history off-machine (spec §73 Principle 5 is local-first).
  * MLX needs Apple Silicon, so on Intel the order collapses to voyage → ollama.
  */
+import { LruCache } from "../core/lru.js";
 import { getSharedMlxEmbedder, MlxEmbedder, MLX_DIM } from "./mlx.js";
 export { getSharedMlxEmbedder, MlxEmbedder };
 import {
@@ -118,8 +119,36 @@ export async function embedTextsWith(engine: EmbeddingEngine, texts: string[]): 
   return getProvider(engine).embedTexts(texts);
 }
 
+/**
+ * Query-embedding cache.
+ *
+ * A query embedding is a pure function of (engine, text), so this is safe to
+ * cache for the process lifetime — nothing about the corpus can change it.
+ * Worth doing because it is the single largest fixed cost on the search path:
+ * ~290ms of the ~780ms p50 is this one network round trip to Voyage, paid
+ * before any candidate is scored.
+ *
+ * Keyed by engine as well as text: the same string embedded by two engines
+ * lands in two different vector spaces, and serving one for the other would
+ * silently return garbage neighbours rather than fail.
+ *
+ * Bounded by vector count and by total floats, so a long-running server cannot
+ * grow this without limit. 512 entries of 1024 dims is ~4MB at 8 bytes each.
+ */
+const QUERY_VECTOR_CACHE = new LruCache<string, number[]>(512, 512 * 1024, (v) => v.length);
+
+/** Exposed for tests and for operators who need a clean measurement. */
+export function clearQueryVectorCache(): void {
+  QUERY_VECTOR_CACHE.clear();
+}
+
 export async function embedQueryWith(engine: EmbeddingEngine, query: string): Promise<number[]> {
-  return getProvider(engine).embedQuery(query);
+  const key = `${engine}\u0000${query}`;
+  const hit = QUERY_VECTOR_CACHE.get(key);
+  if (hit) return hit;
+  const vector = await getProvider(engine).embedQuery(query);
+  QUERY_VECTOR_CACHE.set(key, vector);
+  return vector;
 }
 
 export async function isMlxAvailable(): Promise<boolean> {
