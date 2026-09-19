@@ -14,7 +14,15 @@
  */
 export const RERANK_CONTENT_CHARS = 1000;
 
-/** Blend of model score and upstream retrieval score. Shared for the same reason. */
+/**
+ * Blend of model score and upstream retrieval score. Shared so every reranker
+ * reads the same value: an arm that blends differently from its comparison arm
+ * measures the blend as much as the model, and the comparison means nothing.
+ *
+ * Both jev-pairwise (0.8641 vs jev-pure 0.8367) and the cross-encoder keep it.
+ * An unblended variant is reachable per-request via `SearchOptions.rawRank`,
+ * which the `*-pure` eval arms use — see the note at the call site.
+ */
 export const RERANK_MODEL_WEIGHT = 0.6;
 
 export interface RerankCandidate {
@@ -92,7 +100,15 @@ export class CrossEncoderReranker {
         const rawLogit = Number(logits.data[0]);
         // Sigmoid mapping for smooth [0, 1] probability
         const rerankScore = 1 / (1 + Math.exp(-rawLogit));
-        // Combined blend: 0.60 * rerankScore + 0.40 * originalScore
+        // Combined blend: 0.60 * rerankScore + 0.40 * originalScore.
+        //
+        // Dropping the upstream term measured better on the fixture corpus
+        // (rerank-pure 0.7877/0.7758 vs 0.7483/0.7416), but that corpus has one
+        // project and no feedback signal, so it cannot price what the term
+        // carries: `finalScore` is where feedback.delta, project/repo boosts and
+        // recency enter. Unblending here would silently zero all three for the
+        // reranked head on every `?rerank=true` request. The unblended order is
+        // available deliberately, per request, via `SearchOptions.rawRank`.
         const combinedScore = RERANK_MODEL_WEIGHT * rerankScore + (1 - RERANK_MODEL_WEIGHT) * cand.score;
         results.push({ id: cand.id, originalScore: cand.score, rerankScore, combinedScore, neural: true });
       }
