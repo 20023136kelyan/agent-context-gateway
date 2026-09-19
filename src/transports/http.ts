@@ -114,6 +114,9 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
           asOf: q.asOf,
           includeSuperseded: q.includeSuperseded === "true",
           semantic: q.semantic === "false" ? false : undefined,
+          // Default OFF. A remote reranker would ship query text and candidate
+          // excerpts off-machine, so it must be asked for explicitly.
+          rerank: q.rerank === "true" || q.rerank === "1",
           maxResults: q.maxResults ? Number(q.maxResults) : undefined,
           maxTurns: q.maxTurns ? Number(q.maxTurns) : undefined,
           maxTokens: q.maxTokens ? Number(q.maxTokens) : undefined,

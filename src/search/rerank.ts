@@ -5,6 +5,18 @@
  * Latency budget: ~150-250ms for 10-15 candidates on Apple Silicon.
  */
 
+/**
+ * Characters of candidate text a reranker sees.
+ *
+ * Exported so every reranker reads the SAME value: if a Jev arm and a
+ * cross-encoder arm truncate differently, the eval measures input length as
+ * much as model quality, and the comparison means nothing.
+ */
+export const RERANK_CONTENT_CHARS = 1000;
+
+/** Blend of model score and upstream retrieval score. Shared for the same reason. */
+export const RERANK_MODEL_WEIGHT = 0.6;
+
 export interface RerankCandidate {
   id: string;
   content: string;
@@ -72,7 +84,7 @@ export class CrossEncoderReranker {
       const results: RerankResult[] = [];
       for (const cand of pool) {
         const inputs = this.tokenizer(query, {
-          text_pair: cand.content.slice(0, 1000),
+          text_pair: cand.content.slice(0, RERANK_CONTENT_CHARS),
           padding: true,
           truncation: true,
         });
@@ -81,7 +93,7 @@ export class CrossEncoderReranker {
         // Sigmoid mapping for smooth [0, 1] probability
         const rerankScore = 1 / (1 + Math.exp(-rawLogit));
         // Combined blend: 0.60 * rerankScore + 0.40 * originalScore
-        const combinedScore = 0.6 * rerankScore + 0.4 * cand.score;
+        const combinedScore = RERANK_MODEL_WEIGHT * rerankScore + (1 - RERANK_MODEL_WEIGHT) * cand.score;
         results.push({ id: cand.id, originalScore: cand.score, rerankScore, combinedScore, neural: true });
       }
 

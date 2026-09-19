@@ -10,11 +10,14 @@ const program = new Command();
 program.name("gateway").description("Agent Context Gateway — federated search over native agent histories");
 program.option("--index-dir <dir>", "index directory (default ~/.context-gateway/index-tantivy)");
 program.option("--backend <name>", "tantivy (default) or sqlite");
+program.option("--state-dir <dir>", "base for derived state (default CONTEXT_GATEWAY_STATE or ~/.context-gateway)");
 program.option("--json", "JSON output (default for search)", false);
 
 function appFromGlobals() {
   const opts = program.opts();
-  return createApp({ indexDir: opts.indexDir, backend: opts.backend ?? "tantivy" });
+  // Undefined values fall through to resolveSettings (env, then settings.json,
+  // then default), so the CLI no longer hard-codes a backend over them.
+  return createApp({ indexDir: opts.indexDir, backend: opts.backend, stateDir: opts.stateDir });
 }
 
 function print(data: unknown, forceJson: boolean) {
@@ -31,7 +34,9 @@ function print(data: unknown, forceJson: boolean) {
  * Returns the remote payload, or null when no server is up (use local app).
  */
 async function fetchRemote(method: string, path: string, body?: unknown): Promise<unknown | null> {
-  if (program.opts().indexDir || program.opts().backend) return null; // explicit local
+  // Any global that changes app identity must be here, or an explicit local
+  // configuration silently delegates to a server running a different one.
+  if (program.opts().indexDir || program.opts().backend || program.opts().stateDir) return null; // explicit local
   const info = readServeInfo();
   if (!info) return null;
   const host = connectHost(info.host);
@@ -93,8 +98,9 @@ program
   .option("--as-principal <id>", "caller identity for resource-level ACL enforcement")
   .option("--as-of <iso>", "Point-in-time reconstruction (ISO timestamp)")
   .option("--include-superseded", "Include superseded historical knowledge without demotion")
+  .option("--rerank", "Rerank top candidates for precision (off by default; a remote reranker sends query text off-machine)")
   .action(async (query: string, cmdOpts) => {
-    const path = `/search${qs({ q: query, project: cmdOpts.project, repo: cmdOpts.repo, harness: cmdOpts.harness, maxResults: String(cmdOpts.maxResults ?? 5), scope: cmdOpts.scope, callerSessionId: cmdOpts.asSession, principal: cmdOpts.asPrincipal, asOf: cmdOpts.asOf, includeSuperseded: cmdOpts.includeSuperseded ? "true" : undefined })}`;
+    const path = `/search${qs({ q: query, project: cmdOpts.project, repo: cmdOpts.repo, harness: cmdOpts.harness, maxResults: String(cmdOpts.maxResults ?? 5), scope: cmdOpts.scope, callerSessionId: cmdOpts.asSession, principal: cmdOpts.asPrincipal, asOf: cmdOpts.asOf, includeSuperseded: cmdOpts.includeSuperseded ? "true" : undefined, rerank: cmdOpts.rerank ? "true" : undefined })}`;
     const res = ((await fetchRemote("GET", path)) ??
       (await withLocal((app) =>
         searchOnce(app, query, {
@@ -107,6 +113,7 @@ program
           callerPrincipal: cmdOpts.asPrincipal,
           asOf: cmdOpts.asOf,
           includeSuperseded: cmdOpts.includeSuperseded ?? false,
+          rerank: cmdOpts.rerank ?? false,
         }),
       ))) as Awaited<ReturnType<typeof searchOnce>>;
       if (program.opts().json) {
