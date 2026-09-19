@@ -31,6 +31,7 @@ import {
   formatMarkdownTable,
   type EvalMode,
   type EvalRunResult,
+  type GoldenQuery,
 } from "../src/eval/runner.js";
 
 const MODES: EvalMode[] = [
@@ -84,8 +85,47 @@ async function main() {
   // machine's real agent history: reproducible anywhere, safe in CI, and small
   // enough to embed inside a free-tier rate limit.
   const useFixture = args.includes("--fixture");
+  // --beir <dir> measures the same arms against an outside corpus nobody here
+  // authored. See src/eval/beir.ts for why, and for what it is NOT comparable to.
+  const beirDir = argValue(args, "--beir");
+  const beirQueryCap = argValue(args, "--beir-queries");
+  const beirDocCap = argValue(args, "--beir-docs");
+  const beirSplit = argValue(args, "--beir-split");
+  const beirDomain = argValue(args, "--beir-domain") as "code" | "prose" | "paraphrase" | undefined;
+  if (beirDir && useFixture) throw new Error("--beir and --fixture are different corpora; pass one");
+  let beirQueries: GoldenQuery[] | undefined;
 
   let appOpts: Parameters<typeof createApp>[0] = indexDir ? { indexDir } : {};
+  if (beirDir) {
+    const { buildBeirCorpus } = await import("../src/eval/beir.js");
+    const root = mkdtempSync(join(tmpdir(), "acg-eval-beir-"));
+    const built = await buildBeirCorpus(beirDir, root, {
+      split: beirSplit,
+      maxQueries: beirQueryCap ? Number(beirQueryCap) : undefined,
+      maxDocs: beirDocCap ? Number(beirDocCap) : undefined,
+      domain: beirDomain,
+    });
+    beirQueries = built.queries;
+    appOpts = {
+      ...appOpts,
+      claudeDir: built.claudeDir,
+      codexDir: join(root, "codex-empty"),
+      indexDir: indexDir ?? join(root, "index"),
+    };
+    process.env.CONTEXT_GATEWAY_STATE = join(root, "state");
+    const st = built.stats;
+    console.log(
+      `BEIR ${st.name}/${beirSplit ?? "test"}: ${st.docsWritten} docs ` +
+        `(${st.judgedDocs} judged + ${st.distractors} distractors${st.corpusTruncated ? ", TRUNCATED" : ""}), ` +
+        `${st.queries} queries, ${st.meanRelevantPerQuery} relevant/query`,
+    );
+    if (st.corpusTruncated) {
+      console.log(
+        "  NOTE: corpus capped by --beir-docs. A smaller corpus is an EASIER benchmark — " +
+          "absolute scores rise. Only compare arms measured at the same cap.",
+      );
+    }
+  }
   if (useFixture) {
     const { buildFixtureCorpus } = await import("../tests/fixtures/corpus.js");
     const root = mkdtempSync(join(tmpdir(), "acg-eval-fixture-"));
@@ -128,9 +168,9 @@ async function main() {
     }
   }
 
-  const queries = loadGoldenQueries(
-    goldenPath ?? (useFixture ? join(process.cwd(), "tests", "eval", "golden-fixture.json") : undefined),
-  );
+  const queries =
+    beirQueries ??
+    loadGoldenQueries(goldenPath ?? (useFixture ? join(process.cwd(), "tests", "eval", "golden-fixture.json") : undefined));
   console.log(
     `Loaded ${queries.length} golden queries${goldenPath ? ` from ${goldenPath}` : ""}. ` +
       `Arms: ${modes.join(", ")}${asOf ? ` as of ${asOf}` : ""}...`,
