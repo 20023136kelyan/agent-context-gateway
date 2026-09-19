@@ -139,7 +139,10 @@ export async function buildBeirCorpus(
   // merely exist. Reusing a corpus built for different caps would silently
   // measure a different benchmark than the flags claim.
   const marker = join(dir, ".beir-built.json");
-  const want = JSON.stringify({ split, maxQueries: opts.maxQueries ?? null, maxDocs: opts.maxDocs ?? null });
+  // `v` is the MATERIALISATION version, not the dataset's. Bump it whenever the
+  // on-disk shape changes (v2: one uniform timestamp instead of one per minute),
+  // or a reused corpus silently keeps the old shape and the fix never lands.
+  const want = JSON.stringify({ v: 2, split, maxQueries: opts.maxQueries ?? null, maxDocs: opts.maxDocs ?? null });
   let reusable = false;
   if (opts.reuse) {
     try {
@@ -149,8 +152,20 @@ export async function buildBeirCorpus(
     }
   }
 
-  // Fixed base so timestamps are deterministic and asOf bounds are predictable.
-  const base = Date.parse("2026-01-01T00:00:00Z");
+  // ONE timestamp for every document, deliberately.
+  //
+  // A BEIR corpus has no meaningful chronology. Spacing documents a minute
+  // apart — the obvious thing, and what this did first — makes corpus FILE
+  // ORDER leak into the ranking, because `finalScore` adds
+  // 0.10 * 0.5^(ageDays/30) and later documents are "newer". The bias grows
+  // with the corpus: 0.9% of the maximum RRF term at nfcorpus's 3633 docs,
+  // 4.2% at 20k, 9.3% at fiqa's 57k. That is a measurement artifact of the
+  // harness, not a property of anything being measured, and it would have
+  // quietly flattered whichever arm happened to favour the corpus tail.
+  //
+  // Identical timestamps make the recency term a constant, which drops out of
+  // every comparison. asOf still behaves: everything is simply in-window.
+  const stamp = "2026-01-01T00:00:00Z";
   const seenSafe = new Map<string, string>();
   let written = 0;
   let distractors = 0;
@@ -190,12 +205,11 @@ export async function buildBeirCorpus(
       written += 1;
       continue; // counted, not rewritten
     }
-    const ts = new Date(base + written * 60_000).toISOString();
     const line = JSON.stringify({
       type: "assistant",
       uuid: `${sid}-u0`,
       parentUuid: null,
-      timestamp: ts,
+      timestamp: stamp,
       sessionId: sid,
       cwd: `/beir/${name}`,
       message: { role: "assistant", content },
