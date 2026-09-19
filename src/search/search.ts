@@ -84,13 +84,19 @@ export interface SearchResponse {
 }
 
 const TOPO_SCOPES = new Set(["parent", "children", "siblings", "auto"]);
-/** Candidates the cross-encoder scores when rerank is on.
- * Overridable for sweeps (GATEWAY_RERANK_POOL=30). Deeper pools let the
- * reranker rescue vector-retrieved targets that RRF ranks below lexical
- * noise — the paraphrase case — at linear rerank cost. */
+/** Candidates the reranker scores when rerank is on.
+ *
+ * 30, not 15. Deeper pools let the reranker rescue vector-retrieved targets
+ * that fusion ranks below lexical noise — the paraphrase case. Measured on the
+ * fixture corpus with jev-pairwise: 15 -> 0.859, 30 -> 0.903, 50 -> 0.910
+ * NDCG@5 under the old similarity calibration; after recalibrating
+ * `similarityWeight`, 30 -> 0.969 and 50 -> 0.964, so 50 stops paying and
+ * costs ~320ms. 30 is the knee of the curve.
+ *
+ * Overridable with GATEWAY_RERANK_POOL; cost in reranker calls is linear. */
 const RERANK_POOL = (() => {
-  const raw = Number(process.env.GATEWAY_RERANK_POOL ?? 15);
-  return Number.isFinite(raw) && raw >= 1 && raw <= 100 ? Math.floor(raw) : 15;
+  const raw = Number(process.env.GATEWAY_RERANK_POOL ?? 30);
+  return Number.isFinite(raw) && raw >= 1 && raw <= 100 ? Math.floor(raw) : 30;
 })();
 /** Listing sessions walks every history dir; reuse the result this long. */
 const SESSION_TTL_MS = 10_000;

@@ -23,13 +23,34 @@ export function rrfTerm(rank: number, k = RRF_K): number {
 }
 
 /**
- * Maps raw cosine similarity (typically 0.45-0.80+ in Qwen/BGE models) into [0, 1] confidence weight.
- * Similarities near or below the background noise floor (~0.45) receive near-zero weight,
- * while genuine semantic matches (>=0.75) receive full weight.
+ * Maps raw cosine similarity into a [0, 1] confidence weight.
+ *
+ * The floor and span are ENGINE-CALIBRATED, not universal. The original
+ * 0.45/0.30 came from Qwen/BGE, whose similarities run 0.45-0.80. Voyage-4
+ * compresses that range: measured on the fixture corpus, paraphrase targets
+ * sitting at vector rank 1 score 0.35-0.57. Under the BGE calibration five of
+ * those ten scored a weight of EXACTLY ZERO — retrieved at rank 1, admitted
+ * through MIN_VECTOR_SIM, then multiplied out of existence before fusion,
+ * while any lexical distractor at rank 1 carried full weight 1.0.
+ *
+ * That is why paraphrase recall@60 was 0.95 while recall@1 was 0.15: the
+ * candidates were always there and the fusion could not see them.
+ *
+ * Tunable per engine: GATEWAY_SIM_FLOOR / GATEWAY_SIM_SPAN. Invalid values
+ * fall back to the defaults rather than silently disabling the weighting.
  */
+const SIM_FLOOR = (() => {
+  const raw = Number(process.env.GATEWAY_SIM_FLOOR ?? 0.15);
+  return Number.isFinite(raw) && raw >= 0 && raw < 1 ? raw : 0.15;
+})();
+const SIM_SPAN = (() => {
+  const raw = Number(process.env.GATEWAY_SIM_SPAN ?? 0.35);
+  return Number.isFinite(raw) && raw > 0 && raw <= 1 ? raw : 0.35;
+})();
+
 export function similarityWeight(sim?: number): number {
   if (sim === undefined || !Number.isFinite(sim)) return 0.0;
-  return Math.max(0.0, Math.min(1.0, (sim - 0.45) / 0.30));
+  return Math.max(0.0, Math.min(1.0, (sim - SIM_FLOOR) / SIM_SPAN));
 }
 
 /**
