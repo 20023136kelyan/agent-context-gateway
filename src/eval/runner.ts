@@ -95,6 +95,12 @@ export type EvalMode =
   | "jev"
   | "lexical-jev-pairwise"
   | "jev-pairwise"
+  // Pooled-judging arms (Jev-branch experiment): identical retrieval to the
+  // rerank/jev-pairwise arms, but rawRank bypasses RRF weights and boosts so
+  // final order is the model alone. A delta vs the blended arm measures what
+  // the hand-tuned ranking contributes — or costs.
+  | "rerank-pure"
+  | "jev-pure"
   // Judge arms vary only the decision judge, so decisionCitations is
   // attributable to it; retrieval and reranking are held fixed at lexical.
   | "judge-neural"
@@ -116,16 +122,17 @@ export type EvalMode =
  */
 export interface EvalArm {
   name: string;
-  search: Required<Pick<SearchOptions, "semantic" | "rerank">>;
+  search: Required<Pick<SearchOptions, "semantic" | "rerank">> & Pick<SearchOptions, "rawRank">;
   reranker: () => Pick<CrossEncoderReranker, "rerank">;
   judge?: () => DecisionJudge;
 }
 
-const JEV_ARMS: Record<string, { semantic: boolean; jevMode: "fanout" | "pairwise" }> = {
+const JEV_ARMS: Record<string, { semantic: boolean; jevMode: "fanout" | "pairwise"; rawRank?: boolean }> = {
   "lexical-jev": { semantic: false, jevMode: "fanout" },
   jev: { semantic: true, jevMode: "fanout" },
   "lexical-jev-pairwise": { semantic: false, jevMode: "pairwise" },
   "jev-pairwise": { semantic: true, jevMode: "pairwise" },
+  "jev-pure": { semantic: true, jevMode: "pairwise", rawRank: true },
 };
 
 const JUDGE_ARMS: Record<string, () => DecisionJudge> = {
@@ -149,8 +156,15 @@ export function armFor(mode: EvalMode): EvalArm {
   if (jev) {
     return {
       name: mode,
-      search: { semantic: jev.semantic, rerank: true },
+      search: { semantic: jev.semantic, rerank: true, ...(jev.rawRank ? { rawRank: true as const } : {}) },
       reranker: () => new JevReranker(jev.jevMode),
+    };
+  }
+  if (mode === "rerank-pure") {
+    return {
+      name: mode,
+      search: { semantic: true, rerank: true, rawRank: true as const },
+      reranker: () => getSharedReranker(),
     };
   }
   return { name: mode, search: modeOptions(mode), reranker: () => getSharedReranker() };

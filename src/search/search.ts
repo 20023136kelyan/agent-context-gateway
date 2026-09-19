@@ -36,6 +36,15 @@ export interface SearchOptions {
   callerPrincipal?: string;
   /** Neural Cross-Encoder reranker over top candidates (Phase B.2) */
   rerank?: boolean;
+  /**
+   * Pooled-judging mode (Jev-branch experiment): the RRF score still selects
+   * the pool, but project/repo/recency boosts and model/upstream blending are
+   * bypassed — final order is the reranker's alone. Lets the eval isolate
+   * whether the judge beats the hand-tuned final ranking, instead of
+   * measuring their blend. Correctness filters (ACL, temporal,
+   * harness/project scoping) still apply.
+   */
+  rawRank?: boolean;
   /** Use vector candidates when a store is attached (default true); false = lexical only. */
   semantic?: boolean;
   /** Point-in-time reconstruction (ISO timestamp): ignores invalidations after this time (Phase C.1) */
@@ -75,8 +84,14 @@ export interface SearchResponse {
 }
 
 const TOPO_SCOPES = new Set(["parent", "children", "siblings", "auto"]);
-/** Candidates the cross-encoder scores when rerank is on. */
-const RERANK_POOL = 15;
+/** Candidates the cross-encoder scores when rerank is on.
+ * Overridable for sweeps (GATEWAY_RERANK_POOL=30). Deeper pools let the
+ * reranker rescue vector-retrieved targets that RRF ranks below lexical
+ * noise — the paraphrase case — at linear rerank cost. */
+const RERANK_POOL = (() => {
+  const raw = Number(process.env.GATEWAY_RERANK_POOL ?? 15);
+  return Number.isFinite(raw) && raw >= 1 && raw <= 100 ? Math.floor(raw) : 15;
+})();
 /** Listing sessions walks every history dir; reuse the result this long. */
 const SESSION_TTL_MS = 10_000;
 
@@ -265,7 +280,17 @@ export class SearchService {
     // leaving this permissive: the gate would starve the pool the reranker
     // depends on. Re-sweeping it on the chunked, correctly-pinned index is the
     // obvious lever — do not trust the pre-chunking numbers above when tuning.
-    const MIN_VECTOR_SIM = 0.45;
+    // Re-swept 2026-09-19 on the 72-session fixture corpus with voyage-4
+    // vectors (hybrid mode): 0 -> 0.6891, 0.25 -> 0.6991, 0.35 -> 0.6927,
+    // 0.45 -> 0.6834 NDCG@5. The old floor discarded rank-1 vector targets
+    // (paraphrase sims run 0.27-0.72); 0.25 keeps them while gate 0 admits
+    // pure noise. Code/prose are flat across the sweep. Carries through to
+    // rerank (0.7483 vs 0.7416). Overridable via GATEWAY_MIN_VECTOR_SIM;
+    // invalid values fall back to the default.
+    const MIN_VECTOR_SIM = (() => {
+      const raw = Number(process.env.GATEWAY_MIN_VECTOR_SIM ?? 0.25);
+      return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : 0.25;
+    })();
     const vecRanks = new Map<string, number>();
     const vecSim = new Map<string, number>();
     let hasVectors = false;
@@ -348,22 +373,30 @@ export class SearchService {
       if (nq.before && stored.timestamp >= nq.before) continue;
       if (asOf && stored.timestamp > asOf) continue;
 
-      // Reciprocal Rank Fusion of sparse lexical + dense vector ranks
-      const lexRank = lexRanks.get(hit.turnId) ?? 0;
-      const vecRank = vecRanks.get(hit.turnId) ?? 0;
-      const rrf = rrfBaseScore(lexRank, vecRank, vecSim.get(hit.turnId));
-
-      let score = finalScore(
-        rrf,
-        opts.project ? session.projectId === opts.project : true,
-        stored.timestamp,
-        nq,
-        stored.content,
-        stored.fileRefs ?? [],
-        nowMs,
-        opts.repo ? session.repo === opts.repo : false,
-        this.feedback?.delta(hit.turnId) ?? 0,
-      );
+      // Reciprocal Rank Fusion of sparse lexical + dense vector ranks.
+      // rawRank keeps the RRF score for pool selection but skips the
+      // hand-tuned finalScore boosts — the reranker owns the final order.
+      let score: number;
+      if (opts.rawRank === true) {
+        const lexRank = lexRanks.get(hit.turnId) ?? 0;
+        const vecRank = vecRanks.get(hit.turnId) ?? 0;
+        score = rrfBaseScore(lexRank, vecRank, vecSim.get(hit.turnId));
+      } else {
+        const lexRank = lexRanks.get(hit.turnId) ?? 0;
+        const vecRank = vecRanks.get(hit.turnId) ?? 0;
+        const rrf = rrfBaseScore(lexRank, vecRank, vecSim.get(hit.turnId));
+        score = finalScore(
+          rrf,
+          opts.project ? session.projectId === opts.project : true,
+          stored.timestamp,
+          nq,
+          stored.content,
+          stored.fileRefs ?? [],
+          nowMs,
+          opts.repo ? session.repo === opts.repo : false,
+          this.feedback?.delta(hit.turnId) ?? 0,
+        );
+      }
 
       // Bi-temporal invalidation: demote superseded turns unless includeSuperseded is true
       const inv = this.temporal?.getInvalidation(hit.turnId, asOf);
@@ -389,7 +422,9 @@ export class SearchService {
         const head = reranked.flatMap((item) => {
           const r = byId.get(item.id);
           if (!r) return [];
-          r.score = item.combinedScore;
+          // rawRank: final order is the model's alone, unblended with the
+          // (uniform) upstream score it would otherwise dilute.
+          r.score = opts.rawRank === true ? item.rerankScore : item.combinedScore;
           return [r];
         });
         if (head.length === topSlice.length) {

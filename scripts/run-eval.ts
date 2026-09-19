@@ -35,6 +35,7 @@ import {
 const MODES: EvalMode[] = [
   "lexical", "lexical-rerank", "hybrid", "rerank", "rrf",
   "lexical-jev", "jev", "lexical-jev-pairwise", "jev-pairwise",
+  "rerank-pure", "jev-pure",
   "judge-neural", "judge-jev", "judge-jev-noul",
 ];
 
