@@ -170,13 +170,15 @@ program
 
 program
   .command("backfill")
-  .description("Systematically backfill dense vector embeddings using Apple Silicon MLX GPU")
+  .description("Systematically backfill dense vector embeddings (engine: GATEWAY_EMBED_ENGINE or first available)")
   .option("--batch <n>", "batch size per GPU forward pass", "64")
   .option("--max-sessions <n>", "max sessions to backfill in this run")
   .action(async (cmdOpts) => {
     const res = (await fetchRemote("POST", `/backfill${qs({ batch: cmdOpts.batch, maxSessions: cmdOpts.maxSessions })}`)) ??
       (await withLocal(async (app) => {
-        console.error("Starting Apple Silicon MLX GPU embedding backfill...");
+        const { resolveEmbeddingEngine } = await import("./indexing/embed-sync.js");
+        const engine = await resolveEmbeddingEngine().catch(() => null);
+        console.error(`Starting embedding backfill${engine ? ` (${engine})` : ""}...`);
         return backfillEmbeddings(app, {
           batchSize: cmdOpts.batch ? Number(cmdOpts.batch) : 64,
           maxSessions: cmdOpts.maxSessions ? Number(cmdOpts.maxSessions) : undefined,

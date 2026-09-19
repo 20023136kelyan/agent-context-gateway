@@ -29,7 +29,16 @@ const FILLER_PATTERNS = [
   /^(tell\s+me\s+(about)?\s*)/i,
 ];
 
-// Developer vocabulary equivalence maps for multi-query variant generation
+// Developer vocabulary equivalence maps for multi-query variant generation.
+//
+// Deliberately SMALL and legacy: synonym expansion that genuinely bridges a
+// paraphrase gap also erases the fixture corpus's paraphrase headroom
+// (tests/fixture-corpus.test.ts), which exists to measure exactly that gap.
+// Tried 2026-09-19: a general everyday-technical extension (picture→thumbnail,
+// power→battery, silence→mute, …) flipped 6 more paraphrase queries to
+// lexical HITs (13/20 miss, need ≥15) and was reverted. Growing this map is
+// benchmark-fitting unless validated against held-out queries — the embedding
+// and reranker arms own the paraphrase gap, not this list.
 const SYNONYM_MAP: Record<string, string[]> = {
   replace: ["swap", "substitute", "migrate", "switch"],
   replaced: ["swapped", "substituted", "migrated", "switched"],
