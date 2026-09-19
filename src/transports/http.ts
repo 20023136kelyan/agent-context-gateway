@@ -114,9 +114,12 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
           asOf: q.asOf,
           includeSuperseded: q.includeSuperseded === "true",
           semantic: q.semantic === "false" ? false : undefined,
-          // Default OFF. A remote reranker would ship query text and candidate
-          // excerpts off-machine, so it must be asked for explicitly.
-          rerank: q.rerank === "true" || q.rerank === "1",
+          // Default ON. Reranking is the single largest accuracy lever measured
+          // on this system: NDCG@5 0.699 -> 0.968 on the fixture corpus. It
+          // costs ~450ms and, with a remote reranker, ships query text and
+          // candidate excerpts off-machine — so `?rerank=false` turns it off
+          // explicitly and `GATEWAY_RERANKER=none` disables it system-wide.
+          rerank: q.rerank !== "false" && q.rerank !== "0",
           maxResults: q.maxResults ? Number(q.maxResults) : undefined,
           maxTurns: q.maxTurns ? Number(q.maxTurns) : undefined,
           maxTokens: q.maxTokens ? Number(q.maxTokens) : undefined,

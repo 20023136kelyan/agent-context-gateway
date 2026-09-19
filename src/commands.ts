@@ -142,7 +142,10 @@ export async function decideOnce(
   // judge sees anything, either returning no candidates or only a distractor.
   // A judge cannot cite what retrieval never found. Default stays off so the
   // original cost argument holds for cross-encoder-only deployments.
-  const res = await app.search.search(query, { ...opts, maxResults: 6, rerank: opts.rerank === true });
+  // Rerank on by default here too: the judge can only choose among the sessions
+  // retrieval hands it, so the decide path's accuracy is bounded by the same
+  // ranking `search` uses. Callers opt out with `rerank: false`.
+  const res = await app.search.search(query, { ...opts, maxResults: 6, rerank: opts.rerank !== false });
   // Full turns of top sessions (ordered by best hit) for extraction.
   const seen = new Set<string>();
   const sessions: { harness: string; id: string }[] = [];
@@ -483,8 +486,8 @@ export async function health(app: GatewayApp) {
     reranking: {
       reranker: app.reranker,
       local: app.reranker !== "jev",
-      /** Reranking never happens unless a request opts in. */
-      defaultOn: false,
+      /** On unless a request passes rerank:false or GATEWAY_RERANKER=none. */
+      defaultOn: true,
     },
   };
 }

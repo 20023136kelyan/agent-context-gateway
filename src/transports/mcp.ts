@@ -43,8 +43,8 @@ export function buildMcpServer(app: GatewayApp): McpServer {
       semantic: z.boolean().optional().describe("false = lexical only (skip vector candidates)"),
       rerank: z
         .boolean()
-        .optional()
-        .describe("true = rerank top candidates for precision. Off by default; a remote reranker sends query text and candidate excerpts off-machine."),
+        .default(true)
+        .describe("Rerank top candidates for precision. ON by default (NDCG@5 0.699 -> 0.968 on the fixture corpus); pass false to skip it and save ~450ms, or when query text must not leave the machine."),
       maxResults: z.number().min(1).max(20).optional(),
       maxTurns: z.number().min(1).max(15).optional(),
       maxTokens: z.number().min(100).max(20000).optional(),

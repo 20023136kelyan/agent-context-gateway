@@ -98,9 +98,9 @@ program
   .option("--as-principal <id>", "caller identity for resource-level ACL enforcement")
   .option("--as-of <iso>", "Point-in-time reconstruction (ISO timestamp)")
   .option("--include-superseded", "Include superseded historical knowledge without demotion")
-  .option("--rerank", "Rerank top candidates for precision (off by default; a remote reranker sends query text off-machine)")
+  .option("--no-rerank", "Skip precision reranking (on by default; saves ~450ms and keeps query text local)")
   .action(async (query: string, cmdOpts) => {
-    const path = `/search${qs({ q: query, project: cmdOpts.project, repo: cmdOpts.repo, harness: cmdOpts.harness, maxResults: String(cmdOpts.maxResults ?? 5), scope: cmdOpts.scope, callerSessionId: cmdOpts.asSession, principal: cmdOpts.asPrincipal, asOf: cmdOpts.asOf, includeSuperseded: cmdOpts.includeSuperseded ? "true" : undefined, rerank: cmdOpts.rerank ? "true" : undefined })}`;
+    const path = `/search${qs({ q: query, project: cmdOpts.project, repo: cmdOpts.repo, harness: cmdOpts.harness, maxResults: String(cmdOpts.maxResults ?? 5), scope: cmdOpts.scope, callerSessionId: cmdOpts.asSession, principal: cmdOpts.asPrincipal, asOf: cmdOpts.asOf, includeSuperseded: cmdOpts.includeSuperseded ? "true" : undefined, rerank: cmdOpts.rerank === false ? "false" : undefined })}`;
     const res = ((await fetchRemote("GET", path)) ??
       (await withLocal((app) =>
         searchOnce(app, query, {
@@ -113,7 +113,7 @@ program
           callerPrincipal: cmdOpts.asPrincipal,
           asOf: cmdOpts.asOf,
           includeSuperseded: cmdOpts.includeSuperseded ?? false,
-          rerank: cmdOpts.rerank ?? false,
+          rerank: cmdOpts.rerank !== false,
         }),
       ))) as Awaited<ReturnType<typeof searchOnce>>;
       if (program.opts().json) {

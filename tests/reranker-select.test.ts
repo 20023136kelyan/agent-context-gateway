@@ -1,11 +1,16 @@
 /**
  * Reranker selection and the default-off guarantee (Phase 2).
  *
- * The guarantee that matters: reranking NEVER happens unless a caller asks for
- * it. A remote reranker ships live query text and candidate excerpts to a third
- * party on every search, which is a sharper privacy cost than embeddings (a
- * one-time backfill of content you chose to index). So key presence alone must
- * not be sufficient — the caller has to opt in per request as well.
+ * The guarantee changed deliberately. Reranking used to be default-OFF, because
+ * a remote reranker ships live query text and candidate excerpts to a third
+ * party on every search. It is now default-ON, because it is the largest
+ * accuracy lever measured on this system (NDCG@5 0.699 -> 0.968 on the fixture
+ * corpus) and accuracy is the stated goal.
+ *
+ * What still has to hold is the OPT-OUT: a caller that asks for no reranking
+ * must get none, on every transport, and `GATEWAY_RERANKER=none` must disable
+ * it system-wide. That is what these tests pin. A default is a choice; a
+ * silently ignored opt-out is a bug.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
@@ -84,36 +89,56 @@ describe("reranker selection", () => {
   });
 });
 
-describe("default-off guarantee", () => {
-  it("SearchService does not call the reranker unless rerank is requested", async () => {
+describe("default-on, with a working opt-out", () => {
+  it("SearchService reranks only on a strict `true`, so the gate cannot be tripped by a stray value", async () => {
     const { SearchService } = await import("../src/search/search.js");
     const spy = vi.fn(async () => []);
     const svc = Object.create(SearchService.prototype) as InstanceType<typeof SearchService>;
     svc.setReranker({ rerank: spy });
 
-    // The gate in search.ts is a strict `opts.rerank === true`, so every falsy
-    // and absent value must leave the reranker untouched.
+    // The transports decide the default; the service itself stays strict, so a
+    // caller passing `undefined` through some other path never reranks by accident.
     const source = (await import("node:fs")).readFileSync("src/search/search.ts", "utf8");
     expect(source).toContain("opts.rerank === true");
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("every transport leaves rerank absent unless asked", async () => {
+  it("every transport defaults to on and honours an explicit false", async () => {
     const fs = await import("node:fs");
     const http = fs.readFileSync("src/transports/http.ts", "utf8");
     const mcp = fs.readFileSync("src/transports/mcp.ts", "utf8");
     const cli = fs.readFileSync("src/cli.ts", "utf8");
-    // HTTP requires the literal string; a missing param is false, never undefined-true.
-    expect(http).toMatch(/rerank: q\.rerank === "true" \|\| q\.rerank === "1"/);
-    // MCP exposes it as an optional boolean, so omitting it is undefined.
-    expect(mcp).toMatch(/rerank: z\s*\n?\s*\.boolean\(\)\s*\n?\s*\.optional\(\)/);
-    // CLI is a commander flag: absent means undefined, coerced to false.
-    expect(cli).toContain("rerank: cmdOpts.rerank ?? false");
+    // HTTP: absent -> true, and only the literal "false"/"0" turn it off.
+    expect(http).toMatch(/rerank: q\.rerank !== "false" && q\.rerank !== "0"/);
+    // MCP: zod injects the default, so an omitted field arrives as true.
+    expect(mcp).toMatch(/rerank: z\s*\n?\s*\.boolean\(\)\s*\n?\s*\.default\(true\)/);
+    // CLI: commander's --no-rerank sets it false; absent leaves it true.
+    expect(cli).toContain("--no-rerank");
+    expect(cli).toContain("rerank: cmdOpts.rerank !== false");
+  });
+
+  it("the decide path reranks by default too, and still takes false", async () => {
+    // The judge can only choose among what retrieval hands it, so decide's
+    // accuracy is bounded by the same ranking search uses.
+    const src = (await import("node:fs")).readFileSync("src/commands.ts", "utf8");
+    expect(src).toContain("rerank: opts.rerank !== false");
+  });
+
+  it("GATEWAY_RERANKER=none disables it system-wide regardless of request", async () => {
+    process.env.TYPESAFE_API_KEY = "k";
+    process.env.GATEWAY_RERANKER = "none";
+    expect(resolveRerankerName()).toBe("none");
+    const out = await makeReranker("none").rerank("q", [
+      { id: "a", content: "x", score: 0.2 },
+      { id: "b", content: "y", score: 0.9 },
+    ]);
+    expect(out.map((r) => r.id)).toEqual(["a", "b"]);
+    expect(out.every((r) => !r.neural)).toBe(true);
   });
 });
 
 describe("rerank plumbing, end to end", () => {
-  it("HTTP invokes the reranker only when ?rerank=true", async () => {
+  it("HTTP reranks by default and skips it on ?rerank=false", async () => {
     const { mkdtemp } = await import("node:fs/promises");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
@@ -138,11 +163,12 @@ describe("rerank plumbing, end to end", () => {
       const server = buildHttpServer(app);
       const plain = await server.inject({ method: "GET", url: "/search?q=why+did+we+reject+Monaco" });
       expect(plain.statusCode).toBe(200);
-      expect(spy).not.toHaveBeenCalled(); // default off
+      expect(spy).toHaveBeenCalled(); // default ON
 
-      const reranked = await server.inject({ method: "GET", url: "/search?q=why+did+we+reject+Monaco&rerank=true" });
-      expect(reranked.statusCode).toBe(200);
-      expect(spy).toHaveBeenCalled(); // opt-in honoured
+      spy.mockClear();
+      const off = await server.inject({ method: "GET", url: "/search?q=why+did+we+reject+Monaco&rerank=false" });
+      expect(off.statusCode).toBe(200);
+      expect(spy).not.toHaveBeenCalled(); // opt-out honoured
     } finally {
       closeApp(app);
       if (prev === undefined) delete process.env.CONTEXT_GATEWAY_STATE;
