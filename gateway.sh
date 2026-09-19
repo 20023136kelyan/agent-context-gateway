@@ -7,4 +7,6 @@ if [ -s "$NVM_DIR/nvm.sh" ]; then
   . "$NVM_DIR/nvm.sh" >/dev/null 2>&1
 fi
 GATEWAY_DIR="$(cd "$(dirname "$0")" && pwd)"
-exec node --import tsx "$GATEWAY_DIR/src/cli.ts" "$@"
+# --env-file-if-exists so launchd and git hooks pick up .env too; they get
+# none of the interactive shell's environment.
+exec node --env-file-if-exists="$GATEWAY_DIR/.env" --import tsx "$GATEWAY_DIR/src/cli.ts" "$@"

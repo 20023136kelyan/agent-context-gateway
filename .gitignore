@@ -5,3 +5,12 @@ ContextGatewayMenu.app/
 .claude/settings.local.json
 *.log
 .DS_Store
+
+# Secrets: VOYAGE_API_KEY / TYPESAFE_API_KEY / GATEWAY_TOKEN live here.
+# .env.example is the committed template and must stay free of real values.
+.env
+.env.*
+!.env.example
+
+# Regenerable knowledge map (rebuild with /graphify .)
+graphify-out/
