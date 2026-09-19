@@ -2,11 +2,62 @@
  * LanceDB vector store for turn embeddings (Phase 2 semantic slice).
  * Disposable derived state: delete the dir and re-backfill from natives.
  * Cosine distance (embeddings are compared by angle, not magnitude).
- * Supports multi-model / dimension tables (e.g. turns_384 for MLX BGE-small,
- * turns_1024 for Ollama Qwen) so model swaps never crash with dimension mismatch.
+ * One table per ENGINE (turns_mlx_384, turns_voyage_1024), not per dimension.
+ * Width is not an identity: Ollama's Qwen and a 1024-dim Voyage model are both
+ * 1024 wide but are different vector spaces, and keying on width alone would
+ * blend them into one table where every similarity is meaningless.
  */
-import * as lancedb from "@lancedb/lancedb";
+import type * as lancedb from "@lancedb/lancedb";
+import { createRequire } from "node:module";
 import { chunkTurnId } from "../core/id.js";
+
+// LanceDB publishes no darwin-x64 binary (support ended at 0.22.3). A static
+// import therefore crashes the whole CLI on an Intel Mac, not merely semantic
+// search, because app.ts imports this module. Requiring it lazily keeps the
+// failure local to actually opening a Lance store.
+const require = createRequire(import.meta.url);
+function loadLance(): typeof import("@lancedb/lancedb") {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require("@lancedb/lancedb") as typeof import("@lancedb/lancedb");
+}
+import type { EmbeddingEngine } from "../embeddings/provider.js";
+
+/**
+ * Tables written before storage was keyed by engine. Only these two engines
+ * existed then, so the mapping is exact; honouring it saves re-embedding a
+ * corpus that is already correct.
+ */
+const LEGACY_TABLE_ENGINE: Record<string, EmbeddingEngine> = {
+  turns_384: "mlx",
+  turns_1024: "ollama",
+};
+
+const tableName = (engine: EmbeddingEngine, dim: number) => `turns_${engine.replace(/-/g, "_")}_${dim}`;
+
+/** What the retrieval path needs from a vector store, whichever backend serves it. */
+export interface VectorBackend {
+  count(): Promise<number>;
+  upsert(rows: VectorRow[], engine: EmbeddingEngine): Promise<void>;
+  optimize(): Promise<void>;
+  maybeOptimize(threshold?: number): Promise<void>;
+  existing(ids: string[], engine: EmbeddingEngine): Promise<Set<string>>;
+  nearest(
+    vector: number[],
+    engine: EmbeddingEngine,
+    limit?: number,
+    filter?: { harness?: string; projectId?: string; sessionId?: string; maxTimestampMs?: number },
+  ): Promise<VectorHit[]>;
+  close(): Promise<void>;
+}
+
+export interface VectorRow {
+  id: string;
+  vector: number[];
+  harness: string;
+  sessionId: string;
+  projectId: string;
+  timestampMs: number;
+}
 
 export interface VectorHit {
   turnId: string;
@@ -20,42 +71,55 @@ export interface VectorHit {
  */
 const CHUNK_FANOUT = 4;
 
-export class VectorStore {
+export class VectorStore implements VectorBackend {
   private db!: lancedb.Connection;
-  private tables = new Map<number, lancedb.Table>();
-  private defaultDim = 384;
+  private lance!: typeof import("@lancedb/lancedb");
+  private tables = new Map<EmbeddingEngine, lancedb.Table>();
   private rowsSinceOptimize = 0;
   private constructor(private dir: string) {}
 
   static async open(dir: string): Promise<VectorStore> {
     const store = new VectorStore(dir);
-    store.db = await lancedb.connect(dir);
+    store.lance = loadLance();
+    store.db = await store.lance.connect(dir);
     const names = await store.db.tableNames();
     for (const name of names) {
-      if (name.startsWith("turns_")) {
-        const dim = Number(name.replace("turns_", ""));
-        if (Number.isFinite(dim) && dim > 0) {
-          try {
-            store.tables.set(dim, await store.db.openTable(name));
-          } catch {
-            // ignore
-          }
-        }
+      const engine = store.engineForTable(name);
+      if (!engine) continue;
+      try {
+        store.tables.set(engine, await store.db.openTable(name));
+      } catch {
+        // ignore — an unreadable table degrades to lexical, it does not throw
       }
       // The pre-dimension "turns" table (partial Ollama embeddings) is ignored.
     }
     return store;
   }
 
-  private async getTableForDim(dim: number): Promise<lancedb.Table | null> {
-    const existing = this.tables.get(dim);
-    if (existing) return existing;
+  /** Which engine owns a table name, current scheme or legacy. Null if neither. */
+  private engineForTable(name: string): EmbeddingEngine | null {
+    const legacy = LEGACY_TABLE_ENGINE[name];
+    if (legacy) return legacy;
+    const m = /^turns_(.+)_(\d+)$/.exec(name);
+    if (!m) return null;
+    return m[1].replace(/_/g, "-") as EmbeddingEngine;
+  }
+
+  private async tableFor(engine: EmbeddingEngine, dim?: number): Promise<lancedb.Table | null> {
+    const open = this.tables.get(engine);
+    if (open) return open;
     const names = await this.db.tableNames();
-    const candidateName = `turns_${dim}`;
-    if (names.includes(candidateName)) {
-      const tbl = await this.db.openTable(candidateName);
-      this.tables.set(dim, tbl);
-      return tbl;
+    // Prefer the current name; fall back to a legacy table this engine owns.
+    const candidates = dim === undefined ? [] : [tableName(engine, dim)];
+    for (const [legacyName, legacyEngine] of Object.entries(LEGACY_TABLE_ENGINE)) {
+      if (legacyEngine === engine) candidates.push(legacyName);
+    }
+    for (const candidate of candidates) {
+      if (names.includes(candidate)) {
+        const tbl = await this.db.openTable(candidate);
+        this.tables.set(engine, tbl);
+        return tbl;
+      }
     }
     return null;
   }
@@ -77,6 +141,7 @@ export class VectorStore {
       projectId: string;
       timestampMs: number;
     }[],
+    engine: EmbeddingEngine,
   ): Promise<void> {
     if (rows.length === 0) return;
     // Claude reuses uuids within one file, so a batch can carry an id twice and
@@ -89,11 +154,10 @@ export class VectorStore {
       }
     }
 
-    let table = await this.getTableForDim(dim);
+    let table = await this.tableFor(engine, dim);
     if (!table) {
-      const tableName = `turns_${dim}`;
-      table = await this.db.createTable(tableName, unique);
-      this.tables.set(dim, table);
+      table = await this.db.createTable(tableName(engine, dim), unique);
+      this.tables.set(engine, table);
     } else {
       await table.mergeInsert("id").whenMatchedUpdateAll().whenNotMatchedInsertAll().execute(unique);
     }
@@ -109,7 +173,7 @@ export class VectorStore {
       try {
         const indices = await tbl.listIndices();
         if (!indices.some((i) => i.columns.includes("id"))) {
-          await tbl.createIndex("id", { config: lancedb.Index.btree() });
+          await tbl.createIndex("id", { config: this.lance.Index.btree() });
         }
         await tbl.optimize();
       } catch {
@@ -124,9 +188,9 @@ export class VectorStore {
     if (this.rowsSinceOptimize >= threshold) await this.optimize();
   }
 
-  /** IDs already embedded in the `dim` table (incremental backfill of new turns only). */
-  async existing(ids: string[], dim: number): Promise<Set<string>> {
-    const table = await this.getTableForDim(dim);
+  /** IDs already embedded by this engine (incremental backfill of new turns only). */
+  async existing(ids: string[], engine: EmbeddingEngine): Promise<Set<string>> {
+    const table = await this.tableFor(engine);
     if (!table || ids.length === 0) return new Set();
     const found = new Set<string>();
     // Chunked: SQL IN lists stay small.
@@ -141,11 +205,13 @@ export class VectorStore {
 
   async nearest(
     vector: number[],
+    engine: EmbeddingEngine,
     limit = 50,
     filter?: { harness?: string; projectId?: string; sessionId?: string; maxTimestampMs?: number },
   ): Promise<VectorHit[]> {
-    const dim = vector.length;
-    const table = await this.getTableForDim(dim);
+    // Keyed by engine, never by vector.length: the query vector must be compared
+    // against the table the SAME engine wrote, not merely one of equal width.
+    const table = await this.tableFor(engine, vector.length);
     if (!table) return [];
 
     let q = table.query().nearestTo(vector).distanceType("cosine").limit(limit * CHUNK_FANOUT);

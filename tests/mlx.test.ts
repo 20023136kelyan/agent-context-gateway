@@ -15,11 +15,30 @@ import { embedSessionTurns } from "../src/indexing/embed-sync.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
-import * as lancedb from "@lancedb/lancedb";
+import { createRequire } from "node:module";
+
+// LanceDB publishes no darwin-x64 binary (support ended at 0.22.3), so on an
+// Intel Mac this file cannot even import. Load it lazily and skip the suites
+// that need it, rather than failing a whole file for a platform gap — a red
+// suite that can never go green hides real regressions.
+const require = createRequire(import.meta.url);
+let lancedb: typeof import("@lancedb/lancedb") | null = null;
+try {
+  lancedb = require("@lancedb/lancedb") as typeof import("@lancedb/lancedb");
+} catch {
+  lancedb = null;
+}
+const hasLance = lancedb !== null;
+const describeLance = hasLance ? describe : describe.skip;
+
+// MLX is Apple-Silicon-only. Probe the real thing rather than guessing from
+// process.arch, so a machine with the venv missing skips for the same reason.
+const hasMlx = await getSharedMlxEmbedder().isAvailable().catch(() => false);
+const describeMlx = hasMlx ? describe : describe.skip;
 
 const execFileAsync = promisify(execFile);
 
-describe("MLX Embedding Engine (Apple Silicon GPU)", () => {
+describeMlx("MLX Embedding Engine (Apple Silicon GPU)", () => {
   it("detects MLX availability on this machine", async () => {
     const embedder = getSharedMlxEmbedder();
     const available = await embedder.isAvailable();
@@ -61,8 +80,10 @@ describe("MLX worker resilience", () => {
     process.chdir(tmpdir());
     try {
       const embedder = new MlxEmbedder();
+      // The regression: resolved next to its module, so MCP servers and hooks
+      // started elsewhere use the same engine. True on every platform.
       expect(embedder.scriptPath).toBe(join(repoRoot, "src", "embeddings", "mlx-worker.py"));
-      expect(await embedder.isAvailable()).toBe(true);
+      if (hasMlx) expect(await embedder.isAvailable()).toBe(true);
     } finally {
       process.chdir(repoRoot);
     }
@@ -142,16 +163,16 @@ describe("MLX worker resilience", () => {
   });
 });
 
-describe("vector store maintenance", () => {
+describeLance("vector store maintenance", () => {
   it("upsert tolerates a repeated id in one batch (Claude reuses uuids)", async () => {
     const dir = join(await mkdtemp(join(tmpdir(), "acg-vec-dup-")), "v");
     const vectors = await VectorStore.open(dir);
     const row = (id: string, v: number) => ({ id, vector: [v, v, v], harness: "claude-code", sessionId: "s", projectId: "p", timestampMs: 0 });
-    await vectors.upsert([row("dup", 0.1), row("other", 0.2), row("dup", 0.3)]);
+    await vectors.upsert([row("dup", 0.1), row("other", 0.2), row("dup", 0.3)], "mlx");
     expect(await vectors.count()).toBe(2);
-    await vectors.upsert([row("dup", 0.4), row("dup", 0.5)]); // now matching an existing row
+    await vectors.upsert([row("dup", 0.4), row("dup", 0.5)], "mlx"); // now matching an existing row
     expect(await vectors.count()).toBe(2);
-    expect((await vectors.existing(["dup", "other"], 3)).size).toBe(2);
+    expect((await vectors.existing(["dup", "other"], "mlx")).size).toBe(2);
   });
 
 
@@ -160,11 +181,12 @@ describe("vector store maintenance", () => {
     const vectors = await VectorStore.open(dir);
     await vectors.upsert(
       ["a", "b", "c"].map((id) => ({ id, vector: [0.1, 0.2, 0.3], harness: "codex", sessionId: "s", projectId: "p", timestampMs: 0 })),
+      "mlx",
     );
     await vectors.optimize();
-    const table = await (await lancedb.connect(dir)).openTable("turns_3");
+    const table = await (await lancedb!.connect(dir)).openTable("turns_mlx_3");
     expect((await table.listIndices()).some((i) => i.columns.includes("id"))).toBe(true);
-    expect([...(await vectors.existing(["a", "c", "zzz"], 3))].sort()).toEqual(["a", "c"]);
+    expect([...(await vectors.existing(["a", "c", "zzz"], "mlx"))].sort()).toEqual(["a", "c"]);
   });
 
   it("collapses a turn's windows into one hit, scored by its best window", async () => {
@@ -176,8 +198,8 @@ describe("vector store maintenance", () => {
       row(embedChunkId(turn, 0), [1, 0, 0]), // the head, unrelated to the query
       row(embedChunkId(turn, 1), [0, 1, 0]), // the tail, which answers it
       row("claude-code:s1:u-2", [0, 0, 1]),
-    ]);
-    const hits = await vectors.nearest([0, 1, 0], 10);
+    ], "mlx");
+    const hits = await vectors.nearest([0, 1, 0], "mlx", 10);
     const mine = hits.filter((h) => h.turnId === turn);
     expect(mine).toHaveLength(1); // one hit per turn, not per window
     expect(mine[0].similarity).toBeCloseTo(1, 5); // the best window, not the head and not a mean
@@ -222,7 +244,7 @@ describe("embedding windows", () => {
   });
 });
 
-describe("vector backfill dedup", () => {
+describeLance("vector backfill dedup", () => {
   it("checks the active engine's table, not whichever table exists first", async () => {
     const root = await mkdtemp(join(tmpdir(), "acg-vec-dedup-"));
     const claudeDir = join(root, "claude");
@@ -239,10 +261,11 @@ describe("vector backfill dedup", () => {
     // An older 1024-dim model already embedded this turn into its own table.
     await vectors.upsert(
       turns.map((t) => ({ id: t.id, vector: new Array(1024).fill(0.01), harness: t.harness, sessionId: sid, projectId: "p", timestampMs: 0 })),
+      "ollama",
     );
     const res = await embedSessionTurns(adapter, session, vectors, 64, "mlx");
     expect(res.embedded).toBe(1);
-    expect((await vectors.existing(turns.map((t) => t.id), MLX_DIM)).size).toBe(1);
+    expect((await vectors.existing(turns.map((t) => t.id), "mlx")).size).toBe(1);
   });
 
   it("embeds a long turn in windows, adding only the ones a pre-chunking corpus lacks", async () => {
@@ -263,7 +286,7 @@ describe("vector backfill dedup", () => {
 
     const vectors = await VectorStore.open(join(root, "vectors"));
     // A corpus embedded before chunking existed: the whole turn under its bare id.
-    await vectors.upsert([{ id: turn.id, vector: new Array(MLX_DIM).fill(0.01), harness: turn.harness, sessionId: sid, projectId: "p", timestampMs: 0 }]);
+    await vectors.upsert([{ id: turn.id, vector: new Array(MLX_DIM).fill(0.01), harness: turn.harness, sessionId: sid, projectId: "p", timestampMs: 0 }], "mlx");
 
     const res = await embedSessionTurns(adapter, session, vectors, 64, "mlx");
     expect(res.embedded).toBe(1); // counted in turns, though several windows were written

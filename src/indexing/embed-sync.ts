@@ -11,8 +11,8 @@ import type { ContextAdapter } from "../adapters/types.js";
 import type { Session, Turn } from "../core/models.js";
 import { chunkForEmbedding } from "../adapters/text.js";
 import { embedChunkId } from "../core/id.js";
-import { embedTextsWith, embeddingsAvailable, ENGINE_DIM, type EmbeddingEngine } from "../embeddings/provider.js";
-import type { VectorStore } from "./vectors.js";
+import { embedTextsWith, embeddingsAvailable, type EmbeddingEngine } from "../embeddings/provider.js";
+import type { VectorBackend } from "./vectors.js";
 
 export interface EmbedResult {
   sessionsScanned: number;
@@ -47,7 +47,7 @@ export async function resolveEmbeddingEngine(): Promise<EmbeddingEngine> {
 export async function embedSessionTurns(
   adapter: ContextAdapter,
   session: Session,
-  vectors: VectorStore,
+  vectors: VectorBackend,
   batchSize = BATCH,
   engine?: EmbeddingEngine,
 ): Promise<{ embedded: number; skipped: number }> {
@@ -65,11 +65,11 @@ export async function embedSessionTurns(
   }
   // Asking per window rather than per turn is what upgrades an existing corpus:
   // a long turn embedded before chunking has window 0 and gains only its tail.
-  const have = await vectors.existing(planned.map((p) => p.id), ENGINE_DIM[eng]).catch(() => new Set<string>());
+  const have = await vectors.existing(planned.map((p) => p.id), eng).catch(() => new Set<string>());
   const missing = planned.filter((p) => !have.has(p.id));
 
   const touched = new Set<string>();
-  let pending: Parameters<VectorStore["upsert"]>[0] = [];
+  let pending: Parameters<VectorBackend["upsert"]>[0] = [];
   for (let i = 0; i < missing.length; i += batchSize) {
     const batch = missing.slice(i, i + batchSize);
     const vecs = await embedTextsWith(eng, batch.map((p) => p.text));
@@ -85,26 +85,26 @@ export async function embedSessionTurns(
     );
     for (const p of batch) touched.add(p.turn.id);
     if (pending.length >= WRITE_BATCH) {
-      await vectors.upsert(pending);
+      await vectors.upsert(pending, eng);
       pending = [];
     }
   }
-  if (pending.length > 0) await vectors.upsert(pending);
+  if (pending.length > 0) await vectors.upsert(pending, eng);
   // Counted in turns, not windows, so these stay comparable across the change.
   return { embedded: touched.size, skipped: turns.length - touched.size };
 }
 
 export async function embedMissing(
   adapters: ContextAdapter[],
-  vectors: VectorStore,
+  vectors: VectorBackend,
   opts?: BackfillOptions,
 ): Promise<EmbedResult> {
   const embStatus = await embeddingsAvailable();
   if (embStatus.engine === "none") {
     return { sessionsScanned: 0, turnsEmbedded: 0, turnsSkipped: 0, embedded: false, reason: "embeddings-unavailable" };
   }
-  // Pinned for the whole run so a mid-run fallback can't scatter batches
-  // across tables of different dimensions.
+  // Pinned for the whole run so a mid-run fallback can't scatter one corpus
+  // across two engines' tables.
   const engine = embStatus.engine;
   let sessionsScanned = 0;
   let turnsEmbedded = 0;

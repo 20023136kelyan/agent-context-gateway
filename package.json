@@ -8,11 +8,11 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsx src/cli.ts",
+    "dev": "node --env-file-if-exists=.env --import tsx src/cli.ts",
     "test": "vitest run",
-    "eval": "tsx scripts/run-eval.ts",
+    "eval": "node --env-file-if-exists=.env --import tsx scripts/run-eval.ts",
     "lint": "eslint src --ext .ts",
-    "sync": "tsx src/cli.ts sync"
+    "sync": "node --env-file-if-exists=.env --import tsx src/cli.ts sync"
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.38.0",
@@ -22,6 +22,7 @@
     "bonjour-service": "^1.4.4",
     "commander": "^12.0.0",
     "fastify": "^5.0.0",
+    "sqlite-vec": "^0.1.9",
     "zod": "^3.23.0"
   },
   "devDependencies": {

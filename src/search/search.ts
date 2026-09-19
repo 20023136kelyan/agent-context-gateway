@@ -8,11 +8,11 @@
 import type { ContextAdapter } from "../adapters/types.js";
 import type { Provenance, Session, Turn, Harness } from "../core/models.js";
 import type { SearchIndex, IndexSearchHit } from "../indexing/types.js";
-import type { VectorStore } from "../indexing/vectors.js";
+import type { VectorBackend } from "../indexing/vectors.js";
 import type { TopologyStore } from "../topology/store.js";
 import type { FeedbackStore } from "../feedback/store.js";
 import { routeAutoScope } from "../topology/store.js";
-import { embedQuery } from "../embeddings/provider.js";
+import { embedQueryResolved } from "../embeddings/provider.js";
 import { parseTurnId } from "../core/id.js";
 import { normalizeQuery, type NormalizedQuery } from "./query.js";
 import { finalScore, rrfBaseScore } from "./rank.js";
@@ -81,7 +81,7 @@ const RERANK_POOL = 15;
 const SESSION_TTL_MS = 10_000;
 
 export class SearchService {
-  private vectors: VectorStore | null = null;
+  private vectors: VectorBackend | null = null;
   private topology: TopologyStore | null = null;
   private feedback: FeedbackStore | null = null;
   private temporal: TemporalStore | null = null;
@@ -95,7 +95,7 @@ export class SearchService {
   ) {}
 
   /** Attach semantic backend (optional; search degrades to lexical without it). */
-  attachVectors(store: VectorStore): void {
+  attachVectors(store: VectorBackend): void {
     this.vectors = store;
   }
 
@@ -278,18 +278,23 @@ export class SearchService {
         // toward a distractor ("how SHOULD teammates jointly EDIT" pulls to
         // "Monaco EDITOR SHOULD be replaced"). The win was the query prefix
         // (see BGE_QUERY_PREFIX), not the word order.
-        const qv = await embedQuery(nq.indexQuery);
+        // The engine comes back with the vector: a query embedding is only
+        // comparable against the table that same engine wrote.
+        const resolved = await embedQueryResolved(nq.indexQuery);
         let vhits: { turnId: string; similarity: number }[] = [];
-        if (scopeSessions) {
-          const per = Math.max(10, Math.ceil(limit / Math.max(1, scopeSessions.length)));
-          for (const target of scopeSessions) {
-            if (opts.harness && target.harness !== opts.harness) continue;
-            const res = await this.vectors.nearest(qv, per, { ...baseFilters, sessionId: target.sessionId });
-            vhits.push(...res);
+        if (resolved) {
+          const { vector: qv, engine } = resolved;
+          if (scopeSessions) {
+            const per = Math.max(10, Math.ceil(limit / Math.max(1, scopeSessions.length)));
+            for (const target of scopeSessions) {
+              if (opts.harness && target.harness !== opts.harness) continue;
+              const res = await this.vectors.nearest(qv, engine, per, { ...baseFilters, sessionId: target.sessionId });
+              vhits.push(...res);
+            }
+            vhits.sort((a, b) => b.similarity - a.similarity);
+          } else {
+            vhits = await this.vectors.nearest(qv, engine, limit, { ...baseFilters, sessionId: opts.sessionId });
           }
-          vhits.sort((a, b) => b.similarity - a.similarity);
-        } else {
-          vhits = await this.vectors.nearest(qv, limit, { ...baseFilters, sessionId: opts.sessionId });
         }
         // Filter out low-similarity noise
         const qualified = vhits.filter((h) => h.similarity >= MIN_VECTOR_SIM);
