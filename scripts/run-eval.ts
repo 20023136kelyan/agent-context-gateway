@@ -24,6 +24,7 @@ import { writeFileSync, mkdtempSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import { createApp, closeApp, initVectors } from "../src/app.js";
+import { backfillEmbeddings } from "../src/commands.js";
 import {
   loadGoldenQueries,
   runEval,
@@ -94,11 +95,36 @@ async function main() {
     console.log(`Fixture corpus built at ${root}`);
   }
   const app = createApp(appOpts);
+  // Any arm but `lexical` reads vector candidates. Opening the store is not
+  // enough: --fixture points the state dir at a fresh temp dir, so the store is
+  // EMPTY and every semantic arm silently degrades to lexical. That failure is
+  // invisible in the output — `hybrid` simply reports lexical's numbers — and
+  // it invalidated a MIN_VECTOR_SIM sweep before this was noticed. So embed the
+  // corpus before measuring, and refuse to report a semantic arm we know is
+  // unbacked rather than printing a number that means nothing.
+  const semanticModes = modes.filter((m) => m !== "lexical" && !m.startsWith("lexical-"));
   if (modes.some((m) => m !== "lexical")) {
     try {
       await initVectors(app);
     } catch {
       console.warn("Vectors initialization failed; continuing with lexical-only");
+    }
+  }
+  if (semanticModes.length > 0 && app.vectors) {
+    const t0 = Date.now();
+    console.log(`Embedding corpus for semantic arms (${semanticModes.join(", ")})...`);
+    const res = await backfillEmbeddings(app);
+    const count = await app.vectors.count().catch(() => 0);
+    console.log(
+      `Embedded ${res.turnsEmbedded} turns (${res.turnsSkipped} already present) ` +
+        `-> ${count} vector rows in ${((Date.now() - t0) / 1000).toFixed(1)}s`,
+    );
+    if (count === 0) {
+      throw new Error(
+        `Semantic arms requested (${semanticModes.join(", ")}) but the vector store is empty` +
+          `${res.reason ? `: ${res.reason}` : ""}. Those arms would report lexical numbers under a ` +
+          `semantic name. Set an embedding key (VOYAGE_API_KEY) or run only lexical arms.`,
+      );
     }
   }
 
