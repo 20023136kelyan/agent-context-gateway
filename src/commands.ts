@@ -9,7 +9,8 @@ import type { Turn } from "./core/models.js";
 import { embedMissing, embedSessionTurns } from "./indexing/embed-sync.js";
 import { embeddingsAvailable } from "./embeddings/provider.js";
 import { loadRemotes, queryRemote } from "./remotes.js";
-import { extractDecisions, NeuralEntailmentJudge } from "./decisions/extract.js";
+import { extractDecisions, type DecisionJudge } from "./decisions/extract.js";
+import { resolveJudge } from "./decisions/select.js";
 import { isWhyQuery } from "./decisions/cues.js";
 import { normalizeQuery } from "./search/query.js";
 import { relatedArtifacts, sessionsForArtifact, traverseArtifactGraphBFS } from "./artifacts/graph.js";
@@ -121,7 +122,7 @@ export async function searchOnce(app: GatewayApp, query: string, opts: SearchOpt
 export async function decideOnce(
   app: GatewayApp,
   query: string,
-  opts: SearchOptions & { maxDecisions?: number } = {},
+  opts: SearchOptions & { maxDecisions?: number; judge?: DecisionJudge } = {},
 ) {
   if (!query.trim()) throw new Error("bad_request: empty query");
   await ensureSynced(app);
@@ -132,8 +133,16 @@ export async function decideOnce(
       // lexical region retrieval still works
     }
   }
-  // Region retrieval: find discussion sessions via fast RRF (skip 1st-stage rerank to prevent redundant passes)
-  const res = await app.search.search(query, { ...opts, maxResults: 6, rerank: false });
+  // Region retrieval: find the discussion sessions the judge will then weigh.
+  //
+  // Reranking here was hard-coded off to "prevent redundant passes" — sound when
+  // the judge WAS the cross-encoder, since that meant running one model twice.
+  // Reranker and judge are now separable, and this stage is the real bottleneck
+  // for `decide`: on the fixture set, four of six why-queries fail before the
+  // judge sees anything, either returning no candidates or only a distractor.
+  // A judge cannot cite what retrieval never found. Default stays off so the
+  // original cost argument holds for cross-encoder-only deployments.
+  const res = await app.search.search(query, { ...opts, maxResults: 6, rerank: opts.rerank === true });
   // Full turns of top sessions (ordered by best hit) for extraction.
   const seen = new Set<string>();
   const sessions: { harness: string; id: string }[] = [];
@@ -144,7 +153,10 @@ export async function decideOnce(
     sessions.push({ harness: r.provenance.harness, id: r.provenance.sessionId });
     if (sessions.length >= 3) break;
   }
-  const judge = new NeuralEntailmentJudge();
+  // Injectable so the eval can vary the judge per arm: until now this was
+  // hard-coded, which is why decisionCitations reads identically across every
+  // mode. Production default is unchanged.
+  const judge = opts.judge ?? resolveJudge();
   // Query terms for the relevance gate (verdicts must answer THIS query).
   const queryTerms = normalizeQuery(query).indexQuery.split(" ").filter(Boolean);
 
@@ -172,6 +184,9 @@ export async function decideOnce(
   const decisions = found.map((d) => ({
     method: d.method,
     confidence: d.confidence,
+    // Present only when a judge that distinguishes them has run. Callers use it
+    // to tell a settled outcome from a proposal that merely looks like one.
+    ...(d.decisionState ? { decisionState: d.decisionState } : {}),
     session: { harness: d.conclusion.harness, sessionId: d.sessionId },
     conclusion: { turnId: d.conclusion.id, timestamp: d.conclusion.timestamp, content: d.conclusion.content },
     rationale: d.rationale.map((t) => ({ turnId: t.id, timestamp: t.timestamp, content: t.content })),
@@ -461,6 +476,15 @@ export async function health(app: GatewayApp) {
       engine: embStatus.engine,
       vectors: vectorCount,
       backfillPercent,
+    },
+    // Which reranker a `rerank` request would use, and whether it is local.
+    // Surfaced because a remote reranker sends query text and candidate
+    // excerpts off-machine, and that should be inspectable, not implicit.
+    reranking: {
+      reranker: app.reranker,
+      local: app.reranker !== "jev",
+      /** Reranking never happens unless a request opts in. */
+      defaultOn: false,
     },
   };
 }

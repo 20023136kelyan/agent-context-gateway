@@ -13,7 +13,7 @@ import type { Turn } from "../core/models.js";
 import type { CrossEncoderReranker } from "../search/rerank.js";
 import { CONCLUSION_STRONG, CONCLUSION_WEAK, RATIONALE_CUES, ALTERNATIVE_CUES, sentenceHits, isQuestion, isHeading, hasSpeaker, isAttributiveUse } from "./cues.js";
 
-export type DecisionMethod = "heuristic" | "neural-judge" | "apple-fm";
+export type DecisionMethod = "heuristic" | "neural-judge" | "apple-fm" | "jev";
 
 export interface DecisionCandidate {
   /** Center turn index within the provided window. */
@@ -21,8 +21,18 @@ export interface DecisionCandidate {
   turns: Turn[];
 }
 
+/**
+ * Where a passage sits in a decision's life. The heuristic extractor cannot see
+ * this: it matches conclusion-shaped language, so "we still need to decide
+ * between Monaco, CodeMirror and Ace" scores as a decision. A typed judgment
+ * can separate a proposal from a settled outcome.
+ */
+export type DecisionState = "proposed" | "decided" | "reversed";
+
 export interface ExtractedDecision {
   method: DecisionMethod;
+  /** Present only when a judge that can tell them apart has run. */
+  decisionState?: DecisionState;
   /** 0..1: strong cue + rationale + alternatives = high; lone weak cue = low. */
   confidence: number;
   conclusion: Turn;
