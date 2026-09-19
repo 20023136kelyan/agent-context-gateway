@@ -80,6 +80,15 @@ export interface EvalRunResult {
     /** Queries where decide returned nothing at all — a retrieval failure, not
      *  a judge failure, and the dominant term in the set metrics. */
     emptyResults: number;
+    /** Share of cited decisions actually carrying the arm's judge method.
+     *
+     *  `JevDecisionJudge.judge` catches every error and returns the heuristic
+     *  candidates untouched, so a dead API key, a 429 or a timeout produces a
+     *  plausible-looking result that is simply the baseline. `judgeMethod`
+     *  cannot reveal that — it reports what was REQUESTED. This reports what
+     *  came back. Anything below 1 on a judge arm means some judgments did not
+     *  happen, and the arm's numbers are not a measurement of that judge. */
+    judgedShare?: number;
   };
 }
 
@@ -279,9 +288,15 @@ export async function runEval(
     let totalR = 0;
     let totalHit1 = 0;
     let empty = 0;
+    let citedTotal = 0;
+    let citedJudged = 0;
     for (const wq of whyQueries) {
       try {
         const dec = await decideOnce(app, wq.query, { harness: wq.harness, semantic: modeOpts.semantic, asOf, judge });
+        if (judge) {
+          citedTotal += dec.decisions.length;
+          citedJudged += dec.decisions.filter((d) => d.method === judge.method).length;
+        }
         const citedSessions = dec.decisions.map((d) => d.session.sessionId);
         const evalScore = evaluateCitations(citedSessions, wq.relevantSessionIds);
         totalP += evalScore.citationPrecision;
@@ -297,6 +312,7 @@ export async function runEval(
       meanRecall: Number((totalR / whyQueries.length).toFixed(4)),
       meanHitAt1: Number((totalHit1 / whyQueries.length).toFixed(4)),
       emptyResults: empty,
+      ...(judge && citedTotal > 0 ? { judgedShare: Number((citedJudged / citedTotal).toFixed(4)) } : {}),
     };
   }
 
@@ -343,8 +359,16 @@ export function formatMarkdownTable(run: EvalRunResult): string {
     lines.push(
       `**Decision Citations:** Hit@1 = ${dc.meanHitAt1.toFixed(3)} (judge-sensitive) · ` +
         `Precision = ${dc.meanPrecision.toFixed(3)}, Recall = ${dc.meanRecall.toFixed(3)} (set overlap, judge-insensitive) · ` +
-        `empty = ${dc.emptyResults}`,
+        `empty = ${dc.emptyResults}` +
+        (dc.judgedShare !== undefined ? ` · judged = ${(dc.judgedShare * 100).toFixed(0)}% of citations` : ""),
     );
+    if (dc.judgedShare !== undefined && dc.judgedShare < 1) {
+      lines.push(
+        `> **Judge did not run on every citation** (judged ${(dc.judgedShare * 100).toFixed(0)}% of cited ` +
+          `decisions). The judge swallows its own errors and returns heuristic order, so the numbers above ` +
+          `are partly the baseline, not this judge. Treat them as invalid until this reads 100%.`,
+      );
+    }
   }
   return lines.join("\n");
 }
