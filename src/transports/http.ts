@@ -2,6 +2,7 @@
  * Fastify HTTP transport — loopback only (local-only MVP, no remote).
  * Export buildHttpServer for tests (inject); serveHttp binds 127.0.0.1.
  */
+import { rerankDefaultOn } from "../search/reranker.js";
 import { timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import type { GatewayApp } from "../app.js";
@@ -114,12 +115,14 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
           asOf: q.asOf,
           includeSuperseded: q.includeSuperseded === "true",
           semantic: q.semantic === "false" ? false : undefined,
-          // Default ON. Reranking is the single largest accuracy lever measured
-          // on this system: NDCG@5 0.699 -> 0.968 on the fixture corpus. It
-          // costs ~450ms and, with a remote reranker, ships query text and
-          // candidate excerpts off-machine — so `?rerank=false` turns it off
-          // explicitly and `GATEWAY_RERANKER=none` disables it system-wide.
-          rerank: q.rerank !== "false" && q.rerank !== "0",
+          // Absent = let the registry decide, which is reranker-aware: ON for
+          // Jev (0.445 -> 0.489 NDCG@5 on BEIR nfcorpus at 620ms), OFF for the
+          // cross-encoder (0.433 at 6984ms — below plain hybrid). An explicit
+          // ?rerank=true/false always wins; GATEWAY_RERANKER=none kills it.
+          rerank:
+            q.rerank === undefined
+              ? rerankDefaultOn(app.reranker)
+              : q.rerank !== "false" && q.rerank !== "0",
           maxResults: q.maxResults ? Number(q.maxResults) : undefined,
           maxTurns: q.maxTurns ? Number(q.maxTurns) : undefined,
           maxTokens: q.maxTokens ? Number(q.maxTokens) : undefined,

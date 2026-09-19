@@ -98,12 +98,16 @@ async function main() {
   let appOpts: Parameters<typeof createApp>[0] = indexDir ? { indexDir } : {};
   if (beirDir) {
     const { buildBeirCorpus } = await import("../src/eval/beir.js");
-    const root = mkdtempSync(join(tmpdir(), "acg-eval-beir-"));
+    // --beir-root keeps the corpus, index and vectors across runs. Without it a
+    // sweep re-embeds the whole corpus at every point (nfcorpus: 25 minutes).
+    const beirRoot = argValue(args, "--beir-root");
+    const root = beirRoot ?? mkdtempSync(join(tmpdir(), "acg-eval-beir-"));
     const built = await buildBeirCorpus(beirDir, root, {
       split: beirSplit,
       maxQueries: beirQueryCap ? Number(beirQueryCap) : undefined,
       maxDocs: beirDocCap ? Number(beirDocCap) : undefined,
       domain: beirDomain,
+      reuse: Boolean(beirRoot),
     });
     beirQueries = built.queries;
     appOpts = {

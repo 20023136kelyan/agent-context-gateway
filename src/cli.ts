@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /** CLI transport — `gateway <command>`. Human/debug interface; agents use MCP/HTTP. */
+import { rerankDefaultOn } from "./search/reranker.js";
 import { Command } from "commander";
 import { createApp, closeApp, type GatewayApp } from "./app.js";
 import { listSources, listSessions, searchOnce, decideOnce, getRelated, traverseArtifacts, listInvalidations, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, recordFeedback, getSession, getTurn, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "./commands.js";
@@ -98,7 +99,7 @@ program
   .option("--as-principal <id>", "caller identity for resource-level ACL enforcement")
   .option("--as-of <iso>", "Point-in-time reconstruction (ISO timestamp)")
   .option("--include-superseded", "Include superseded historical knowledge without demotion")
-  .option("--no-rerank", "Skip precision reranking (on by default; saves ~450ms and keeps query text local)")
+  .option("--no-rerank", "Skip precision reranking (default depends on the selected reranker: on for Jev, off for the local cross-encoder)")
   .action(async (query: string, cmdOpts) => {
     const path = `/search${qs({ q: query, project: cmdOpts.project, repo: cmdOpts.repo, harness: cmdOpts.harness, maxResults: String(cmdOpts.maxResults ?? 5), scope: cmdOpts.scope, callerSessionId: cmdOpts.asSession, principal: cmdOpts.asPrincipal, asOf: cmdOpts.asOf, includeSuperseded: cmdOpts.includeSuperseded ? "true" : undefined, rerank: cmdOpts.rerank === false ? "false" : undefined })}`;
     const res = ((await fetchRemote("GET", path)) ??
@@ -113,7 +114,9 @@ program
           callerPrincipal: cmdOpts.asPrincipal,
           asOf: cmdOpts.asOf,
           includeSuperseded: cmdOpts.includeSuperseded ?? false,
-          rerank: cmdOpts.rerank !== false,
+          // `--no-rerank` sets this false; otherwise the registry decides per
+          // reranker (on for Jev, off for the cross-encoder).
+          rerank: cmdOpts.rerank === false ? false : rerankDefaultOn(app.reranker),
         }),
       ))) as Awaited<ReturnType<typeof searchOnce>>;
       if (program.opts().json) {

@@ -43,6 +43,11 @@ export interface BeirBuildOptions {
   maxDocs?: number;
   /** Which domain bucket these queries report under. */
   domain?: GoldenQuery["domain"];
+  /** Reuse an already-materialised corpus dir instead of rewriting every file.
+   *  Embedding a real corpus costs far more than building it — nfcorpus took
+   *  1481s for 5550 vector rows — so a parameter sweep that re-materialised
+   *  (and therefore re-embedded) each point would be untenable. */
+  reuse?: boolean;
 }
 
 export interface BeirCorpus {
@@ -130,6 +135,20 @@ export async function buildBeirCorpus(
   const dir = join(claudeDir, name);
   await mkdir(dir, { recursive: true });
 
+  // A marker rather than a file count: the corpus must match the REQUEST, not
+  // merely exist. Reusing a corpus built for different caps would silently
+  // measure a different benchmark than the flags claim.
+  const marker = join(dir, ".beir-built.json");
+  const want = JSON.stringify({ split, maxQueries: opts.maxQueries ?? null, maxDocs: opts.maxDocs ?? null });
+  let reusable = false;
+  if (opts.reuse) {
+    try {
+      reusable = (await readFile(marker, "utf8")).trim() === want;
+    } catch {
+      reusable = false;
+    }
+  }
+
   // Fixed base so timestamps are deterministic and asOf bounds are predictable.
   const base = Date.parse("2026-01-01T00:00:00Z");
   const seenSafe = new Map<string, string>();
@@ -167,6 +186,10 @@ export async function buildBeirCorpus(
     const content = title && text ? `${title}\n\n${text}` : title || text;
     if (!content) continue;
 
+    if (reusable) {
+      written += 1;
+      continue; // counted, not rewritten
+    }
     const ts = new Date(base + written * 60_000).toISOString();
     const line = JSON.stringify({
       type: "assistant",
@@ -182,6 +205,7 @@ export async function buildBeirCorpus(
     if (pending.length >= 256) await flush();
   }
   await flush();
+  if (!reusable) await writeFile(marker, want);
 
   const queries: GoldenQuery[] = [];
   let relTotal = 0;

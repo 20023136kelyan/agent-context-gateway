@@ -3,6 +3,7 @@
  * Nothing here touches stdout/sockets; returns plain data + throws Errors
  * with `not_found` / `bad_request` messages that transports map to codes.
  */
+import { rerankDefaultOn } from "./search/reranker.js";
 import { stat } from "node:fs/promises";
 import { syncAll, syncAllDetailed, rebuildAll, enrichTurns, isRemoteSource } from "./indexing/sync.js";
 import type { Turn } from "./core/models.js";
@@ -142,10 +143,13 @@ export async function decideOnce(
   // judge sees anything, either returning no candidates or only a distractor.
   // A judge cannot cite what retrieval never found. Default stays off so the
   // original cost argument holds for cross-encoder-only deployments.
-  // Rerank on by default here too: the judge can only choose among the sessions
-  // retrieval hands it, so the decide path's accuracy is bounded by the same
-  // ranking `search` uses. Callers opt out with `rerank: false`.
-  const res = await app.search.search(query, { ...opts, maxResults: 6, rerank: opts.rerank !== false });
+  // Same reranker-aware default as search: the judge can only choose among the
+  // sessions retrieval hands it, so decide is bounded by the same ranking.
+  const res = await app.search.search(query, {
+    ...opts,
+    maxResults: 6,
+    rerank: opts.rerank ?? rerankDefaultOn(app.reranker),
+  });
   // Full turns of top sessions (ordered by best hit) for extraction.
   const seen = new Set<string>();
   const sessions: { harness: string; id: string }[] = [];
@@ -486,8 +490,9 @@ export async function health(app: GatewayApp) {
     reranking: {
       reranker: app.reranker,
       local: app.reranker !== "jev",
-      /** On unless a request passes rerank:false or GATEWAY_RERANKER=none. */
-      defaultOn: true,
+      /** Reranker-aware: on for Jev, off for the cross-encoder. An explicit
+       *  `rerank` on the request overrides either way. */
+      defaultOn: rerankDefaultOn(app.reranker),
     },
   };
 }
