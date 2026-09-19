@@ -153,7 +153,13 @@ describe("decideOnce", () => {
   });
 
   it("returns the decision with rationale, alternatives and provenance", async () => {
-    const res = await decideOnce(app, "Why did we adopt the new queue design?");
+    // The judge is pinned, not inherited. `decideOnce` resolves one from the
+    // ambient environment, so with TYPESAFE_API_KEY exported this asserted
+    // "neural-judge" against a verdict produced by Jev — a developer with a key
+    // got a failing suite, and the test reached a third-party API to do it.
+    const res = await decideOnce(app, "Why did we adopt the new queue design?", {
+      judge: new NeuralEntailmentJudge(),
+    });
     expect(res.whyRouted).toBe(true);
     expect(res.decisions.length).toBeGreaterThanOrEqual(1);
     const top = res.decisions[0];
