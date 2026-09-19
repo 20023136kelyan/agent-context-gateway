@@ -10,9 +10,12 @@ import { CursorAdapter } from "./adapters/cursor.js";
 import { ZepAdapter } from "./adapters/zep.js";
 import { GitAdapter } from "./adapters/git.js";
 import type { SearchIndex } from "./indexing/types.js";
-import { TantivyIndex, defaultIndexDir as tantivyDir } from "./indexing/tantivy-index.js";
-import { SqliteIndex, defaultIndexDir as sqliteDir } from "./indexing/sqlite-index.js";
-import { VectorStore } from "./indexing/vectors.js";
+import { TantivyIndex } from "./indexing/tantivy-index.js";
+import { SqliteIndex } from "./indexing/sqlite-index.js";
+import type { VectorBackend } from "./indexing/vectors.js";
+import { openVectorStore, type VectorBackendName } from "./indexing/vector-backend.js";
+import { resolveReranker, makeReranker, type RerankerName } from "./search/reranker.js";
+import { resolveSettings, type GatewaySettings } from "./settings.js";
 import { CursorStore } from "./indexing/store.js";
 import { TopologyStore, defaultTopologyPath } from "./topology/store.js";
 import { FeedbackStore, defaultFeedbackPath } from "./feedback/store.js";
@@ -33,6 +36,8 @@ export class AsyncLock {
 }
 
 export interface AppOptions {
+  /** Base for every derived-state store. Defaults to CONTEXT_GATEWAY_STATE or ~/.context-gateway. */
+  stateDir?: string;
   indexDir?: string;
   vectorDir?: string;
   claudeDir?: string;
@@ -51,7 +56,13 @@ export interface GatewayApp {
   indexDir: string;
   backend: "tantivy" | "sqlite";
   /** Attached semantic backend (null until initVectors). */
-  vectors: VectorStore | null;
+  vectors: VectorBackend | null;
+  /** Which backend served the vectors, once opened. */
+  vectorBackend: VectorBackendName | null;
+  /** Which reranker is installed. Only used when a request passes rerank. */
+  reranker: RerankerName;
+  /** Resolved configuration. Reaches every transport, since all take `app`. */
+  readonly settings: GatewaySettings;
   vectorDir: string;
   topology: TopologyStore;
   feedback: FeedbackStore;
@@ -65,10 +76,12 @@ export interface GatewayApp {
 }
 
 export function createApp(opts: AppOptions = {}): GatewayApp {
-  const backend = opts.backend ?? "tantivy";
-  const indexDir = opts.indexDir ?? (backend === "tantivy" ? tantivyDir() : sqliteDir());
-  const home = process.env.HOME ?? "/tmp";
-  const vectorDir = opts.vectorDir ?? `${home}/.context-gateway/vectors-lance`;
+  const settings = resolveSettings(opts);
+  const { backend, indexDir, stateDir } = settings;
+  // Previously `${HOME}/.context-gateway/vectors-lance`, which ignored
+  // CONTEXT_GATEWAY_STATE — so setting a state dir relocated six stores but left
+  // the vectors behind. Now it hangs off stateDir like everything else.
+  const vectorDir = settings.vectorDir;
   const adapters: ContextAdapter[] = [
     opts.claudeDir ? new ClaudeAdapter(opts.claudeDir) : new ClaudeAdapter(),
     opts.codexDir ? new CodexAdapter(opts.codexDir) : new CodexAdapter(),
@@ -79,29 +92,36 @@ export function createApp(opts: AppOptions = {}): GatewayApp {
   const index: SearchIndex =
     backend === "tantivy" ? new TantivyIndex(indexDir) : new SqliteIndex(indexDir);
   const cursors = new CursorStore(indexDir);
-  const topology = new TopologyStore(defaultTopologyPath(process.env.CONTEXT_GATEWAY_STATE));
-  const feedback = new FeedbackStore(defaultFeedbackPath(process.env.CONTEXT_GATEWAY_STATE));
-  const temporal = new TemporalStore(defaultTemporalPath(process.env.CONTEXT_GATEWAY_STATE));
-  const acl = new AclStore(defaultAclPath(process.env.CONTEXT_GATEWAY_STATE));
-  const subscriptions = new SubscriptionStore(defaultSubscriptionsPath(process.env.CONTEXT_GATEWAY_STATE));
+  const topology = new TopologyStore(defaultTopologyPath(stateDir));
+  const feedback = new FeedbackStore(defaultFeedbackPath(stateDir));
+  const temporal = new TemporalStore(defaultTemporalPath(stateDir));
+  const acl = new AclStore(defaultAclPath(stateDir));
+  const subscriptions = new SubscriptionStore(defaultSubscriptionsPath(stateDir));
   const search = new SearchService(adapters, index);
   search.attachTopology(topology);
   search.attachFeedback(feedback);
   search.attachTemporal(temporal);
   search.attachAcl(acl);
+  // Installed once, used only when a request opts in: `rerank` is default-off
+  // on every transport, so selecting a remote reranker here sends nothing.
+  const { name: reranker, reranker: rerankerImpl } = settings.reranker
+    ? { name: settings.reranker, reranker: makeReranker(settings.reranker) }
+    : resolveReranker();
+  search.setReranker(rerankerImpl);
   return {
-    adapters, index, cursors, search, indexDir, backend, vectors: null, vectorDir, topology, feedback, temporal, acl, subscriptions,
+    adapters, index, cursors, search, indexDir, backend, vectors: null, vectorBackend: null, reranker, settings, vectorDir, topology, feedback, temporal, acl, subscriptions,
     indexLock: new AsyncLock(),
     vectorLock: new AsyncLock(),
   };
 }
 
 /** Open (or create) the vector store and attach it to search. Safe to skip offline. */
-export async function initVectors(app: GatewayApp, dir = app.vectorDir): Promise<VectorStore> {
+export async function initVectors(app: GatewayApp, dir = app.vectorDir): Promise<VectorBackend> {
   const { mkdirSync } = await import("node:fs");
   mkdirSync(dir, { recursive: true });
-  const store = await VectorStore.open(dir);
+  const { store, backend } = await openVectorStore(dir);
   app.vectors = store;
+  app.vectorBackend = backend;
   app.search.attachVectors(store);
   return store;
 }

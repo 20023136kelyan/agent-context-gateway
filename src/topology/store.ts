@@ -81,7 +81,10 @@ export class TopologyStore {
 }
 
 export function defaultTopologyPath(stateDir?: string): string {
-  const base = stateDir ?? `${process.env.HOME ?? "/tmp"}/.context-gateway`;
+  // Was missing the CONTEXT_GATEWAY_STATE fallback that all six sibling stores
+  // have. Only reachable by direct callers, since app.ts passes the value
+  // explicitly — which is why it never bit.
+  const base = stateDir ?? process.env.CONTEXT_GATEWAY_STATE ?? `${process.env.HOME ?? "/tmp"}/.context-gateway`;
   return join(base, "topology.json");
 }
 
