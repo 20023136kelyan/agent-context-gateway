@@ -76,8 +76,9 @@ describe("fixture corpus", () => {
   }, 60_000);
 
   it("leaves paraphrase headroom that lexical search cannot reach", async () => {
-    // The measurable gap Jev and embeddings exist to close. At least half the
-    // paraphrase queries must MISS lexically, or the corpus cannot separate arms.
+    // The measurable gap Jev and embeddings exist to close. At least three
+    // quarters of the paraphrase queries must MISS lexically, or the corpus
+    // cannot separate arms (18/20 miss as of the 72-session expansion).
     const missed: string[] = [];
     for (const q of golden.filter((g) => g.domain === "paraphrase")) {
       const res = await lexical(q.query);
@@ -85,7 +86,7 @@ describe("fixture corpus", () => {
       if (!q.relevantSessionIds.some((id) => got.has(id))) missed.push(q.id);
     }
     const paraphraseCount = golden.filter((g) => g.domain === "paraphrase").length;
-    expect(missed.length).toBeGreaterThanOrEqual(Math.ceil(paraphraseCount / 2));
+    expect(missed.length).toBeGreaterThanOrEqual(Math.ceil((paraphraseCount * 3) / 4));
   }, 60_000);
 
   it("contains distractors that outrank the answer lexically", async () => {

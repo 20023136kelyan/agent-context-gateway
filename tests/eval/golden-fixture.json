@@ -136,5 +136,500 @@
     "relevantSessionIds": [
       "f0000005-0000-4000-8000-000000000005"
     ]
+  },
+  {
+    "id": "duel-1",
+    "domain": "prose",
+    "query": "why Postgres over MySQL for billing ledger",
+    "description": "judge duel: real decision 013 vs proposal-distractor 014 share all rare terms; both must co-retrieve so the judge chooses",
+    "relevantSessionIds": [
+      "f0000013-0000-4000-8000-000000000013"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "duel-2",
+    "domain": "prose",
+    "query": "why Kafka over SQS for event bus",
+    "description": "judge duel: real 015 vs distractor 016; distractor mirrors query terms and carries a strong cue but settles nothing",
+    "relevantSessionIds": [
+      "f0000015-0000-4000-8000-000000000015"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "duel-3",
+    "domain": "prose",
+    "query": "why Tailwind over CSS modules for styling",
+    "description": "judge duel: real 017 vs distractor 018; both lexically strong, only one concludes",
+    "relevantSessionIds": [
+      "f0000017-0000-4000-8000-000000000017"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "duel-4",
+    "domain": "prose",
+    "query": "why Redis over Memcached for throttle counters",
+    "description": "judge duel: real 019 vs distractor 020; Lua atomicity rationale only in the real one",
+    "relevantSessionIds": [
+      "f0000019-0000-4000-8000-000000000019"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "duel-5",
+    "domain": "prose",
+    "query": "why gRPC over tRPC for comment threads",
+    "description": "judge duel: real 021 vs distractor 022; mobile-client rationale only in the real one",
+    "relevantSessionIds": [
+      "f0000021-0000-4000-8000-000000000021"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "duel-6",
+    "domain": "prose",
+    "query": "why S3 over R2 for backup vaults",
+    "description": "judge duel: real 023 vs distractor 024; versioning rationale only in the real one",
+    "relevantSessionIds": [
+      "f0000023-0000-4000-8000-000000000023"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "duel-7",
+    "domain": "prose",
+    "query": "why Playwright over Cypress for e2e suite",
+    "description": "judge duel: real 025 vs distractor 026; multi-context rationale only in the real one",
+    "relevantSessionIds": [
+      "f0000025-0000-4000-8000-000000000025"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "duel-8",
+    "domain": "prose",
+    "query": "why pnpm over npm for workspace installs",
+    "description": "judge duel: real 027 vs distractor 028; content-store rationale only in the real one",
+    "relevantSessionIds": [
+      "f0000027-0000-4000-8000-000000000027"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "duel-9",
+    "domain": "prose",
+    "query": "why WebRTC over HLS for voice comments",
+    "description": "judge duel: real 029 vs distractor 030; sub-second rationale only in the real one",
+    "relevantSessionIds": [
+      "f0000029-0000-4000-8000-000000000029"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "duel-10",
+    "domain": "prose",
+    "query": "why ClickHouse over Druid for analytics scans",
+    "description": "judge duel: real 031 vs distractor 032; single-binary rationale only in the real one",
+    "relevantSessionIds": [
+      "f0000031-0000-4000-8000-000000000031"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "duel-11",
+    "domain": "prose",
+    "query": "why OAuth over magic links for trial login",
+    "description": "judge duel: real 033 vs distractor 034; two-redirect rationale only in the real one",
+    "relevantSessionIds": [
+      "f0000033-0000-4000-8000-000000000033"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "duel-12",
+    "domain": "prose",
+    "query": "why monorepo over polyrepo for repo layout",
+    "description": "judge duel: real 035 vs distractor 036; atomic-edit rationale only in the real one",
+    "relevantSessionIds": [
+      "f0000035-0000-4000-8000-000000000035"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "prose-16",
+    "domain": "prose",
+    "query": "serializable transactions concurrent balance updates",
+    "description": "rationale probe into duel-1 real session 013 without why-wording; distractor 014 shares terms so retrieval must still prefer 013",
+    "relevantSessionIds": [
+      "f0000013-0000-4000-8000-000000000013"
+    ]
+  },
+  {
+    "id": "prose-17",
+    "domain": "prose",
+    "query": "ordered offsets partition replay after deploys",
+    "description": "rationale probe into duel-2 real session 015; distractor 016 lacks offsets/replay vocabulary",
+    "relevantSessionIds": [
+      "f0000015-0000-4000-8000-000000000015"
+    ]
+  },
+  {
+    "id": "prose-18",
+    "domain": "prose",
+    "query": "design tokens single config consistency",
+    "description": "rationale probe into duel-3 real session 017",
+    "relevantSessionIds": [
+      "f0000017-0000-4000-8000-000000000017"
+    ]
+  },
+  {
+    "id": "prose-19",
+    "domain": "prose",
+    "query": "Lua script increment expiry atomicity",
+    "description": "rationale probe into duel-4 real session 019; distractor 020 never mentions Lua",
+    "relevantSessionIds": [
+      "f0000019-0000-4000-8000-000000000019"
+    ]
+  },
+  {
+    "id": "prose-20",
+    "domain": "prose",
+    "query": "single content store forty packages sharing React",
+    "description": "rationale probe into duel-8 real session 027",
+    "relevantSessionIds": [
+      "f0000027-0000-4000-8000-000000000027"
+    ]
+  },
+  {
+    "id": "prose-21",
+    "domain": "prose",
+    "query": "sub-second audio conversational replies delay",
+    "description": "rationale probe into duel-9 real session 029",
+    "relevantSessionIds": [
+      "f0000029-0000-4000-8000-000000000029"
+    ]
+  },
+  {
+    "id": "prose-22",
+    "domain": "prose",
+    "query": "why SQLite for offline cache",
+    "description": "standalone decision 037; no paired distractor, measures clean recall",
+    "relevantSessionIds": [
+      "f0000037-0000-4000-8000-000000000037"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "prose-23",
+    "domain": "prose",
+    "query": "why Zod over Yup for validation",
+    "description": "standalone decision 038; type-inference rationale",
+    "relevantSessionIds": [
+      "f0000038-0000-4000-8000-000000000038"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "prose-24",
+    "domain": "prose",
+    "query": "why move monitoring to Grafana",
+    "description": "standalone decision 039; per-host pricing rationale",
+    "relevantSessionIds": [
+      "f0000039-0000-4000-8000-000000000039"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "prose-25",
+    "domain": "prose",
+    "query": "why feature flags for rollouts",
+    "description": "standalone decision 040; escape-hatch rationale",
+    "relevantSessionIds": [
+      "f0000040-0000-4000-8000-000000000040"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "prose-26",
+    "domain": "prose",
+    "query": "why Vitest for test suite",
+    "description": "standalone decision 041; parallel-worker rationale",
+    "relevantSessionIds": [
+      "f0000041-0000-4000-8000-000000000041"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "prose-27",
+    "domain": "prose",
+    "query": "why keyset over offset pagination",
+    "description": "standalone decision 042; stable-under-inserts rationale",
+    "relevantSessionIds": [
+      "f0000042-0000-4000-8000-000000000042"
+    ],
+    "decisionQuery": true
+  },
+  {
+    "id": "code-16",
+    "domain": "code",
+    "query": "rate limiter token bucket refill",
+    "description": "resetWindow/token bucket in ratelimit.ts; distractor 057 names the branch without detail",
+    "relevantSessionIds": [
+      "f0000043-0000-4000-8000-000000000043"
+    ]
+  },
+  {
+    "id": "code-17",
+    "domain": "code",
+    "query": "offline outbox queue replay order",
+    "description": "OutboxStore causal replay; distractor 057 names the branch without detail",
+    "relevantSessionIds": [
+      "f0000044-0000-4000-8000-000000000044"
+    ]
+  },
+  {
+    "id": "code-18",
+    "domain": "code",
+    "query": "trigram index partial word search",
+    "description": "buildTrigrams overlapping grams; distractor 057 names the branch without detail",
+    "relevantSessionIds": [
+      "f0000045-0000-4000-8000-000000000045"
+    ]
+  },
+  {
+    "id": "code-19",
+    "domain": "code",
+    "query": "notification fanout dedup inbox",
+    "description": "FanoutQueue at-least-once with client dedup; distractor 057 names the branch without detail",
+    "relevantSessionIds": [
+      "f0000046-0000-4000-8000-000000000046"
+    ]
+  },
+  {
+    "id": "code-20",
+    "domain": "code",
+    "query": "cursor position mapping anchor transform",
+    "description": "mapPosition anchor tracking; session 008 shares cursor/presence vocabulary but not mapping/anchor",
+    "relevantSessionIds": [
+      "f0000047-0000-4000-8000-000000000047"
+    ]
+  },
+  {
+    "id": "code-21",
+    "domain": "code",
+    "query": "token refresh rotation reuse detection",
+    "description": "rotateTokens mutex plus family-chain revocation; distractor 057 names the file without detail",
+    "relevantSessionIds": [
+      "f0000048-0000-4000-8000-000000000048"
+    ]
+  },
+  {
+    "id": "code-22",
+    "domain": "code",
+    "query": "avatar tile cache LRU eviction",
+    "description": "renderAvatar hue tiles with 200-entry LRU; distractor 058 names avatars without detail",
+    "relevantSessionIds": [
+      "f0000049-0000-4000-8000-000000000049"
+    ]
+  },
+  {
+    "id": "code-23",
+    "domain": "code",
+    "query": "audit log hash chain verification",
+    "description": "AuditWriter chained entries with nightly replay; distractor 058 names audit without detail",
+    "relevantSessionIds": [
+      "f0000050-0000-4000-8000-000000000050"
+    ]
+  },
+  {
+    "id": "code-24",
+    "domain": "code",
+    "query": "webhook retry dead-letter queue replay",
+    "description": "RetryQueue poison routing with manual replay; distractor 058 names retry without detail",
+    "relevantSessionIds": [
+      "f0000051-0000-4000-8000-000000000051"
+    ]
+  },
+  {
+    "id": "code-25",
+    "domain": "code",
+    "query": "export markdown blockquotes assets folder",
+    "description": "exportMarkdown tree walk with comment-to-blockquote conversion; distractor 058 names export without detail",
+    "relevantSessionIds": [
+      "f0000052-0000-4000-8000-000000000052"
+    ]
+  },
+  {
+    "id": "code-26",
+    "domain": "code",
+    "query": "shortcut registry chord keybinding remap",
+    "description": "ShortcutRegistry chord mapping with per-platform overrides; distractor 058 names chords without detail",
+    "relevantSessionIds": [
+      "f0000053-0000-4000-8000-000000000053"
+    ]
+  },
+  {
+    "id": "code-27",
+    "domain": "code",
+    "query": "conflict banner merge markers accept",
+    "description": "ConflictBanner grouped operations with per-group resolution; distractor 058 names the file without detail",
+    "relevantSessionIds": [
+      "f0000054-0000-4000-8000-000000000054"
+    ]
+  },
+  {
+    "id": "code-28",
+    "domain": "code",
+    "query": "session restore checkpoint journal",
+    "description": "restoreFromCheckpoint journal replay with checkpoint fallback",
+    "relevantSessionIds": [
+      "f0000055-0000-4000-8000-000000000055"
+    ]
+  },
+  {
+    "id": "code-29",
+    "domain": "code",
+    "query": "metrics batcher flush sampling",
+    "description": "MetricsBatcher accumulate-and-flush with sequence dedup; distractor 058 names the batcher without detail",
+    "relevantSessionIds": [
+      "f0000056-0000-4000-8000-000000000056"
+    ]
+  },
+  {
+    "id": "paraphrase-16",
+    "domain": "paraphrase",
+    "query": "why do picture previews pop in so late",
+    "description": "session 059 is thumbnail decode in an offscreen worker; query shares no stem with thumbnail/decode/canvas/bitmap",
+    "relevantSessionIds": [
+      "f0000059-0000-4000-8000-000000000059"
+    ]
+  },
+  {
+    "id": "paraphrase-17",
+    "domain": "paraphrase",
+    "query": "why do newcomers keep asking the same things",
+    "description": "session 060 is the handbook-as-checklist rewrite; query avoids handbook/checklist/token stems",
+    "relevantSessionIds": [
+      "f0000060-0000-4000-8000-000000000060"
+    ]
+  },
+  {
+    "id": "paraphrase-18",
+    "domain": "paraphrase",
+    "query": "why does landing code take forever after lunch",
+    "description": "session 061 is path-split pipeline lanes; query avoids pipeline/matrix/runner stems",
+    "relevantSessionIds": [
+      "f0000061-0000-4000-8000-000000000061"
+    ]
+  },
+  {
+    "id": "paraphrase-19",
+    "domain": "paraphrase",
+    "query": "why does everyone silence alerts",
+    "description": "session 062 is batched ping digests with instant mentions; query avoids mute/toast/ping/digest stems",
+    "relevantSessionIds": [
+      "f0000062-0000-4000-8000-000000000062"
+    ]
+  },
+  {
+    "id": "paraphrase-20",
+    "domain": "paraphrase",
+    "query": "why do old pages outrank new ones",
+    "description": "session 063 is time-decay scoring for search; query avoids index/archive/decay/surface stems",
+    "relevantSessionIds": [
+      "f0000063-0000-4000-8000-000000000063"
+    ]
+  },
+  {
+    "id": "paraphrase-21",
+    "domain": "paraphrase",
+    "query": "why is midweek productivity slumping",
+    "description": "session 064 is clustered syncs restoring open days; query avoids calendar/sync/output stems",
+    "relevantSessionIds": [
+      "f0000064-0000-4000-8000-000000000064"
+    ]
+  },
+  {
+    "id": "paraphrase-22",
+    "domain": "paraphrase",
+    "query": "why can't people get back into their accounts",
+    "description": "session 065 is reset-link lifetime versus batched email sends; query avoids reset/link/gateway/queue stems",
+    "relevantSessionIds": [
+      "f0000065-0000-4000-8000-000000000065"
+    ]
+  },
+  {
+    "id": "paraphrase-23",
+    "domain": "paraphrase",
+    "query": "why do leaders cite conflicting figures",
+    "description": "session 066 is refresh-timestamp stamping on dashboard numbers; query avoids dashboard/stamp/refresh stems",
+    "relevantSessionIds": [
+      "f0000066-0000-4000-8000-000000000066"
+    ]
+  },
+  {
+    "id": "paraphrase-24",
+    "domain": "paraphrase",
+    "query": "why does the app exhaust power so fast",
+    "description": "session 067 is backing off the location poller while idle; query avoids location/poller/battery/cadence stems",
+    "relevantSessionIds": [
+      "f0000067-0000-4000-8000-000000000067"
+    ]
+  },
+  {
+    "id": "paraphrase-25",
+    "domain": "paraphrase",
+    "query": "why does shipping updates freeze saving",
+    "description": "session 068 is expand-contract migration shrinking the write pause; query avoids deploy/migration/backfill stems",
+    "relevantSessionIds": [
+      "f0000068-0000-4000-8000-000000000068"
+    ]
+  },
+  {
+    "id": "paraphrase-26",
+    "domain": "paraphrase",
+    "query": "why is telemetry pricier than servers",
+    "description": "session 069 is heartbeat sampling cutting log volume; query avoids heartbeat/sample/blob/trace stems",
+    "relevantSessionIds": [
+      "f0000069-0000-4000-8000-000000000069"
+    ]
+  },
+  {
+    "id": "paraphrase-27",
+    "domain": "paraphrase",
+    "query": "why do notifications wake Aussies up",
+    "description": "session 070 is UTC instants with per-recipient zones; query avoids reminder/scheduler/Sydney/Pacific stems",
+    "relevantSessionIds": [
+      "f0000070-0000-4000-8000-000000000070"
+    ]
+  },
+  {
+    "id": "paraphrase-28",
+    "domain": "paraphrase",
+    "query": "pictures load sluggishly when browsing",
+    "description": "session 059 again, second wording; still no shared stem with thumbnail/decode/bitmap",
+    "relevantSessionIds": [
+      "f0000059-0000-4000-8000-000000000059"
+    ]
+  },
+  {
+    "id": "paraphrase-29",
+    "domain": "paraphrase",
+    "query": "recent repairs hidden behind outdated material",
+    "description": "session 063 again, second wording; avoids index/archive/decay/surface stems",
+    "relevantSessionIds": [
+      "f0000063-0000-4000-8000-000000000063"
+    ]
+  },
+  {
+    "id": "paraphrase-30",
+    "domain": "paraphrase",
+    "query": "handsets die before midday in trials",
+    "description": "session 067 again, second wording; avoids location/poller/battery stems",
+    "relevantSessionIds": [
+      "f0000067-0000-4000-8000-000000000067"
+    ]
   }
 ]
