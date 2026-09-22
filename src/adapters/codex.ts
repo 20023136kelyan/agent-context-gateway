@@ -32,12 +32,23 @@ export function agentIdForCodex(): string {
   return `${HARNESS}:local`;
 }
 
+/**
+ * `id` is this thread's own id. `session_id` names the session it belongs to,
+ * which for a Codex Desktop multi-agent subagent is the PARENT thread: one run
+ * observed here wrote 15 rollout files sharing a single `session_id`. Read
+ * `id` first (see threadId), or every subagent collapses onto its parent.
+ */
 interface SessionMetaPayload {
   session_id?: string;
   id?: string;
   timestamp?: string;
   cwd?: string;
   originator?: string;
+}
+
+/** A rollout file's own thread id; older files carry only `session_id`. */
+function threadId(p: SessionMetaPayload): string | undefined {
+  return p.id ?? p.session_id;
 }
 
 interface CodexLine {
@@ -124,7 +135,7 @@ export class CodexAdapter implements ContextAdapter {
         const first = await this.readFirstLine(f);
         const o = JSON.parse(first) as CodexLine;
         const p = (o.payload ?? {}) as SessionMetaPayload;
-        if (p.session_id === sessionId || p.id === sessionId) return remember(f);
+        if (threadId(p) === sessionId) return remember(f);
       } catch {
         continue;
       }
@@ -193,7 +204,7 @@ export class CodexAdapter implements ContextAdapter {
       const o = JSON.parse(firstLine) as CodexLine;
       if (o.type === "session_meta") {
         const p = (o.payload ?? {}) as SessionMetaPayload;
-        sessionId = p.session_id ?? p.id ?? sessionId;
+        sessionId = threadId(p) ?? sessionId;
         if (p.cwd) cwd = p.cwd;
         if (p.timestamp) startedAt = p.timestamp;
       }

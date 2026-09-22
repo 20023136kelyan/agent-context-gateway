@@ -126,3 +126,41 @@ describe("CodexAdapter", () => {
     }
   });
 });
+
+describe("CodexAdapter: multi-agent runs", () => {
+  // Codex Desktop subagents carry their PARENT's id in `session_id` and their
+  // own in `id`. Reading session_id first once collapsed a 15-agent run into
+  // one session, leaving 14 agents' work unfindable.
+  const PARENT = "019f6c2c-0000-7000-8000-000000000001";
+  const CHILDREN = ["019f6c2d-0000-7000-8000-000000000002", "019f6c37-0000-7000-8000-000000000003"];
+  let dir: string;
+
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), "acg-codex-multi-"));
+    const day = join(dir, "2026", "07", "16");
+    await mkdir(day, { recursive: true });
+    const file = async (id: string, meta: Record<string, unknown>, text: string, minute: number) =>
+      writeFile(
+        join(day, `rollout-2026-07-16T12-${String(minute).padStart(2, "0")}-00-${id}.jsonl`),
+        [
+          JSON.stringify({ timestamp: `2026-07-16T12:${String(minute).padStart(2, "0")}:00Z`, type: "session_meta", payload: { cwd: "/repo/cozea", ...meta } }),
+          JSON.stringify({ timestamp: `2026-07-16T12:${String(minute).padStart(2, "0")}:30Z`, type: "response_item", payload: { type: "message", id: `m-${id}`, role: "user", content: [{ type: "input_text", text }] } }),
+        ].join("\n"),
+      );
+    await file(PARENT, { id: PARENT, session_id: PARENT }, "Plan the backend audit", 0);
+    await file(CHILDREN[0], { id: CHILDREN[0], session_id: PARENT, forked_from_id: PARENT }, "Audit the backend discovery path", 1);
+    await file(CHILDREN[1], { id: CHILDREN[1], session_id: PARENT, forked_from_id: PARENT }, "Audit the devapp backend wiring", 2);
+  });
+
+  it("lists every subagent as its own session", async () => {
+    const ids = (await new CodexAdapter(dir).listSessions()).map((s) => s.id).sort();
+    expect(ids).toEqual([PARENT, ...CHILDREN].sort());
+  });
+
+  it("reads a subagent's own turns, not its parent's", async () => {
+    const a = new CodexAdapter(dir);
+    await a.listSessions();
+    const turns = await a.listTurns(CHILDREN[1]);
+    expect(turns.map((t) => t.content)).toEqual(["Audit the devapp backend wiring"]);
+  });
+});
