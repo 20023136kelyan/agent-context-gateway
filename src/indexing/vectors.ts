@@ -27,10 +27,7 @@ import type { EmbeddingEngine } from "../embeddings/provider.js";
  * existed then, so the mapping is exact; honouring it saves re-embedding a
  * corpus that is already correct.
  */
-const LEGACY_TABLE_ENGINE: Record<string, EmbeddingEngine> = {
-  turns_384: "mlx",
-  turns_1024: "ollama",
-};
+
 
 const tableName = (engine: EmbeddingEngine, dim: number) => `turns_${engine.replace(/-/g, "_")}_${dim}`;
 
@@ -96,10 +93,10 @@ export class VectorStore implements VectorBackend {
     return store;
   }
 
-  /** Which engine owns a table name, current scheme or legacy. Null if neither. */
+  /** Which engine owns a table name. Null if neither — including the deleted
+   *  mlx/ollama-era tables, which are dead data now (no provider can serve
+   *  them; backfill re-embeds under the live engine). */
   private engineForTable(name: string): EmbeddingEngine | null {
-    const legacy = LEGACY_TABLE_ENGINE[name];
-    if (legacy) return legacy;
     const m = /^turns_(.+)_(\d+)$/.exec(name);
     if (!m) return null;
     return m[1].replace(/_/g, "-") as EmbeddingEngine;
@@ -109,11 +106,7 @@ export class VectorStore implements VectorBackend {
     const open = this.tables.get(engine);
     if (open) return open;
     const names = await this.db.tableNames();
-    // Prefer the current name; fall back to a legacy table this engine owns.
     const candidates = dim === undefined ? [] : [tableName(engine, dim)];
-    for (const [legacyName, legacyEngine] of Object.entries(LEGACY_TABLE_ENGINE)) {
-      if (legacyEngine === engine) candidates.push(legacyName);
-    }
     for (const candidate of candidates) {
       if (names.includes(candidate)) {
         const tbl = await this.db.openTable(candidate);

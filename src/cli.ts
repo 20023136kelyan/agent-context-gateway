@@ -101,7 +101,7 @@ program
   .option("--as-principal <id>", "caller identity for resource-level ACL enforcement")
   .option("--as-of <iso>", "Point-in-time reconstruction (ISO timestamp)")
   .option("--include-superseded", "Include superseded historical knowledge without demotion")
-  .option("--no-rerank", "Skip precision reranking (default depends on the selected reranker: on for Jev, off for the local cross-encoder)")
+  .option("--no-rerank", "Skip precision reranking (default depends on the selected reranker: on for Jev, off otherwise)")
   .action(async (query: string, cmdOpts) => {
     const path = `/search${qs({ q: query, project: cmdOpts.project, repo: cmdOpts.repo, harness: cmdOpts.harness, maxResults: String(cmdOpts.maxResults ?? 5), scope: cmdOpts.scope, callerSessionId: cmdOpts.asSession, principal: cmdOpts.asPrincipal, asOf: cmdOpts.asOf, includeSuperseded: cmdOpts.includeSuperseded ? "true" : undefined, rerank: cmdOpts.rerank === false ? "false" : undefined })}`;
     const res = ((await fetchRemote("GET", path)) ??
@@ -117,7 +117,7 @@ program
           asOf: cmdOpts.asOf,
           includeSuperseded: cmdOpts.includeSuperseded ?? false,
           // `--no-rerank` sets this false; otherwise the registry decides per
-          // reranker (on for Jev, off for the cross-encoder).
+          // reranker (on for Jev, off otherwise).
           rerank: cmdOpts.rerank === false ? false : rerankDefaultOn(app.reranker),
         }),
       ))) as Awaited<ReturnType<typeof searchOnce>>;
@@ -152,7 +152,7 @@ program
   .command("sync")
   .description("Incrementally index native histories")
   .option("--rebuild", "wipe disposable index and rebuild from truth")
-  .option("--embed", "also backfill turn embeddings (resumable, needs ollama)")
+  .option("--embed", "also backfill turn embeddings (resumable, needs an embedding key)")
   .action(async (cmdOpts) => {
     const path = `/sync${qs({ rebuild: cmdOpts.rebuild ? "true" : undefined, embed: cmdOpts.embed ? "true" : undefined })}`;
     print((await fetchRemote("POST", path)) ?? (await withLocal((app) => syncNow(app, cmdOpts.rebuild ?? false, { embed: cmdOpts.embed ?? false }))), false);

@@ -35,10 +35,10 @@ import {
 } from "../src/eval/runner.js";
 
 const MODES: EvalMode[] = [
-  "lexical", "lexical-rerank", "hybrid", "rerank", "rrf",
+  "lexical", "hybrid", "rrf",
   "lexical-jev", "jev", "lexical-jev-pairwise", "jev-pairwise",
-  "rerank-pure", "jev-pure", "rerank-voyage",
-  "judge-neural", "judge-jev", "judge-jev-noul",
+  "jev-pure", "rerank-voyage",
+  "judge-heuristic", "judge-jev", "judge-jev-noul",
 ];
 
 const argValue = (args: string[], flag: string): string | undefined => {

@@ -5,9 +5,10 @@
  *
  * A blanket default-off left every search at hybrid's quality when better was
  * available. A blanket default-on then gave keyless deployments multi-second
- * searches for nothing: on BEIR nfcorpus the local cross-encoder scored 0.433
- * NDCG@5 at 6984ms p50 against plain hybrid's 0.445 at 318ms, while Jev scored
- * 0.489 at 620ms. So the default is on for Jev and off for the cross-encoder.
+ * searches for nothing: on BEIR nfcorpus the deleted local cross-encoder
+ * scored 0.433 NDCG@5 at 6984ms p50 against plain hybrid's 0.445 at 318ms,
+ * while Jev scored 0.489 at 620ms. So the default is on for Jev and off for
+ * everything not yet earned.
  *
  * Two properties must hold regardless of that default:
  *   - an explicit `rerank` on the request ALWAYS wins, both directions
@@ -38,8 +39,8 @@ afterEach(() => {
 });
 
 describe("reranker selection", () => {
-  it("falls to the local cross-encoder when no Jev key is present", () => {
-    expect(resolveRerankerName()).toBe("cross-encoder");
+  it("falls to none when no vendor key is present", () => {
+    expect(resolveRerankerName()).toBe("none");
   });
 
   it("prefers Jev once a key is present", () => {
@@ -53,11 +54,11 @@ describe("reranker selection", () => {
   });
 
   it("honours a pin and does not fall back past it", () => {
-    // A pinned name is a hard selection: a deployment that pins cross-encoder
-    // must not silently start calling a vendor because a key appeared.
+    // A pinned name is a hard selection: a deployment that pins voyage must
+    // not silently switch vendors because another key appeared.
     process.env.TYPESAFE_API_KEY = "k";
-    process.env.GATEWAY_RERANKER = "cross-encoder";
-    expect(resolveRerankerName()).toBe("cross-encoder");
+    process.env.GATEWAY_RERANKER = "voyage";
+    expect(resolveRerankerName()).toBe("voyage");
   });
 
   it("can be pinned off entirely", () => {
@@ -95,8 +96,9 @@ describe("reranker selection", () => {
 describe("the default is reranker-aware", () => {
   it("is on for Jev and off for the ones that did not earn it", () => {
     expect(rerankDefaultOn("jev")).toBe(true);
-    // Measured below plain hybrid on real documents, at 10-20x the latency.
-    expect(rerankDefaultOn("cross-encoder")).toBe(false);
+    // Voyage default stays off until a default-on bake-off earns it; explicit
+    // rerank requests always work regardless.
+    expect(rerankDefaultOn("voyage")).toBe(false);
     expect(rerankDefaultOn("none")).toBe(false);
   });
 
@@ -191,10 +193,10 @@ describe("rerank plumbing, end to end", () => {
     });
   }, 120_000);
 
-  it("with the cross-encoder selected, stays off unless asked", async () => {
-    await withServer("cross-encoder", async (server, spy) => {
+  it("with voyage selected, stays off unless asked", async () => {
+    await withServer("voyage", async (server, spy) => {
       expect((await server.inject({ method: "GET", url: URL })).statusCode).toBe(200);
-      expect(spy).not.toHaveBeenCalled(); // default OFF: it measured below hybrid
+      expect(spy).not.toHaveBeenCalled(); // default OFF until earned
       expect((await server.inject({ method: "GET", url: `${URL}&rerank=true` })).statusCode).toBe(200);
       expect(spy).toHaveBeenCalled(); // opt-in wins
     });

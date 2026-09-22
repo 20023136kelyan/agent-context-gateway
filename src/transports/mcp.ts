@@ -45,7 +45,7 @@ export function buildMcpServer(app: GatewayApp): McpServer {
       rerank: z
         .boolean()
         .optional()
-        .describe("Rerank top candidates for precision. Omitted = the server decides per reranker (on for Jev, off for the local cross-encoder, which measured below plain hybrid on real documents). true/false overrides."),
+        .describe("Rerank top candidates for precision. Omitted = the server decides per reranker (on for Jev, off otherwise). true/false overrides."),
       maxResults: z.number().min(1).max(20).optional(),
       maxTurns: z.number().min(1).max(15).optional(),
       maxTokens: z.number().min(100).max(20000).optional(),

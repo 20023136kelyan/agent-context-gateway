@@ -27,14 +27,12 @@ export const ENGINE_DEFS = [
   { name: "voyage", remote: true, keyEnv: "VOYAGE_API_KEY", pricePerM: 0.06, locked: true, notes: "voyage-4 general retrieval" },
   { name: "voyage-code", remote: true, keyEnv: "VOYAGE_API_KEY", pricePerM: 0.12, locked: false, notes: "code-specialized; loses on mixed queries" },
   { name: "voyage-context", remote: true, keyEnv: "VOYAGE_API_KEY", pricePerM: 0.12, locked: false, notes: "contextualized chunks; needs grouped backfill" },
-  { name: "mlx", remote: false, pricePerM: null, locked: false, notes: "Apple Silicon only; unmeasured (no ASi in fleet)" },
-  { name: "ollama", remote: false, pricePerM: null, locked: false, notes: "local fallback; trails voyage-4" },
 ] as const;
 
 export type EngineName = (typeof ENGINE_DEFS)[number]["name"];
 
-/** Resolution order when unpinned: locked first, then by quality evidence. */
-export const ENGINE_ORDER: readonly EngineName[] = ["voyage", "mlx", "ollama"];
+/** Resolution order when unpinned: voyage leads; siblings are pin-only. */
+export const ENGINE_ORDER: readonly EngineName[] = ["voyage"];
 
 export interface RerankerDef {
   readonly name: string;
@@ -51,13 +49,12 @@ export interface RerankerDef {
 export const RERANKER_DEFS = [
   { name: "jev", remote: true, keyEnv: "TYPESAFE_API_KEY", pricePerM: 0.042, mode: "pairwise", locked: false, notes: "best on traces; judge duty too" },
   { name: "voyage", remote: true, keyEnv: "VOYAGE_API_KEY", pricePerM: 0.05, mode: "listwise", locked: true, notes: "rerank-2.5; 1 req/pool; lite/3 via VOYAGE_RERANK_MODEL" },
-  { name: "cross-encoder", remote: false, pricePerM: null, mode: "local", locked: false, notes: "eval control; below hybrid on real docs" },
   { name: "none", remote: false, pricePerM: null, mode: "local", locked: false, notes: "passthrough" },
 ] as const;
 
 export type RerankerName = (typeof RERANKER_DEFS)[number]["name"];
 
-export const RERANKER_ORDER: readonly RerankerName[] = ["jev", "voyage", "cross-encoder"];
+export const RERANKER_ORDER: readonly RerankerName[] = ["jev", "voyage"];
 
 export interface JudgeDef {
   readonly name: string;
@@ -69,7 +66,7 @@ export interface JudgeDef {
 
 export const JUDGE_DEFS = [
   { name: "jev", remote: true, keyEnv: "TYPESAFE_API_KEY", locked: true, notes: "Noul+Score, 12-0 on duels" },
-  { name: "neural-judge", remote: false, locked: false, notes: "relevance-reranker as judge; conflates relevance with entailment" },
+  { name: "heuristic", remote: false, locked: false, notes: "shape confidence only; candidate labels, not verdicts" },
 ] as const;
 
 export type JudgeName = (typeof JUDGE_DEFS)[number]["name"];

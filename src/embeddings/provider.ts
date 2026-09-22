@@ -4,24 +4,13 @@
  * Engines are registered, not hard-coded, so adding a vendor never touches the
  * retrieval path. Each engine owns its own vector table (see VectorStore):
  * identity is the ENGINE, not the dimension. Two engines can emit the same
- * width — Ollama's Qwen and a 1024-dim Voyage model do — and keying storage by
- * width alone would silently blend two incompatible embedding spaces.
+ * width — keying storage by width alone would silently blend two incompatible
+ * embedding spaces.
  *
- * Selection order (first available wins), overridable with GATEWAY_EMBED_ENGINE:
- *   voyage → mlx → ollama
- * Voyage leads only when VOYAGE_API_KEY is set; setting that key is the opt-in
- * that sends history off-machine (spec §73 Principle 5 is local-first).
- * MLX needs Apple Silicon, so on Intel the order collapses to voyage → ollama.
+ * Locked stack: voyage-4 (+code/context pins). VOYAGE_API_KEY is the opt-in
+ * that sends history off-machine. Local engines were deleted, not deprecated.
  */
 import { LruCache } from "../core/lru.js";
-import { getSharedMlxEmbedder, MlxEmbedder, MLX_DIM } from "./mlx.js";
-export { getSharedMlxEmbedder, MlxEmbedder };
-import {
-  embedTexts as ollamaEmbedTexts,
-  embedQuery as ollamaEmbedQuery,
-  ollamaAvailable,
-  EMBED_DIM as OLLAMA_DIM,
-} from "./ollama.js";
 import {
   VOYAGE_GENERAL,
   VOYAGE_CODE,
@@ -67,21 +56,6 @@ const voyageProvider = (engine: EmbeddingEngine, cfg: VoyageConfig): EmbeddingPr
 });
 
 const PROVIDERS: Record<EmbeddingEngine, EmbeddingProvider> = {
-  mlx: {
-    engine: "mlx",
-    dim: MLX_DIM,
-    isAvailable: () => getSharedMlxEmbedder().isAvailable(),
-    embedTexts: (texts) => getSharedMlxEmbedder().embedTexts(texts),
-    embedQuery: (query) => getSharedMlxEmbedder().embedQuery(query),
-  },
-  ollama: {
-    engine: "ollama",
-    dim: OLLAMA_DIM,
-    isAvailable: () => ollamaAvailable(),
-    // Groups are a voyage-context concept; flat engines ignore them.
-    embedTexts: (texts) => ollamaEmbedTexts(texts),
-    embedQuery: ollamaEmbedQuery,
-  },
   voyage: voyageProvider("voyage", VOYAGE_GENERAL),
   "voyage-code": voyageProvider("voyage-code", VOYAGE_CODE),
   "voyage-context": {
@@ -132,12 +106,6 @@ export function getProvider(engine: EmbeddingEngine): EmbeddingProvider {
 
 /** Each engine's vector width. Kept for reporting; storage keys on engine. */
 export const ENGINE_DIM: Record<EmbeddingEngine, number> = {
-  get mlx() {
-    return PROVIDERS.mlx.dim;
-  },
-  get ollama() {
-    return PROVIDERS.ollama.dim;
-  },
   get voyage() {
     return PROVIDERS.voyage.dim;
   },
@@ -223,10 +191,6 @@ export async function embedQueryWith(engine: EmbeddingEngine, query: string): Pr
   const vector = await getProvider(engine).embedQuery(query);
   QUERY_VECTOR_CACHE.set(key, vector);
   return vector;
-}
-
-export async function isMlxAvailable(): Promise<boolean> {
-  return PROVIDERS.mlx.isAvailable();
 }
 
 /**

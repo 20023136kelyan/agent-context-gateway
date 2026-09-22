@@ -53,6 +53,22 @@ async function main() {
   }
   const root = mkdtempSync(join(tmpdir(), "acg-cell-"));
   process.env.CONTEXT_GATEWAY_STATE = join(root, "state");
+  // Dead-end dirs for every harness the corpus does NOT use. Live-writing
+  // harnesses (opencode appends a session per `opencode run`) MUST be
+  // included: 68 scoring runs once quoted every golden query verbatim into
+  // the VM's opencode.db, and every subsequent fixture eval cited the echo
+  // instead of the truth (judge Hit@1 0.952 -> 0.381 with zero code change).
+  const { mkdirSync } = await import("node:fs");
+  const deadEnd = (name: string) => {
+    const d = join(root, name);
+    mkdirSync(d, { recursive: true });
+    return d;
+  };
+  const isolation = {
+    cursorDb: deadEnd("empty-cursor"),
+    zepDir: deadEnd("empty-zep"),
+    opencodeDb: deadEnd("empty-opencode"),
+  };
 
   let appOpts: Parameters<typeof createApp>[0];
   let goldenPath: string;
@@ -68,13 +84,14 @@ async function main() {
       claudeDir: emptyClaude,
       codexDir: emptyCodex,
       trajectoryDir: join(process.cwd(), "tests", "fixtures", "trajectories"),
+      ...isolation,
     };
     goldenPath = join(process.cwd(), "tests", "eval", "golden-trajectories.json");
     hash = corpusHash(corpus, goldenPath, "trajectories-v1");
   } else if (corpus === "fixture") {
     const { buildFixtureCorpus } = await import("../tests/fixtures/corpus.js");
     const { claudeDir, codexDir } = await buildFixtureCorpus(root);
-    appOpts = { indexDir: join(root, "index"), claudeDir, codexDir };
+    appOpts = { indexDir: join(root, "index"), claudeDir, codexDir, ...isolation };
     goldenPath = join(process.cwd(), "tests", "eval", "golden-fixture.json");
     hash = corpusHash(corpus, goldenPath, "fixture-v1");
   } else if (corpus === "real") {
@@ -86,6 +103,7 @@ async function main() {
       claudeDir: "swe-data/real-claude",
       codexDir: "swe-data/real-codex",
       trajectoryDir: "swe-data/empty-traj",
+      ...isolation,
     };
     process.env.CONTEXT_GATEWAY_STATE = "swe-data/real-state";
     goldenPath = goldenOverride
@@ -117,7 +135,7 @@ async function main() {
   const app = createApp(appOpts);
   try {
     // Resolved engine (not the pin) is what prices the row: auto-resolution
-    // picks voyage/mlx/ollama/none regardless of GATEWAY_EMBED_ENGINE.
+    // picks voyage/voyage-code/voyage-context/none regardless of GATEWAY_EMBED_ENGINE.
     let engine = "none";
     if (arms.some(NEEDS_VECTORS)) {
       try {

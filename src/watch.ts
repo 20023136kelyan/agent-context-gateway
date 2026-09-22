@@ -20,7 +20,7 @@ export interface WatchOptions {
   dirs?: string[];
   /** Quiet period before a sync fires (ms). Default 2000. */
   debounceMs?: number;
-  /** Also embed new turns (needs ollama; skipped gracefully when down). */
+  /** Also embed new turns with the resolved engine (skipped gracefully when down). */
   embed?: boolean;
   onSync?: (result: { sessionsIndexed: number; turnsIndexed: number; embedded?: number }) => void;
   onError?: (err: unknown) => void;

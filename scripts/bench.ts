@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { createApp, closeApp, initVectors } from "../src/app.js";
 import { searchOnce, decideOnce } from "../src/commands.js";
 import { syncAll } from "../src/indexing/sync.js";
-import { getSharedReranker } from "../src/search/rerank.js";
+
 import { extractDecisions } from "../src/decisions/extract.js";
 import { loadGoldenQueries } from "../src/eval/runner.js";
 
@@ -63,8 +63,8 @@ async function main() {
       .flatMap((r) => r.context)
       .slice(0, 15)
       .map((t, i) => ({ id: `${t.id}#${i}`, content: t.content, score: 0.5 }));
-    const reranker = getSharedReranker();
-    await reranker.rerank(queries[0], cands.slice(0, 2)); // load the model
+    const { VoyageReranker } = await import("../src/search/rerank-voyage.js");
+    const reranker = new VoyageReranker();
     await time(`rerank ${cands.length} candidates`, () => reranker.rerank(queries[0], cands, 15));
 
     const claude = app.adapters.find((a) => a.harness === "claude-code")!;

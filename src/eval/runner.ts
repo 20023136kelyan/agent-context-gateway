@@ -10,12 +10,12 @@ import { searchOnce, decideOnce } from "../commands.js";
 import { ndcgAtK, mrrAtK, precisionAtK, evaluateCitations, citationHitAtK } from "./metrics.js";
 import type { Harness } from "../core/models.js";
 import type { SearchOptions } from "../search/search.js";
-import { getSharedReranker, type CrossEncoderReranker } from "../search/rerank.js";
+import { noopReranker, type Reranker } from "../search/reranker.js";
 import { JevReranker } from "../judgments/rerank-jev.js";
 import { VoyageReranker } from "../search/rerank-voyage.js";
 import { JevDecisionJudge } from "../judgments/judge-jev.js";
-import { NeuralEntailmentJudge } from "../decisions/extract.js";
 import type { DecisionJudge } from "../decisions/extract.js";
+import { HeuristicJudge } from "../decisions/extract.js";
 
 export interface GoldenQuery {
   id: string;
@@ -95,9 +95,7 @@ export interface EvalRunResult {
 
 export type EvalMode =
   | "lexical"
-  | "lexical-rerank"
   | "hybrid"
-  | "rerank"
   | "rrf"
   // Jev arms mirror the cross-encoder arms exactly, differing only in which
   // reranker is installed, so a delta is attributable to the model alone.
@@ -105,18 +103,17 @@ export type EvalMode =
   | "jev"
   | "lexical-jev-pairwise"
   | "jev-pairwise"
-  // Pooled-judging arms (Jev-branch experiment): identical retrieval to the
-  // rerank/jev-pairwise arms, but rawRank bypasses RRF weights and boosts so
-  // final order is the model alone. A delta vs the blended arm measures what
-  // the hand-tuned ranking contributes — or costs.
-  | "rerank-pure"
+  // Pooled-judging arm: identical retrieval to jev-pairwise, but rawRank
+  // bypasses RRF weights and boosts so final order is the model alone.
   | "jev-pure"
-  // Voyage reranker bake-off: same hybrid pool, vendor cross-encoder.
+  // Voyage reranker bake-off: same hybrid pool, vendor listwise model.
   // Model comes from VOYAGE_RERANK_MODEL per cell (2.5 / lite / 3).
   | "rerank-voyage"
   // Judge arms vary only the decision judge, so decisionCitations is
   // attributable to it; retrieval and reranking are held fixed at lexical.
-  | "judge-neural"
+  // judge-heuristic (passthrough) is the extraction-only baseline: what the
+  // candidates alone are worth before any model judges them.
+  | "judge-heuristic"
   | "judge-jev"
   | "judge-jev-noul";
 
@@ -124,7 +121,7 @@ export type EvalMode =
  * A fully-specified comparison arm.
  *
  * `{semantic, rerank}` stopped being sufficient once there is more than one
- * reranker: a cross-encoder arm and a Jev arm have IDENTICAL SearchOptions and
+ * reranker: a voyage arm and a Jev arm have IDENTICAL SearchOptions and
  * differ only in which object `setReranker` holds.
  *
  * `reranker` is deliberately NOT optional. `SearchService.setReranker` mutates a
@@ -136,7 +133,7 @@ export type EvalMode =
 export interface EvalArm {
   name: string;
   search: Required<Pick<SearchOptions, "semantic" | "rerank">> & Pick<SearchOptions, "rawRank">;
-  reranker: () => Pick<CrossEncoderReranker, "rerank">;
+  reranker: () => Reranker;
   judge?: () => DecisionJudge;
 }
 
@@ -149,7 +146,7 @@ const JEV_ARMS: Record<string, { semantic: boolean; jevMode: "fanout" | "pairwis
 };
 
 const JUDGE_ARMS: Record<string, () => DecisionJudge> = {
-  "judge-neural": () => new NeuralEntailmentJudge(),
+  "judge-heuristic": () => new HeuristicJudge(),
   "judge-jev": () => new JevDecisionJudge(),
   // Noul only: isolates the decision-state Score's contribution.
   "judge-jev-noul": () => new JevDecisionJudge(undefined, false),
@@ -161,7 +158,7 @@ export function armFor(mode: EvalMode): EvalArm {
     return {
       name: mode,
       search: { semantic: false, rerank: false },
-      reranker: () => getSharedReranker(),
+      reranker: () => noopReranker,
       judge: judgeArm,
     };
   }
@@ -173,13 +170,6 @@ export function armFor(mode: EvalMode): EvalArm {
       reranker: () => new JevReranker(jev.jevMode),
     };
   }
-  if (mode === "rerank-pure") {
-    return {
-      name: mode,
-      search: { semantic: true, rerank: true, rawRank: true as const },
-      reranker: () => getSharedReranker(),
-    };
-  }
   if (mode === "rerank-voyage") {
     return {
       name: mode,
@@ -187,19 +177,16 @@ export function armFor(mode: EvalMode): EvalArm {
       reranker: () => new VoyageReranker(),
     };
   }
-  return { name: mode, search: modeOptions(mode), reranker: () => getSharedReranker() };
+  return { name: mode, search: modeOptions(mode), reranker: () => noopReranker };
 }
 
 /** Search options per eval mode. "rrf" is the pre-rename alias of "hybrid" (vectors + RRF fusion). */
 export function modeOptions(mode: EvalMode): Required<Pick<SearchOptions, "semantic" | "rerank">> {
   if (mode === "lexical") return { semantic: false, rerank: false };
-  // Lexical candidates + cross-encoder: precision without vector noise in the pool.
-  if (mode === "lexical-rerank") return { semantic: false, rerank: true };
-  if (mode === "rerank") return { semantic: true, rerank: true };
-  // Jev arms are described by armFor, not here; modeOptions keeps its original
-  // five-tuple contract, which tests/eval.test.ts asserts exactly.
+  // Jev/voyage arms are described by armFor, not here.
   const jev = JEV_ARMS[mode];
   if (jev) return { semantic: jev.semantic, rerank: true };
+  if (mode === "rerank-voyage") return { semantic: true, rerank: true };
   if (JUDGE_ARMS[mode]) return { semantic: false, rerank: false };
   return { semantic: true, rerank: false };
 }

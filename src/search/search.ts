@@ -18,7 +18,7 @@ import { normalizeQuery, type NormalizedQuery } from "./query.js";
 import { finalScore, rrfBaseScore } from "./rank.js";
 import { extractArtifacts } from "../adapters/text.js";
 import { rewriteConversationalQuery, type RewrittenQuery } from "./rewriter.js";
-import { getSharedReranker, CrossEncoderReranker } from "./rerank.js";
+import { noopReranker, type Reranker } from "./reranker.js";
 import type { TemporalStore, InvalidationRecord } from "../temporal/bi-temporal.js";
 import type { AclStore } from "../security/acl.js";
 
@@ -110,7 +110,7 @@ export class SearchService {
   private feedback: FeedbackStore | null = null;
   private temporal: TemporalStore | null = null;
   private acl: AclStore | null = null;
-  private reranker: Pick<CrossEncoderReranker, "rerank"> = getSharedReranker();
+  private reranker: Reranker = noopReranker;
   private sessionCache: { at: number; map: Map<string, Session> } | null = null;
 
   constructor(
@@ -164,7 +164,7 @@ export class SearchService {
   }
 
   /** Replace the cross-encoder (tests; alternative rerankers). */
-  setReranker(reranker: Pick<CrossEncoderReranker, "rerank">): void {
+  setReranker(reranker: Reranker): void {
     this.reranker = reranker;
   }
 

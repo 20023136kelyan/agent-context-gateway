@@ -11,8 +11,9 @@
  * Requires: opencode on PATH, authed, model opencode/muse-spark-1.3-contributor-free.
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
+import { readFileSync, appendFileSync, mkdirSync, mkdtempSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 
 const arg = (f, d) => {
   const i = process.argv.indexOf(f);
@@ -36,8 +37,6 @@ async function main() {
   const limit = Number(arg("--limit", "0")) || Infinity;
   mkdirSync(dirname(out), { recursive: true });
 
-  const { mkdtempSync } = await import("node:fs");
-  const { tmpdir } = await import("node:os");
   const root = mkdtempSync(join(tmpdir(), "acg-score-"));
   process.env.CONTEXT_GATEWAY_STATE = join(root, "state");
   let appOpts = { indexDir: join(root, "index") };
@@ -63,10 +62,17 @@ async function main() {
       const prompt = `Question: ${q.query}\n\nRetrieved evidence (5 passages with provenance):\n${evidence}\n\nGrade ONLY the evidence: 2 = fully answers, 1 = partially answers, 0 = does not answer. End your reply with exactly: SCORE: N`;
       let raw = "";
       try {
+        // Isolated XDG home: every `opencode run` appends a session to its
+        // store, and those sessions quote the golden queries verbatim — which
+        // once polluted every subsequent fixture eval (judge Hit@1 0.952 zone
+        // -> 0.381 with zero code change). Scoring must not write scorable
+        // histories anywhere near an eval corpus.
+        const xdg = mkdtempSync(join(tmpdir(), "acg-score-xdg-"));
         raw = execFileSync("opencode", ["run", "--model", MODEL, prompt], {
           encoding: "utf8",
           timeout: 300000,
           maxBuffer: 64 * 1024,
+          env: { ...process.env, XDG_DATA_HOME: xdg },
         });
       } catch (e) {
         raw = `ERROR ${String(e.message ?? e).slice(0, 200)} SCORE: -1`;

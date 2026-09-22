@@ -1,45 +1,19 @@
 /**
  * Decision cue taxonomy (heuristic recall layer).
  * Tiers exist so confidence is honest: strong cues conclude, weak cues suggest.
+ *
+ * Word lists live in ./locales (per language/domain pack); this file is the
+ * locale-blind machinery. The exported names below resolve against the active
+ * pack (GATEWAY_LOCALE, default en) so existing importers keep working.
  */
-export const CONCLUSION_STRONG = [
-  "we decided",
-  "decided to",
-  "decision:",
-  "decision is",
-  "agreed to",
-  "agreement:",
-  "going with",
-  "we'll use",
-  "we will use",
-  "let's go with",
-  "lets go with",
-  "final call",
-  "final decision",
-  "chosen",
-  "selected",
-  "settled on",
-  "locked in",
-];
+import { localePack } from "./locales/en.js";
 
-export const CONCLUSION_WEAK = ["should", "probably", "lean toward", "leaning toward", "prefer", "recommend", "suggest we"];
+const pack = localePack();
 
-export const RATIONALE_CUES = [
-  "because",
-  "since",
-  "reason is",
-  "reason:",
-  "rationale",
-  "tradeoff",
-  "trade-off",
-  "given that",
-  "in order to",
-  "so that",
-  "avoids",
-  "benefit",
-];
-
-export const ALTERNATIVE_CUES = ["instead of", "rather than", "alternative", "considered", "option", "versus", " vs ", "vs.", "on the other hand"];
+export const CONCLUSION_STRONG = pack.conclusionStrong;
+export const CONCLUSION_WEAK = pack.conclusionWeak;
+export const RATIONALE_CUES = pack.rationaleCues;
+export const ALTERNATIVE_CUES = pack.alternativeCues;
 
 const cueRegexes = new Map<string, RegExp | null>();
 
@@ -109,8 +83,8 @@ export function isHeading(sentence: string): boolean {
  * plan"). When immediately preceded by a determiner, the cue is attributive,
  * not a verdict — reject the sentence as an anchor.
  */
-const VERB_CUES = ["selected", "chosen", "preferred", "agreed"];
-const DETERMINER_TAIL = /(?:the|a|an|this|that|these|those|its|their|his|her|my|your)\s+$/;
+const VERB_CUES = pack.verbCues;
+const DETERMINER_TAIL = new RegExp(pack.determinerTail);
 
 const VERB_CUE_REGEXES = new Map(VERB_CUES.map((c) => [c, new RegExp(`\\b${c}\\b`)]));
 
@@ -131,9 +105,11 @@ export function isAttributiveUse(sentence: string, cues: string[]): boolean {
  * terse colon form ("Decision: use Postgres"). Rejects adjective uses
  * ("the selected session") while keeping real verdicts.
  */
+const SPEAKER_RE = new RegExp(pack.speakerPattern, "i");
+
 export function hasSpeaker(sentence: string): boolean {
   if (/:/.test(sentence)) return true;
-  return /\b(we|i|team|let's|lets|our|we've|we have|i've|i have)\b/i.test(sentence);
+  return SPEAKER_RE.test(sentence);
 }
 
 /** Some sentence ends with "?" — not merely any "?" (optional chaining, URLs, regexes). */
@@ -141,7 +117,9 @@ export function isQuestion(text: string): boolean {
   return splitSentences(text).some((s) => s.endsWith("?"));
 }
 
+const WHY_RE = new RegExp(pack.whyPattern, "i");
+
 /** "why"-style queries route to the decision path (no understanding needed). */
 export function isWhyQuery(query: string): boolean {
-  return /\b(why|reason|decide|decided|decision|choose|chose|choice|reject|prefer)\b/i.test(query);
+  return WHY_RE.test(query);
 }

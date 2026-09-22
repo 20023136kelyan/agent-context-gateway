@@ -222,7 +222,7 @@ describe("SearchService", () => {
       const plain = await svc.search("quokka", { maxResults: 24 });
       expect(plain.results.length).toBeGreaterThan(15);
       const head = new Set(plain.results.slice(0, 15).map((r) => r.provenance.turnId));
-      // A cross-encoder that rates every candidate weak: combined scores fall below the raw tail.
+      // A model that rates every candidate weak: combined scores fall below the raw tail.
       svc.setReranker({
         rerank: async (_q, cands) => cands.map((c) => ({ id: c.id, originalScore: c.score, rerankScore: 0, combinedScore: 0.4 * c.score })),
       });

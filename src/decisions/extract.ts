@@ -10,10 +10,12 @@
  * stays as the cheap recall stage either way.
  */
 import type { Turn } from "../core/models.js";
-import type { CrossEncoderReranker } from "../search/rerank.js";
 import { CONCLUSION_STRONG, CONCLUSION_WEAK, RATIONALE_CUES, ALTERNATIVE_CUES, sentenceHits, isQuestion, isHeading, hasSpeaker, isAttributiveUse } from "./cues.js";
 
 export type DecisionMethod = "heuristic" | "neural-judge" | "apple-fm" | "jev";
+// "neural-judge" and "apple-fm" are retired methods: their judges were deleted
+// with the local cross-encoder. The labels stay in the union so historical
+// verdicts stored anywhere still typecheck; no code produces them anymore.
 
 export interface DecisionCandidate {
   /** Center turn index within the provided window. */
@@ -42,7 +44,7 @@ export interface ExtractedDecision {
   sessionId: string;
 }
 
-/** Precision stage interface (Neural cross-encoder / Apple FM). Heuristic passes through. */
+/** Precision stage interface (Jev judges; heuristic passes through). */
 export interface DecisionJudge {
   readonly method: DecisionMethod;
   judge(candidates: ExtractedDecision[], query?: string): Promise<ExtractedDecision[]>;
@@ -52,65 +54,6 @@ export class HeuristicJudge implements DecisionJudge {
   readonly method: DecisionMethod = "heuristic";
   async judge(candidates: ExtractedDecision[], _query?: string): Promise<ExtractedDecision[]> {
     return candidates; // no-op: heuristic verdicts stand as-is
-  }
-}
-
-export class NeuralEntailmentJudge implements DecisionJudge {
-  readonly method: DecisionMethod = "neural-judge";
-
-  /** Defaults to the shared cross-encoder, loaded lazily (keeps ONNX off the import path). */
-  constructor(private reranker?: Pick<CrossEncoderReranker, "rerank">) {}
-
-  async judge(candidates: ExtractedDecision[], query?: string): Promise<ExtractedDecision[]> {
-    if (!query || candidates.length === 0) return candidates;
-    try {
-      const reranker = this.reranker ?? (await import("../search/rerank.js")).getSharedReranker();
-      const texts = candidates.map((c) => ({
-        id: c.conclusion.id,
-        content: `${c.conclusion.content}\nRationale: ${c.rationale.map((r) => r.content).join(" ")}`,
-        score: c.confidence,
-      }));
-      const reranked = await reranker.rerank(query, texts, candidates.length);
-      // Model didn't run (offline, load failure): heuristic verdicts stand, labelled as heuristic.
-      if (!reranked.some((r) => r.neural)) return candidates;
-      const scoreMap = new Map(reranked.map((r) => [r.id, r.rerankScore]));
-
-      const judged = candidates.map((c) => {
-        const neuralProb = scoreMap.get(c.conclusion.id);
-        if (neuralProb !== undefined) {
-          // Blended confidence: 0.65 neural entailment + 0.35 heuristic shape confidence
-          const conf = Number((0.65 * neuralProb + 0.35 * c.confidence).toFixed(3));
-          return { ...c, method: "neural-judge" as const, confidence: conf };
-        }
-        return c;
-      });
-
-      judged.sort((a, b) => b.confidence - a.confidence);
-      return judged;
-    } catch {
-      return candidates;
-    }
-  }
-}
-
-/**
- * Apple Foundation Models (Apple Intelligence) Decision Judge.
- * Targets native on-device generative entailment on macOS 15+.
- * Delegates to NeuralEntailmentJudge when Apple FM bridge is in standby.
- */
-export class AppleFMJudge implements DecisionJudge {
-  readonly method: DecisionMethod = "apple-fm";
-  private fallback = new NeuralEntailmentJudge();
-
-  async judge(candidates: ExtractedDecision[], query?: string): Promise<ExtractedDecision[]> {
-    if (!query || candidates.length === 0) return candidates;
-    const fmEnabled = process.env.APPLE_FM_ENABLED === "1";
-    if (fmEnabled) {
-      const judged = await this.fallback.judge(candidates, query);
-      // Relabel only verdicts a model actually judged.
-      return judged.map((j) => (j.method === "neural-judge" ? { ...j, method: "apple-fm" as const } : j));
-    }
-    return this.fallback.judge(candidates, query);
   }
 }
 

@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { JevReranker } from "../src/judgments/rerank-jev.js";
-import { RERANK_CONTENT_CHARS, RERANK_MODEL_WEIGHT } from "../src/search/rerank.js";
+import { RERANK_CONTENT_CHARS, RERANK_MODEL_WEIGHT } from "../src/search/reranker.js";
 import type { JevClient } from "../src/judgments/jev.js";
 
 const candidates = [
@@ -43,7 +43,7 @@ describe("JevReranker", () => {
     expect(out.every((x) => x.neural)).toBe(true);
   });
 
-  it("blends with the same weight as the cross-encoder", async () => {
+  it("blends with the shared model weight", async () => {
     const r = new JevReranker("fanout", fakeClient([0.5, 0, 0]));
     const out = await r.rerank("q", [candidates[0]]);
     const expected = RERANK_MODEL_WEIGHT * 0.5 + (1 - RERANK_MODEL_WEIGHT) * 0.4;
@@ -104,8 +104,8 @@ describe("JevReranker", () => {
     expect(out[0].id).toBe("a");
   });
 
-  it("is substitutable for the cross-encoder at the SearchService seam", async () => {
-    // setReranker accepts Pick<CrossEncoderReranker, "rerank">; this is the
+  it("is substitutable at the SearchService seam", async () => {
+    // setReranker accepts the shared Reranker interface; this is the
     // structural check that JevReranker satisfies it.
     const { SearchService } = await import("../src/search/search.js");
     const r = new JevReranker("fanout", fakeClient([1, 0, 0]));

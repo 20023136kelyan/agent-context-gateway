@@ -5,13 +5,21 @@
     {
       "name": "baseline-defaults",
       "corpus": "fixture",
-      "arms": ["lexical", "hybrid", "rerank"],
+      "arms": [
+        "lexical",
+        "hybrid",
+        "rerank-voyage"
+      ],
       "env": {}
     },
     {
       "name": "trajectories-baseline",
       "corpus": "trajectories",
-      "arms": ["lexical", "hybrid", "rerank"],
+      "arms": [
+        "lexical",
+        "hybrid",
+        "rerank-voyage"
+      ],
       "env": {}
     }
   ]

@@ -35,7 +35,6 @@
  * leaves the machine — via GATEWAY_RERANKER=cross-encoder plus an explicit
  * `rerank` on the request.
  */
-import { getSharedReranker, type CrossEncoderReranker } from "./rerank.js";
 import { JevReranker } from "../judgments/rerank-jev.js";
 import { VoyageReranker } from "./rerank-voyage.js";
 import { jevAvailable } from "../judgments/jev.js";
@@ -44,7 +43,35 @@ import { voyageAvailable } from "../embeddings/voyage.js";
 import type { RerankerName } from "../components.js";
 export type { RerankerName } from "../components.js";
 
-export type Reranker = Pick<CrossEncoderReranker, "rerank">;
+/**
+ * Shared reranker contract (moved here when the ONNX cross-encoder was
+ * deleted; the interface outlives any one model).
+ */
+export const RERANK_CONTENT_CHARS = 1000;
+
+/** Blend of model score and upstream retrieval score. */
+export const RERANK_MODEL_WEIGHT = 0.6;
+
+export interface RerankCandidate {
+  id: string;
+  content: string;
+  score: number;
+}
+
+export interface RerankResult {
+  id: string;
+  originalScore: number;
+  rerankScore: number;
+  combinedScore: number;
+  /** false when the model couldn't run and scores are the originals passed through. */
+  neural: boolean;
+}
+
+export interface RerankerLike {
+  rerank(query: string, candidates: RerankCandidate[], topK?: number): Promise<RerankResult[]>;
+}
+
+export type Reranker = Pick<RerankerLike, "rerank">;
 
 /** Returns candidates untouched, flagged so callers can tell nothing happened. */
 export const noopReranker: Reranker = {
@@ -68,7 +95,6 @@ export function rerankerAvailable(name: RerankerName): boolean {
 export function makeReranker(name: RerankerName): Reranker {
   if (name === "jev") return new JevReranker();
   if (name === "voyage") return new VoyageReranker();
-  if (name === "cross-encoder") return getSharedReranker();
   return noopReranker;
 }
 
@@ -98,7 +124,7 @@ export function rerankDefaultOn(name: RerankerName): boolean {
 
 export function resolveRerankerName(): RerankerName {
   const pinned = process.env.GATEWAY_RERANKER as RerankerName | undefined;
-  if (pinned === "jev" || pinned === "voyage" || pinned === "cross-encoder" || pinned === "none") return pinned;
+  if (pinned === "jev" || pinned === "voyage" || pinned === "none") return pinned;
   return ORDER.find((n) => rerankerAvailable(n)) ?? "none";
 }
 

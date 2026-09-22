@@ -30,6 +30,11 @@ function loadDatabaseSync(): DatabaseSyncType {
 
 function defaultDbPath(): string {
   if (process.env.GATEWAY_OPENCODE_DB) return process.env.GATEWAY_OPENCODE_DB;
+  // Tests must never read the developer's real session store: an opencode.db
+  // on the test machine would leak live sessions (which quote whatever the
+  // developer last ran, including golden queries) into every assertion about
+  // counts and rankings. Point at nothing; explicit paths still work.
+  if (process.env.VITEST) return join("no-such-dir", "no-opencode.db");
   const dataHome = process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share");
   return join(dataHome, "opencode", "opencode.db");
 }

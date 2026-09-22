@@ -15,7 +15,7 @@ import {
   RERANK_MODEL_WEIGHT,
   type RerankCandidate,
   type RerankResult,
-} from "./rerank.js";
+} from "./reranker.js";
 
 const ENDPOINT = process.env.VOYAGE_ENDPOINT ?? "https://api.voyageai.com/v1/embeddings";
 const RERANK_ENDPOINT = ENDPOINT.replace(/\/embeddings\/?$/, "") + "/rerank";

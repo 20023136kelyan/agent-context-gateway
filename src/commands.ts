@@ -539,7 +539,7 @@ export async function health(app: GatewayApp) {
     reranking: {
       reranker: app.reranker,
       local: app.reranker !== "jev",
-      /** Reranker-aware: on for Jev, off for the cross-encoder. An explicit
+      /** Reranker-aware: on for Jev, off otherwise. An explicit
        *  `rerank` on the request overrides either way. */
       defaultOn: rerankDefaultOn(app.reranker),
     },

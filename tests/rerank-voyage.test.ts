@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { VoyageReranker, voyageRerankMeter } from "../src/search/rerank-voyage.js";
-import { RERANK_CONTENT_CHARS, RERANK_MODEL_WEIGHT } from "../src/search/rerank.js";
+import { RERANK_CONTENT_CHARS, RERANK_MODEL_WEIGHT } from "../src/search/reranker.js";
 
 const candidates = [
   { id: "a", content: "Bundle size was 2.3MB so we rejected Monaco and chose CodeMirror.", score: 0.4 },

@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { extractDecisions, AppleFMJudge, NeuralEntailmentJudge } from "../src/decisions/extract.js";
+import { extractDecisions, HeuristicJudge } from "../src/decisions/extract.js";
 import { isWhyQuery } from "../src/decisions/cues.js";
 import { normalizeQuery } from "../src/search/query.js";
 import { createApp, closeApp, type GatewayApp } from "../src/app.js";
@@ -96,13 +96,9 @@ describe("extractDecisions", () => {
     expect(d?.conclusion.seq).toBe(0);
   });
 
-  it("the neural judge keeps the heuristic label when its model didn't run", async () => {
-    const fallback = {
-      rerank: async (_q: string, cands: { id: string; content: string; score: number }[]) =>
-        cands.map((c) => ({ id: c.id, originalScore: c.score, rerankScore: c.score, combinedScore: c.score, neural: false })),
-    };
+  it("the heuristic judge passes candidates through labelled as heuristic", async () => {
     const cands = extractDecisions("s", [t(0, "user", "Why replace Kafka?"), t(1, "assistant", "We decided to replace Kafka because it is too heavy")], ["replace", "kafka"]);
-    const judged = await new NeuralEntailmentJudge(fallback).judge(cands, "Why replace Kafka?");
+    const judged = await new HeuristicJudge().judge(cands, "Why replace Kafka?");
     expect(judged[0].method).toBe("heuristic");
     expect(judged[0].confidence).toBe(cands[0].confidence);
   });
@@ -155,34 +151,20 @@ describe("decideOnce", () => {
   it("returns the decision with rationale, alternatives and provenance", async () => {
     // The judge is pinned, not inherited. `decideOnce` resolves one from the
     // ambient environment, so with TYPESAFE_API_KEY exported this asserted
-    // "neural-judge" against a verdict produced by Jev — a developer with a key
+    // a vendor method against a heuristic verdict — a developer with a key
     // got a failing suite, and the test reached a third-party API to do it.
     const res = await decideOnce(app, "Why did we adopt the new queue design?", {
-      judge: new NeuralEntailmentJudge(),
+      judge: new HeuristicJudge(),
     });
     expect(res.whyRouted).toBe(true);
     expect(res.decisions.length).toBeGreaterThanOrEqual(1);
     const top = res.decisions[0];
-    expect(top.method).toBe("neural-judge");
+    expect(top.method).toBe("heuristic");
     expect(top.confidence).toBeGreaterThanOrEqual(0.6);
     expect(top.session.sessionId).toBe("dddddddd-1111-1111-1111-111111111111");
     expect(top.conclusion.content).toMatch(/decided/);
     expect(top.rationale.map((r) => r.content).join(" ")).toMatch(/persistence/);
     expect(top.alternatives.map((a) => a.content).join(" ")).toMatch(/patching/);
     closeApp(app);
-  });
-
-  it("AppleFMJudge evaluates and tags method apple-fm when enabled", async () => {
-    process.env.APPLE_FM_ENABLED = "1";
-    const fmJudge = new AppleFMJudge();
-    const candidateTurns = [
-      t(0, "user", "Why replace Kafka?"),
-      t(1, "assistant", "We decided to replace Kafka because it is too heavy"),
-    ];
-    const candidateDecisions = extractDecisions("s", candidateTurns, ["replace", "kafka"]);
-    const judged = await fmJudge.judge(candidateDecisions, "Why replace Kafka?");
-    expect(judged.length).toBeGreaterThanOrEqual(1);
-    expect(judged[0].method).toBe("apple-fm");
-    delete process.env.APPLE_FM_ENABLED;
   });
 });

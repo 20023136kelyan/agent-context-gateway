@@ -65,12 +65,12 @@ describe("resolveSettings", () => {
     const dir = mkdtempSync(join(tmpdir(), "acg-settings-"));
     writeFileSync(
       join(dir, "settings.json"),
-      JSON.stringify({ version: 1, backend: "sqlite", reranker: "cross-encoder", embedEngine: "ollama" }),
+      JSON.stringify({ version: 1, backend: "sqlite", reranker: "voyage", embedEngine: "voyage-code" }),
     );
     const s = resolveSettings({ stateDir: dir });
     expect(s.backend).toBe("sqlite");
-    expect(s.reranker).toBe("cross-encoder");
-    expect(s.embedEngine).toBe("ollama");
+    expect(s.reranker).toBe("voyage");
+    expect(s.embedEngine).toBe("voyage-code");
     expect(s.indexDir).toBe(join(dir, "index-sqlite")); // backend steers the default index dir
   });
 

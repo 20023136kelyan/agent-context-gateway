@@ -179,7 +179,7 @@ export function dumpConfig(): Record<string, unknown> {
   })();
   // Mirrors src/decisions/select.ts: a pin never falls back; null = auto.
   const judgeRaw = process.env.GATEWAY_JUDGE;
-  const judge = judgeRaw === "jev" || judgeRaw === "neural-judge" ? judgeRaw : null;
+  const judge = judgeRaw === "jev" || judgeRaw === "heuristic" ? judgeRaw : null;
   return {
     stateDir: s.stateDir,
     indexDir: s.indexDir,

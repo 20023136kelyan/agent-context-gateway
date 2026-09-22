@@ -1,7 +1,7 @@
 /**
- * Jev reranker — a drop-in for the ONNX cross-encoder.
+ * Jev reranker — pairwise typed judgments over the candidate pool.
  *
- * Satisfies `Pick<CrossEncoderReranker, "rerank">`, which is what
+ * Satisfies the shared `Reranker` interface, which is what
  * `SearchService.setReranker` accepts, so it substitutes at that boundary with
  * no change to SearchService.
  *
@@ -30,7 +30,7 @@ import {
   RERANK_MODEL_WEIGHT,
   type RerankCandidate,
   type RerankResult,
-} from "../search/rerank.js";
+} from "../search/reranker.js";
 import { httpJevClient, type JevClient, type NoulQuestion } from "./jev.js";
 
 export type JevScoringMode = "fanout" | "pairwise";

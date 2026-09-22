@@ -117,7 +117,7 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
           semantic: q.semantic === "false" ? false : undefined,
           // Absent = let the registry decide, which is reranker-aware: ON for
           // Jev (0.445 -> 0.489 NDCG@5 on BEIR nfcorpus at 620ms), OFF for the
-          // cross-encoder (0.433 at 6984ms — below plain hybrid). An explicit
+          // deleted local cross-encoder (0.433 at 6984ms — below plain hybrid). An explicit
           // ?rerank=true/false always wins; GATEWAY_RERANKER=none kills it.
           rerank:
             q.rerank === undefined
