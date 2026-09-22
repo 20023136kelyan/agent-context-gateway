@@ -47,8 +47,8 @@ export interface RerankerDef {
 }
 
 export const RERANKER_DEFS = [
-  { name: "jev", remote: true, keyEnv: "TYPESAFE_API_KEY", pricePerM: 0.042, mode: "pairwise", locked: false, notes: "best on traces; judge duty too" },
-  { name: "voyage", remote: true, keyEnv: "VOYAGE_API_KEY", pricePerM: 0.05, mode: "listwise", locked: true, notes: "rerank-2.5; 1 req/pool; lite/3 via VOYAGE_RERANK_MODEL" },
+  { name: "jev", remote: true, keyEnv: "TYPESAFE_API_KEY", pricePerM: 0.042, mode: "pairwise", locked: true, notes: "only reranker measured above hybrid (BEIR 0.445 -> 0.489); judge duty too" },
+  { name: "voyage", remote: true, keyEnv: "VOYAGE_API_KEY", pricePerM: 0.05, mode: "listwise", locked: false, notes: "rerank-2.5; 1 req/pool; pin-only until a bake-off against jev; lite/3 via VOYAGE_RERANK_MODEL" },
   { name: "none", remote: false, pricePerM: null, mode: "local", locked: false, notes: "passthrough" },
 ] as const;
 
@@ -75,7 +75,7 @@ export type JudgeName = (typeof JUDGE_DEFS)[number]["name"];
 export function lockedStack(): { engine: string; reranker: string; judge: string } {
   return {
     engine: ENGINE_DEFS.find((e) => e.locked)?.name ?? "voyage",
-    reranker: RERANKER_DEFS.find((r) => r.locked)?.name ?? "voyage",
+    reranker: RERANKER_DEFS.find((r) => r.locked)?.name ?? "jev",
     judge: JUDGE_DEFS.find((j) => j.locked)?.name ?? "jev",
   };
 }

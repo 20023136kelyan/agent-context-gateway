@@ -30,10 +30,10 @@
  * hybrid while costing seconds, and shrinking the pool recovered none of the
  * quality. That result is why it was deleted rather than kept as a fallback.
  *
- * Note that `components.ts` marks voyage, not jev, as the locked reranker, while
- * resolution still tries jev first. With both keys set, `gateway models` shows a
- * resolved reranker that differs from the locked one; pin GATEWAY_RERANKER to
- * run exactly the locked stack.
+ * Jev is the locked reranker (`components.ts`) and leads the resolution order,
+ * so the locked and resolved rerankers agree whenever TYPESAFE_API_KEY is set.
+ * Voyage is pin-only until a bake-off against Jev on real agent history says
+ * otherwise.
  */
 import { JevReranker } from "../judgments/rerank-jev.js";
 import { VoyageReranker } from "./rerank-voyage.js";

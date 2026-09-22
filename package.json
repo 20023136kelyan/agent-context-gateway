@@ -44,7 +44,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "overrides": {
     "sharp": "^0.35.4",
     "onnxruntime-web": "^1.23.2"

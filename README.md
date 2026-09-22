@@ -58,13 +58,14 @@ Types, resolution order, settings allow-lists and sweep cost basis all derive fr
 | Role | Locked | Also available (pin only) | Opt-in key |
 |---|---|---|---|
 | Embeddings | `voyage` (voyage-4, 1024-dim) | `voyage-code`, `voyage-context` | `VOYAGE_API_KEY` |
-| Reranker | `voyage` (rerank-2.5) | `jev` (pairwise), `none` | `VOYAGE_API_KEY` / `TYPESAFE_API_KEY` |
+| Reranker | `jev` (pairwise) | `voyage` (rerank-2.5), `none` | `TYPESAFE_API_KEY` / `VOYAGE_API_KEY` |
 | Decision judge | `jev` | `heuristic` | `TYPESAFE_API_KEY` |
 
 "Locked" is the measured production stack. Unpinned resolution is
-first-available-wins: rerankers are tried `jev` then `voyage`, so **with both keys
-set, Jev reranks** even though Voyage is the locked reranker. `gateway models`
-prints both. Pin with `GATEWAY_EMBED_ENGINE`, `GATEWAY_RERANKER` and
+first-available-wins: rerankers are tried `jev` then `voyage`, so a user with only
+`VOYAGE_API_KEY` gets Voyage reranking (off by default, opt in per request).
+Voyage stays pin-only until a bake-off against Jev. `gateway models` prints the
+locked and resolved stack. Pin with `GATEWAY_EMBED_ENGINE`, `GATEWAY_RERANKER` and
 `GATEWAY_JUDGE`. A pin never falls back, so a deployment cannot silently switch
 vendors mid-corpus.
 
@@ -360,7 +361,6 @@ tests/              37 suites (235 tests) + 3 Swift XCTest tests
 
 - Single user. Loopback by default; serving the network is opt-in and requires `GATEWAY_TOKEN`.
 - No local models. Without `VOYAGE_API_KEY` search is lexical-only; without `TYPESAFE_API_KEY` there is no Jev reranking and `decide` returns heuristic candidates.
-- Voyage is the locked reranker, but unpinned resolution picks Jev first when both keys are present (see [The model stack](#the-model-stack)).
 - Summaries are extractive (first lines), never LLM-generated.
 - Changing adapter ID schemes or normalization requires `sync --rebuild` (incremental sync keys on file mtime/size and can't see ID changes).
 - One `TantivyIndex` writer per index dir per process — the CLI delegates writes to a live `serve`; readers are unaffected.
@@ -371,3 +371,7 @@ tests/              37 suites (235 tests) + 3 Swift XCTest tests
 - Almost every tuned constant was measured on the synthetic fixture corpus; BEIR checks the retrieval side, but the embedding chunk size has not been re-tuned since the switch from BGE-small to Voyage.
 - Parsed turns are cached per adapter (256 sessions / 200M chars, ~222 MB for the measured corpus).
 - Zep sessions served by the REST API are re-indexed at most every 5 minutes (the API exposes no change stamp).
+
+## License
+
+Apache License 2.0; see [`LICENSE`](./LICENSE).
