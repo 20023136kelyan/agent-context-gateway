@@ -29,6 +29,12 @@ export interface GoldenQuery {
   harness?: Harness;
   description: string;
   relevantSessionIds: string[];
+  /**
+   * Per-query corpus cutoff, overriding the run's `--as-of`. Real-history
+   * pairs need it: each query was asked at a different moment, and it may
+   * only find what existed then — never its own session or later ones.
+   */
+  asOf?: string;
 }
 
 export interface QueryEvalResult {
@@ -239,7 +245,7 @@ export async function runEval(
     const res = await searchOnce(app, q.query, {
       harness: q.harness,
       maxResults: 5,
-      asOf,
+      asOf: q.asOf ?? asOf,
       ...modeOpts,
     });
     const latencyMs = Date.now() - t0;
@@ -290,7 +296,7 @@ export async function runEval(
     let citedJudged = 0;
     for (const wq of whyQueries) {
       try {
-        const dec = await decideOnce(app, wq.query, { harness: wq.harness, semantic: modeOpts.semantic, asOf, judge });
+        const dec = await decideOnce(app, wq.query, { harness: wq.harness, semantic: modeOpts.semantic, asOf: wq.asOf ?? asOf, judge });
         if (judge) {
           citedTotal += dec.decisions.length;
           citedJudged += dec.decisions.filter((d) => d.method === judge.method).length;

@@ -6,7 +6,14 @@
  *                               [--as-of 2026-09-14T00:00:00Z]
  *                               [--golden tests/eval/golden-fixture.json]
  *                               [--index-dir /path/to/frozen-index]
+ *                               [--fixture | --beir <dir> | --real <root>]
  *   (rrf = alias of hybrid)
+ *
+ * --real <root> measures real agent history mined by scripts/mine-pairs.ts:
+ * adapters read <root>/claude and <root>/codex, the index and every derived
+ * store live under <root>, and the golden set defaults to
+ * <root>/golden-pairs.json. Keep <root> outside the repo — it is someone's
+ * history.
  *
  * --mode accepts a comma-separated list and runs every arm inside ONE process,
  * against one app and one index. That matters: BM25 IDF and average document
@@ -20,7 +27,7 @@
  * The run fails if docCount changes between the first and last arm, which turns
  * that drift from an invisible confound into an error.
  */
-import { writeFileSync, mkdtempSync } from "node:fs";
+import { writeFileSync, mkdtempSync, mkdirSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import { createApp, closeApp, initVectors } from "../src/app.js";
@@ -92,10 +99,42 @@ async function main() {
   const beirDocCap = argValue(args, "--beir-docs");
   const beirSplit = argValue(args, "--beir-split");
   const beirDomain = argValue(args, "--beir-domain") as "code" | "prose" | "paraphrase" | undefined;
-  if (beirDir && useFixture) throw new Error("--beir and --fixture are different corpora; pass one");
+  // --real <root>: mined real-history pairs (scripts/mine-pairs.ts).
+  const realRoot = argValue(args, "--real");
+  if ([beirDir, useFixture, realRoot].filter(Boolean).length > 1) {
+    throw new Error("--fixture, --beir and --real are different corpora; pass one");
+  }
   let beirQueries: GoldenQuery[] | undefined;
 
   let appOpts: Parameters<typeof createApp>[0] = indexDir ? { indexDir } : {};
+  // Every corpus mode dead-ends the harnesses it does not use. Without this the
+  // defaults read this machine's live Cursor, Zep, OpenCode and trajectory
+  // stores into the measured corpus — the contamination sweep-cell.ts guards
+  // against (a live opencode.db once echoed golden queries back as "truth").
+  const isolate = (root: string) => {
+    const deadEnd = (name: string) => {
+      const d = join(root, name);
+      mkdirSync(d, { recursive: true });
+      return d;
+    };
+    return {
+      cursorDb: deadEnd("empty-cursor"),
+      zepDir: deadEnd("empty-zep"),
+      opencodeDb: deadEnd("empty-opencode"),
+      trajectoryDir: deadEnd("empty-trajectories"),
+      gitRepos: [] as string[],
+    };
+  };
+  if (realRoot) {
+    appOpts = {
+      ...isolate(realRoot),
+      claudeDir: join(realRoot, "claude"),
+      codexDir: join(realRoot, "codex"),
+      indexDir: indexDir ?? join(realRoot, "index"),
+    };
+    process.env.CONTEXT_GATEWAY_STATE = join(realRoot, "state");
+    console.log(`Real-history corpus at ${realRoot}`);
+  }
   if (beirDir) {
     const { buildBeirCorpus } = await import("../src/eval/beir.js");
     // --beir-root keeps the corpus, index and vectors across runs. Without it a
@@ -112,6 +151,7 @@ async function main() {
     beirQueries = built.queries;
     appOpts = {
       ...appOpts,
+      ...isolate(root),
       claudeDir: built.claudeDir,
       codexDir: join(root, "codex-empty"),
       indexDir: indexDir ?? join(root, "index"),
@@ -134,7 +174,7 @@ async function main() {
     const { buildFixtureCorpus } = await import("../tests/fixtures/corpus.js");
     const root = mkdtempSync(join(tmpdir(), "acg-eval-fixture-"));
     const { claudeDir, codexDir } = await buildFixtureCorpus(root);
-    appOpts = { ...appOpts, claudeDir, codexDir, indexDir: indexDir ?? join(root, "index") };
+    appOpts = { ...appOpts, ...isolate(root), claudeDir, codexDir, indexDir: indexDir ?? join(root, "index") };
     process.env.CONTEXT_GATEWAY_STATE = join(root, "state");
     console.log(`Fixture corpus built at ${root}`);
   }
@@ -174,7 +214,14 @@ async function main() {
 
   const queries =
     beirQueries ??
-    loadGoldenQueries(goldenPath ?? (useFixture ? join(process.cwd(), "tests", "eval", "golden-fixture.json") : undefined));
+    loadGoldenQueries(
+      goldenPath ??
+        (useFixture
+          ? join(process.cwd(), "tests", "eval", "golden-fixture.json")
+          : realRoot
+            ? join(realRoot, "golden-pairs.json")
+            : undefined),
+    );
   console.log(
     `Loaded ${queries.length} golden queries${goldenPath ? ` from ${goldenPath}` : ""}. ` +
       `Arms: ${modes.join(", ")}${asOf ? ` as of ${asOf}` : ""}...`,
