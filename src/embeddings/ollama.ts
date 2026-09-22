@@ -1,5 +1,8 @@
 /**
- * Ollama embedding client (Phase 2 semantic slice).
+ * Ollama embedding client (Phase 2 semantic slice). DEPRECATED PATH — the
+ * locked stack is voyage-4 + Jev; this file is unmaintained fallback only and
+ * takes no part in sweeps. Kept compiling so the provider registry and its
+ * tests keep working.
  * Model: qwen3-embedding:0.6b (1024-dim, local, Apple Silicon GPU).
  * Chosen over NLEmbedding (spike 2026-09-15: wrong similarity ordering)
  * and nomic-embed-text (registry blob unreachable from here, EOF).

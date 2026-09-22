@@ -51,13 +51,15 @@ export class JevDecisionJudge implements DecisionJudge {
     if (!query || candidates.length === 0) return candidates;
     try {
       // Pairwise, for the reason the reranker measured: splitting one context
-      // across many candidates cost each judgment its focused attention.
+      // across many candidates cost each judgment its focused attention. One
+      // mixed request per candidate (Noul + Score together, as TypeSafe
+      // prescribes) instead of two: same judgments, half the requests.
       const judged = await Promise.all(
         candidates.map(async (c) => {
           const passage = `${c.conclusion.content}\nRationale: ${c.rationale.map((r) => r.content).join(" ")}`;
           const state = { query, passage };
 
-          const noulP = this.client.noul(state, {
+          const res = await this.client.evaluate(state, {
             answers_query: {
               instructions: "Does `passage` state the decision or reason that answers `query`?",
               criteria: {
@@ -65,19 +67,17 @@ export class JevDecisionJudge implements DecisionJudge {
                 false: "The passage is on the topic but leaves it open, or discusses it without resolving it.",
               },
             },
+            ...(this.useState
+              ? {
+                  decision_state: {
+                    instructions: "How settled is the decision described in `passage`?",
+                    levels: [...STATE_LEVELS],
+                  },
+                }
+              : {}),
           });
-          const scoreP = this.useState
-            ? this.client.score(state, {
-                decision_state: {
-                  instructions: "How settled is the decision described in `passage`?",
-                  levels: [...STATE_LEVELS],
-                },
-              })
-            : Promise.resolve({ answers: {} as Record<string, number> });
-
-          const [noulRes, scoreRes] = await Promise.all([noulP, scoreP]);
-          const answers = noulRes.answers.answers_query;
-          const level = scoreRes.answers.decision_state;
+          const answers = res.nouls.answers_query;
+          const level = res.scores.decision_state;
           return { c, noul: typeof answers === "number" ? answers : undefined, level };
         }),
       );

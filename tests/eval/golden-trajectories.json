@@ -1,0 +1,56 @@
+[
+  {
+    "id": "traj-1",
+    "domain": "code",
+    "query": "player crashes when the playlist is empty and play is pressed with no tracks queued",
+    "description": "verbatim issue text from the solved tidepool-101 trajectory",
+    "relevantSessionIds": [
+      "tidepool-101"
+    ]
+  },
+  {
+    "id": "traj-2",
+    "domain": "code",
+    "query": "search index misses newly added notes until the app restarts",
+    "description": "verbatim issue text from the multi-step scribe-312 trajectory",
+    "relevantSessionIds": [
+      "scribe-312"
+    ]
+  },
+  {
+    "id": "traj-3",
+    "domain": "code",
+    "query": "tapping play on a blank song list kills the app",
+    "description": "paraphrased symptom of tidepool-101; avoids playlist/empty/tracks/crash wording",
+    "relevantSessionIds": [
+      "tidepool-101"
+    ]
+  },
+  {
+    "id": "traj-4",
+    "domain": "code",
+    "query": "freshly jotted memos never show up in lookups",
+    "description": "paraphrased symptom of scribe-312; avoids note/search/index wording",
+    "relevantSessionIds": [
+      "scribe-312"
+    ]
+  },
+  {
+    "id": "traj-5",
+    "domain": "code",
+    "query": "empty-list guard in nextTrack in src/player/queue.ts",
+    "description": "file/function query pinpointing the tidepool-101 fix location",
+    "relevantSessionIds": [
+      "tidepool-101"
+    ]
+  },
+  {
+    "id": "traj-6",
+    "domain": "code",
+    "query": "OFFSET pages repeat rows when ORDER BY has ties, expected 25 unique ids got 23",
+    "description": "dedup/robustness probe: answerable only from the failed cratesort-207 attempt, which must stay retrievable",
+    "relevantSessionIds": [
+      "cratesort-207"
+    ]
+  }
+]

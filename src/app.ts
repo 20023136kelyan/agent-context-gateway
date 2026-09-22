@@ -8,6 +8,8 @@ import { ClaudeAdapter } from "./adapters/claude.js";
 import { CodexAdapter } from "./adapters/codex.js";
 import { CursorAdapter } from "./adapters/cursor.js";
 import { ZepAdapter } from "./adapters/zep.js";
+import { TrajectoryAdapter, defaultTrajectoryDir } from "./adapters/trajectories.js";
+import { OpenCodeAdapter } from "./adapters/opencode.js";
 import { GitAdapter } from "./adapters/git.js";
 import type { SearchIndex } from "./indexing/types.js";
 import { TantivyIndex } from "./indexing/tantivy-index.js";
@@ -44,6 +46,8 @@ export interface AppOptions {
   codexDir?: string;
   cursorDb?: string;
   zepDir?: string;
+  trajectoryDir?: string;
+  opencodeDb?: string;
   gitRepos?: string[];
   backend?: "tantivy" | "sqlite";
 }
@@ -87,6 +91,8 @@ export function createApp(opts: AppOptions = {}): GatewayApp {
     opts.codexDir ? new CodexAdapter(opts.codexDir) : new CodexAdapter(),
     opts.cursorDb ? new CursorAdapter(opts.cursorDb) : new CursorAdapter(),
     opts.zepDir ? new ZepAdapter({ localDir: opts.zepDir }) : new ZepAdapter(),
+    new TrajectoryAdapter(opts.trajectoryDir ?? defaultTrajectoryDir()),
+    new OpenCodeAdapter(opts.opencodeDb),
     new GitAdapter(opts.gitRepos ?? []),
   ];
   const index: SearchIndex =

@@ -17,7 +17,36 @@ export interface NotificationRecord {
   webhook?: { ok: boolean; status?: number; error?: string };
 }
 
-const RECENT_LIMIT = 20;
+/** How many recent notification records a subscription keeps (newest last).
+ *
+ * 20 from the original subscription store — enough history for MCP agents to
+ * poll what matched without unbounded growth of subscriptions.json.
+ *
+ * Overridable with GATEWAY_SUB_RECENT; invalid values fall back to the default. */
+export const RECENT_LIMIT = (() => {
+  const raw = Number(process.env.GATEWAY_SUB_RECENT ?? 20);
+  return Number.isFinite(raw) && raw >= 1 && raw <= 200 ? Math.floor(raw) : 20;
+})();
+/** Live-search active window: a session file modified within this long counts
+ * as running.
+ *
+ * 15 minutes from the original live search — long enough to catch an agent
+ * mid-thought, short enough to exclude lunch breaks.
+ *
+ * Overridable with GATEWAY_LIVE_WINDOW_MS; invalid values fall back to the default. */
+export const LIVE_WINDOW_MS = (() => {
+  const raw = Number(process.env.GATEWAY_LIVE_WINDOW_MS ?? 15 * 60 * 1000);
+  return Number.isFinite(raw) && raw > 0 ? raw : 15 * 60 * 1000;
+})();
+/** Turns per session live search reads (newest first).
+ *
+ * 20 from the original live search — the working tail of a running session.
+ *
+ * Overridable with GATEWAY_LIVE_TURNS; invalid values fall back to the default. */
+export const LIVE_MAX_TURNS = (() => {
+  const raw = Number(process.env.GATEWAY_LIVE_TURNS ?? 20);
+  return Number.isFinite(raw) && raw >= 1 && raw <= 200 ? Math.floor(raw) : 20;
+})();
 const WEBHOOK_TIMEOUT_MS = 5000;
 
 /** Terms a turn must contain: search's normalization (stop-words dropped), else the raw words. */
@@ -138,7 +167,7 @@ export class SubscriptionStore {
         };
         const record: NotificationRecord = {
           deliveredAt: now,
-          turns: matches.slice(0, 20).map((t) => ({
+          turns: matches.slice(0, RECENT_LIMIT).map((t) => ({
             turnId: t.id,
             harness: t.harness,
             sessionId: t.sessionId,
@@ -198,7 +227,7 @@ export async function searchLiveSessions(
   query: string,
   opts?: { activeWindowMs?: number; maxTurnsPerSession?: number },
 ): Promise<LiveSearchResult[]> {
-  const windowMs = opts?.activeWindowMs ?? 15 * 60 * 1000; // 15 minutes default
+  const windowMs = opts?.activeWindowMs ?? LIVE_WINDOW_MS; // 15 minutes default
   const now = Date.now();
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
   const results: LiveSearchResult[] = [];
@@ -211,7 +240,7 @@ export async function searchLiveSessions(
         // Is session file active? (modified within activeWindowMs)
         if (now - st.mtimeMs <= windowMs) {
           const turns = await adapter.listTurns(s.id).catch(() => []);
-          const recentTurns = turns.slice(-(opts?.maxTurnsPerSession ?? 20));
+          const recentTurns = turns.slice(-(opts?.maxTurnsPerSession ?? LIVE_MAX_TURNS));
           const matched = recentTurns.filter((t) => {
             const hay = t.content.toLowerCase();
             return terms.some((term) => hay.includes(term));

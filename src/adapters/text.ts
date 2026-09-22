@@ -23,8 +23,16 @@ export function truncate(s: string, max = MAX_CONTENT): string {
  * ~500 tokens at the ~3.2 chars/token that code-heavy turns tokenize to,
  * leaving room under BGE-small's 512-token window. Prose runs nearer 3.9
  * chars/token, so prose chunks land further inside the window, never outside.
- */
-export const EMBED_CHUNK_CHARS = 1600;
+ *
+ * 1600 chars is that ~500-token budget; smaller windows splinter long turns
+ * into more rows the backfill must embed, larger ones push BGE past its
+ * window and silently truncate.
+ *
+ * Overridable with GATEWAY_CHUNK_CHARS; invalid values fall back to the default. */
+export const EMBED_CHUNK_CHARS = (() => {
+  const raw = Number(process.env.GATEWAY_CHUNK_CHARS ?? 1600);
+  return Number.isFinite(raw) && raw >= 200 && raw <= 8000 ? Math.floor(raw) : 1600;
+})();
 /** A sentence cut by a window boundary is still whole in the neighbouring one. */
 export const EMBED_CHUNK_OVERLAP = 200;
 /**

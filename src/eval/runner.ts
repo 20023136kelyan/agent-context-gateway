@@ -12,6 +12,7 @@ import type { Harness } from "../core/models.js";
 import type { SearchOptions } from "../search/search.js";
 import { getSharedReranker, type CrossEncoderReranker } from "../search/rerank.js";
 import { JevReranker } from "../judgments/rerank-jev.js";
+import { VoyageReranker } from "../search/rerank-voyage.js";
 import { JevDecisionJudge } from "../judgments/judge-jev.js";
 import { NeuralEntailmentJudge } from "../decisions/extract.js";
 import type { DecisionJudge } from "../decisions/extract.js";
@@ -110,6 +111,9 @@ export type EvalMode =
   // the hand-tuned ranking contributes — or costs.
   | "rerank-pure"
   | "jev-pure"
+  // Voyage reranker bake-off: same hybrid pool, vendor cross-encoder.
+  // Model comes from VOYAGE_RERANK_MODEL per cell (2.5 / lite / 3).
+  | "rerank-voyage"
   // Judge arms vary only the decision judge, so decisionCitations is
   // attributable to it; retrieval and reranking are held fixed at lexical.
   | "judge-neural"
@@ -174,6 +178,13 @@ export function armFor(mode: EvalMode): EvalArm {
       name: mode,
       search: { semantic: true, rerank: true, rawRank: true as const },
       reranker: () => getSharedReranker(),
+    };
+  }
+  if (mode === "rerank-voyage") {
+    return {
+      name: mode,
+      search: { semantic: true, rerank: true },
+      reranker: () => new VoyageReranker(),
     };
   }
   return { name: mode, search: modeOptions(mode), reranker: () => getSharedReranker() };

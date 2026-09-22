@@ -27,9 +27,12 @@ Review fixes: [`REVIEW_FIX_PLAN.md`](./REVIEW_FIX_PLAN.md).
 
 ```bash
 npm install
-npx tsx src/cli.ts sync                                    # index local histories
+npx tsx src/cli.ts init       # detects histories, sets keys, syncs, backfills, installs hooks, verifies
 npx tsx src/cli.ts search "What did Codex decide about collaboration?"
 npx tsx src/cli.ts health
+npx tsx src/cli.ts doctor     # histories, keys, index, vectors, models in one report
+npx tsx src/cli.ts models     # swappable engines/rerankers/judges, availability, resolved defaults
+npx tsx src/cli.ts stats      # shape-only usage aggregates (never content)
 ```
 
 HTTP (loopback) and MCP:

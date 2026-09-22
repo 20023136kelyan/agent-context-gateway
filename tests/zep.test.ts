@@ -73,6 +73,7 @@ describe("ZepAdapter", () => {
       zepDir,
       backend: "tantivy",
       cursorDb: join(root, "no.vscdb"),
+      opencodeDb: join(root, "no-opencode.db"),
     });
 
     try {
@@ -101,7 +102,7 @@ describe("shared source file (one export, many threads)", () => {
       writeFile(join(dir, "threads.json"), JSON.stringify([thread("t-1", word), thread("t-2", word), thread("t-3", word)]));
     await write("aardvark");
     const root = await mkdtemp(join(tmpdir(), "acg-zep-shared-idx-"));
-    const app = createApp({ indexDir: join(root, "index"), claudeDir: join(root, "c"), codexDir: join(root, "x"), zepDir: dir, backend: "tantivy", cursorDb: join(root, "no.vscdb") });
+    const app = createApp({ indexDir: join(root, "index"), claudeDir: join(root, "c"), codexDir: join(root, "x"), zepDir: dir, backend: "tantivy", cursorDb: join(root, "no.vscdb"), opencodeDb: join(root, "no-opencode.db") });
     try {
       const first = await syncAll(app.adapters, app.index, app.cursors);
       expect(first.sessionsIndexed).toBe(3);

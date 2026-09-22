@@ -123,7 +123,12 @@ export function generateQueryVariants(cleanedQuery: string): { primary: string; 
   let swappedAny = false;
   for (let i = 0; i < words.length; i++) {
     const w = words[i].replace(/[^a-z0-9]/g, "");
-    if (SYNONYM_MAP[w]) {
+    // hasOwn, not truthiness: query words like "constructor" (from
+    // `_constructor`) resolve via Object.prototype to a function, which is
+    // truthy but not iterable — spreading it crashed retrieval outright.
+    // Found by a real SWE-Gym query, not the fixture set.
+    if (!Object.prototype.hasOwnProperty.call(SYNONYM_MAP, w)) continue;
+    {
       const syns = SYNONYM_MAP[w];
       expandedTerms.push(...syns);
       variantWords[i] = syns[0];

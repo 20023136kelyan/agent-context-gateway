@@ -23,8 +23,9 @@ import type { PackagedResult } from "./search/search.js";
 import { initVectors } from "./app.js";
 import type { GatewayApp } from "./app.js";
 import type { SearchOptions } from "./search/search.js";
+import { recordUsage, defaultUsagePath, scoreBucket, termBucket } from "./observability/usage.js";
 
-const HARNESSES = ["claude-code", "codex", "cursor", "zep", "git"] as const;
+const HARNESSES = ["claude-code", "codex", "cursor", "zep", "git", "trajectory", "opencode"] as const;
 
 function adapterFor(app: GatewayApp, harness: string) {
   if (!HARNESSES.includes(harness as (typeof HARNESSES)[number])) {
@@ -84,7 +85,38 @@ export async function searchOnce(app: GatewayApp, query: string, opts: SearchOpt
       // offline or no vectors yet — lexical-only
     }
   }
+  const t0 = Date.now();
   const res = await app.search.search(query, opts);
+  try {
+    // Shape-only telemetry (never query text, ids, or content).
+    const nq = normalizeQuery(query);
+    const terms = nq.indexQuery.split(" ").filter(Boolean).length;
+    const counts: Record<string, number> = {};
+    for (const r of res.results) {
+      const h = r.provenance.harness;
+      counts[h] = (counts[h] ?? 0) + 1;
+    }
+    recordUsage(defaultUsagePath(app.settings.stateDir), {
+      kind: "search",
+      ts: new Date().toISOString(),
+      latencyMs: Date.now() - t0,
+      semantic: opts.semantic !== false,
+      rerank: opts.rerank === true,
+      rawRank: opts.rawRank === true,
+      engine: app.search.lastEngine ?? "lexical",
+      reranker: app.reranker,
+      harness: opts.harness ?? null,
+      scope: res.scope,
+      termBucket: termBucket(terms),
+      hasEntities: nq.prNumbers.length > 0 || nq.fileRefs.length > 0,
+      isWhy: isWhyQuery(query),
+      results: res.results.length,
+      resultHarnesses: counts,
+      topScoreBucket: scoreBucket(res.results[0]?.score),
+    });
+  } catch {
+    // Telemetry never breaks serving.
+  }
   // P2e federation: fan out to configured remotes (read-only), merge by score.
   // Topological scopes stay local — remotes don't share our link registry.
   // Loop guard: skip remotes already in the chain (A->B->A); 2-hop max.
@@ -134,6 +166,7 @@ export async function decideOnce(
       // lexical region retrieval still works
     }
   }
+  const t0 = Date.now();
   // Region retrieval: find the discussion sessions the judge will then weigh.
   //
   // Reranking here was hard-coded off to "prevent redundant passes" — sound when
@@ -201,6 +234,22 @@ export async function decideOnce(
     question: d.question ? { turnId: d.question.id, content: d.question.content } : null,
   }));
   decisions.sort((a, b) => b.confidence - a.confidence);
+  try {
+    // Shape-only telemetry (never query text, ids, or content).
+    recordUsage(defaultUsagePath(app.settings.stateDir), {
+      kind: "decide",
+      ts: new Date().toISOString(),
+      latencyMs: Date.now() - t0,
+      engine: app.search.lastEngine ?? "lexical",
+      judge: judge.method,
+      harness: opts.harness ?? null,
+      candidates: candidatesToJudge.length,
+      verdicts: decisions.length,
+      topConfidenceBucket: scoreBucket(decisions[0]?.confidence),
+    });
+  } catch {
+    // Telemetry never breaks serving.
+  }
   return {
     query,
     whyRouted: isWhyQuery(query),

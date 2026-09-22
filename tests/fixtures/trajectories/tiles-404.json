@@ -1,0 +1,7 @@
+{
+  "instance_id": "tiles-404",
+  "repo": "pixelmint/tiles",
+  "issue": "Mosaic export renders blank tiles on hidpi canvases.",
+  "resolved": false,
+  "steps": []
+}

@@ -14,3 +14,14 @@ ContextGatewayMenu.app/
 
 # Regenerable knowledge map (rebuild with /graphify .)
 graphify-out/
+
+# Cloud VM environment documentation
+CLOUD_VM.md
+VM.md
+
+# Downloaded/sampled eval data (regenerable via scripts/build-swe-gym.py)
+swe-data/
+sweeps/*.sqlite
+# Trained weights (regenerable via experiments/training/)
+swe-models/
+*.local.md

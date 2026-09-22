@@ -68,11 +68,20 @@ export async function embedSessionTurns(
   const have = await vectors.existing(planned.map((p) => p.id), eng).catch(() => new Set<string>());
   const missing = planned.filter((p) => !have.has(p.id));
 
+  // Contextualized inputs carry whole turns per request: keep requests well
+  // under the 32K/request ceiling (64 windows x ~500 tokens would ride it).
+  const effectiveBatch = eng === "voyage-context" ? Math.min(batchSize, 16) : batchSize;
   const touched = new Set<string>();
   let pending: Parameters<VectorBackend["upsert"]>[0] = [];
-  for (let i = 0; i < missing.length; i += batchSize) {
+  for (let i = 0; i < missing.length; i += effectiveBatch) {
     const batch = missing.slice(i, i + batchSize);
-    const vecs = await embedTextsWith(eng, batch.map((p) => p.text));
+    // Turn identity rides along so document-context engines (voyage-context)
+    // encode each turn's windows jointly; flat engines ignore it.
+    const vecs = await embedTextsWith(
+      eng,
+      batch.map((p) => p.text),
+      batch.map((p) => p.turn.id),
+    );
     pending.push(
       ...batch.map((p, j) => ({
         id: p.id,

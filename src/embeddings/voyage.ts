@@ -39,10 +39,32 @@ export function voyageAvailable(): boolean {
   return Boolean(process.env.VOYAGE_API_KEY);
 }
 
+/**
+ * Process-wide usage meter (measure-first spend discipline). Voyage reports
+ * `usage.total_tokens` per response; the sweep runner resets per cell. Calls
+ * whose responses carry no usage block still count as requests.
+ */
+export const voyageMeter = {
+  requests: 0,
+  tokens: 0,
+  reset() {
+    this.requests = 0;
+    this.tokens = 0;
+  },
+  snapshot() {
+    return { requests: this.requests, tokens: this.tokens };
+  },
+};
+
+/** Lone surrogates from binary tool output are not valid UTF-8: Voyage 400s
+ *  the whole batch for one bad turn. Real histories always contain some. */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
 async function call(cfg: VoyageConfig, input: string[], inputType: "query" | "document"): Promise<number[][]> {
   const key = process.env.VOYAGE_API_KEY;
   if (!key) throw new Error("voyage-no-api-key");
   if (input.length === 0) return [];
+  input = input.map((t) => t.replace(LONE_SURROGATE, "\uFFFD"));
 
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
@@ -62,7 +84,12 @@ async function call(cfg: VoyageConfig, input: string[], inputType: "query" | "do
     throw new Error(`voyage-http-${res.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`);
   }
 
-  const body = (await res.json()) as { data?: { embedding: number[]; index: number }[] };
+  const body = (await res.json()) as {
+    data?: { embedding: number[]; index: number }[];
+    usage?: { total_tokens?: number };
+  };
+  voyageMeter.requests += 1;
+  voyageMeter.tokens += body.usage?.total_tokens ?? 0;
   const data = body.data;
   if (!Array.isArray(data) || data.length !== input.length) {
     throw new Error(`voyage-bad-response: expected ${input.length} embeddings, got ${data?.length ?? 0}`);

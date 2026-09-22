@@ -1,5 +1,8 @@
 /**
- * Native Apple Silicon MLX Embedding Client (Phase D).
+ * Native Apple Silicon MLX Embedding Client (Phase D). DEPRECATED PATH — the
+ * locked stack is voyage-4 + Jev; this file is unmaintained fallback only and
+ * takes no part in sweeps. Kept compiling so the provider registry and its
+ * tests keep working.
  * Runs BGE-small directly on the Apple Silicon GPU via Metal using an in-process Python worker.
  * Eliminates the external Ollama background daemon while yielding ~150-160 sentences/sec throughput.
  */

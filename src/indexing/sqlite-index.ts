@@ -1,5 +1,7 @@
 /**
- * SQLite FTS5 lexical index (MVP backend).
+ * SQLite FTS5 lexical index (MVP backend). DEPRECATED PATH — the locked stack
+ * is Tantivy + LanceDB; this backend is unmaintained fallback only and takes
+ * no part in sweeps. Kept compiling so app wiring and its tests keep working.
  * Disposable: delete index dir + rebuild from native histories.
  * Uses node:sqlite (built-in, SQLite 3.51 + FTS5 porter tokenizer).
  */

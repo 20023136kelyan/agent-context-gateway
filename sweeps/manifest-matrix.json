@@ -1,0 +1,23 @@
+{
+  "out": "sweeps/results-matrix.sqlite",
+  "jobs": 1,
+  "cells": [
+    { "name": "fx-lex", "corpus": "fixture", "arms": ["lexical"], "env": {} },
+    { "name": "fx-hybrid-v4", "corpus": "fixture", "arms": ["hybrid"], "env": {} },
+    { "name": "fx-hybrid-code", "corpus": "fixture", "arms": ["hybrid"], "env": { "GATEWAY_EMBED_ENGINE": "voyage-code" } },
+    { "name": "fx-hybrid-ctx", "corpus": "fixture", "arms": ["hybrid"], "env": { "GATEWAY_EMBED_ENGINE": "voyage-context" } },
+    { "name": "fx-rr-cross", "corpus": "fixture", "arms": ["rerank"], "env": {} },
+    { "name": "fx-rr-v25", "corpus": "fixture", "arms": ["rerank-voyage"], "env": { "VOYAGE_RERANK_MODEL": "rerank-2.5" } },
+    { "name": "fx-rr-lite", "corpus": "fixture", "arms": ["rerank-voyage"], "env": { "VOYAGE_RERANK_MODEL": "rerank-2.5-lite" } },
+    { "name": "fx-rr-r3", "corpus": "fixture", "arms": ["rerank-voyage"], "env": { "VOYAGE_RERANK_MODEL": "rerank-3" } },
+    { "name": "fx-jev", "corpus": "fixture", "arms": ["jev-pairwise"], "env": {} },
+    { "name": "real-hybrid-v4", "corpus": "real", "arms": ["hybrid"], "env": {} },
+    { "name": "real-hybrid-ctx", "corpus": "real", "arms": ["hybrid"], "env": { "GATEWAY_EMBED_ENGINE": "voyage-context" } },
+    { "name": "real-rr-v25", "corpus": "real", "arms": ["rerank-voyage"], "env": { "VOYAGE_RERANK_MODEL": "rerank-2.5" } },
+    { "name": "real-rr-lite", "corpus": "real", "arms": ["rerank-voyage"], "env": { "VOYAGE_RERANK_MODEL": "rerank-2.5-lite" } },
+    { "name": "real-jev", "corpus": "real", "arms": ["jev-pairwise"], "env": {} },
+    { "name": "real-rr-lite", "corpus": "real", "arms": ["rerank-voyage"], "env": { "VOYAGE_RERANK_MODEL": "rerank-2.5-lite" } },
+    { "name": "traj-matrix", "corpus": "trajectories", "arms": ["lexical", "hybrid", "rerank-voyage"], "env": { "VOYAGE_RERANK_MODEL": "rerank-2.5" } },
+    { "name": "fx-rr-r3probe", "corpus": "fixture", "arms": ["rerank-voyage"], "env": { "VOYAGE_RERANK_MODEL": "rerank-3" } }
+  ]
+}

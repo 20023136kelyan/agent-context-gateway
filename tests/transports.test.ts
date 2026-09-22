@@ -34,7 +34,7 @@ beforeAll(async () => {
       JSON.stringify({ timestamp: "2026-09-10T09:01:00Z", ordinal: 1, type: "response_item", payload: { type: "message", id: "m1", role: "assistant", content: [{ type: "output_text", text: "Collaboration uses shared files." }] } }),
     ].join("\n"),
   );
-  app = createApp({ indexDir: join(root, "index"), claudeDir, codexDir, backend: "tantivy", cursorDb: join(root, "no-cursor.vscdb") });
+  app = createApp({ indexDir: join(root, "index"), claudeDir, codexDir, backend: "tantivy", cursorDb: join(root, "no-cursor.vscdb"), opencodeDb: join(root, "no-opencode.db") });
 });
 
 afterAll(() => closeApp(app));
@@ -47,7 +47,7 @@ describe("HTTP", () => {
     const body = res.json();
     expect(body.ok).toBe(true);
     expect(body.backend).toBe("tantivy");
-    expect(body.sources.map((s: { harness: string }) => s.harness).sort()).toEqual(["claude-code", "codex", "cursor", "git", "zep"]);
+    expect(body.sources.map((s: { harness: string }) => s.harness).sort()).toEqual(["claude-code", "codex", "cursor", "git", "opencode", "trajectory", "zep"]);
   });
 
   it("GET /search returns provenanced results (auto-syncs empty index)", async () => {

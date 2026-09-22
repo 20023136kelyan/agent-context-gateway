@@ -1,5 +1,8 @@
 /**
- * sqlite-vec vector store — the portable backend.
+ * sqlite-vec vector store — the portable backend. DEPRECATED PATH — the
+ * locked stack is LanceDB; this backend is unmaintained fallback only and
+ * takes no part in sweeps. Note: this Intel Mac runs on it today (no Lance
+ * darwin-x64 binary), so local dev still resolves here until hardware moves.
  *
  * LanceDB publishes no darwin-x64 binary (support ended at 0.22.3), so on an
  * Intel Mac the Lance backend cannot load at all. This backend runs anywhere

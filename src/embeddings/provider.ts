@@ -30,8 +30,15 @@ import {
   embedQueryText,
   type VoyageConfig,
 } from "./voyage.js";
+import {
+  VOYAGE_CONTEXT,
+  voyageContextAvailable,
+  embedDocumentGroups,
+  embedQueryText as embedContextQuery,
+} from "./voyage-context.js";
 
-export type EmbeddingEngine = "mlx" | "ollama" | "voyage" | "voyage-code";
+import type { EngineName as EmbeddingEngine } from "../components.js";
+export type { EngineName as EmbeddingEngine } from "../components.js";
 
 export interface EmbeddingProvider {
   readonly engine: EmbeddingEngine;
@@ -39,7 +46,13 @@ export interface EmbeddingProvider {
   readonly dim: number;
   /** True when this engine can actually serve a request right now. */
   isAvailable(): Promise<boolean>;
-  embedTexts(texts: string[]): Promise<number[][]>;
+  /**
+   * Embed texts. `groups[i]` optionally names the document texts[i] belongs
+   * to; engines with document-level context (voyage-context) encode each
+   * group jointly, others embed independently and ignore it. Returned rows
+   * always align 1:1 with inputs.
+   */
+  embedTexts(texts: string[], groups?: string[]): Promise<number[][]>;
   embedQuery(query: string): Promise<number[]>;
 }
 
@@ -65,11 +78,48 @@ const PROVIDERS: Record<EmbeddingEngine, EmbeddingProvider> = {
     engine: "ollama",
     dim: OLLAMA_DIM,
     isAvailable: () => ollamaAvailable(),
-    embedTexts: ollamaEmbedTexts,
+    // Groups are a voyage-context concept; flat engines ignore them.
+    embedTexts: (texts) => ollamaEmbedTexts(texts),
     embedQuery: ollamaEmbedQuery,
   },
   voyage: voyageProvider("voyage", VOYAGE_GENERAL),
   "voyage-code": voyageProvider("voyage-code", VOYAGE_CODE),
+  "voyage-context": {
+    engine: "voyage-context",
+    get dim() {
+      return VOYAGE_CONTEXT.dim;
+    },
+    isAvailable: async () => voyageContextAvailable(),
+    embedTexts: async (texts, groups) => {
+      // Group texts back into per-document chunk lists (order-preserving);
+      // ungrouped callers get one chunk per document (valid, not contextual).
+      const order: string[] = [];
+      const seen = new Map<string, number>();
+      const lists: string[][] = [];
+      texts.forEach((t, i) => {
+        const g = groups?.[i] ?? `__solo_${i}`;
+        let gi = seen.get(g);
+        if (gi === undefined) {
+          gi = lists.length;
+          seen.set(g, gi);
+          lists.push([]);
+          order.push(g);
+        }
+        lists[gi].push(t);
+      });
+      const vecs = await embedDocumentGroups(VOYAGE_CONTEXT, lists);
+      const out: number[][] = new Array(texts.length);
+      const taken = new Map<string, number>();
+      texts.forEach((_, i) => {
+        const g = groups?.[i] ?? `__solo_${i}`;
+        const gi = seen.get(g)!;
+        out[i] = vecs[gi][taken.get(g) ?? 0];
+        taken.set(g, (taken.get(g) ?? 0) + 1);
+      });
+      return out;
+    },
+    embedQuery: (query) => embedContextQuery(VOYAGE_CONTEXT, query),
+  },
 };
 
 export const ENGINES = Object.keys(PROVIDERS) as EmbeddingEngine[];
@@ -94,17 +144,37 @@ export const ENGINE_DIM: Record<EmbeddingEngine, number> = {
   get "voyage-code"() {
     return PROVIDERS["voyage-code"].dim;
   },
+  get "voyage-context"() {
+    return PROVIDERS["voyage-context"].dim;
+  },
 } as Record<EmbeddingEngine, number>;
 
-const DEFAULT_ORDER: EmbeddingEngine[] = ["voyage", "mlx", "ollama"];
+import { ENGINE_ORDER } from "../components.js";
+const DEFAULT_ORDER: readonly EmbeddingEngine[] = ENGINE_ORDER;
 
-function preferredOrder(): EmbeddingEngine[] {
+function preferredOrder(): readonly EmbeddingEngine[] {
   const pinned = process.env.GATEWAY_EMBED_ENGINE as EmbeddingEngine | undefined;
   // A pinned engine is a hard selection, not a hint: falling back past it would
   // scatter one corpus across two tables, which is what pinning exists to stop.
   if (pinned && PROVIDERS[pinned]) return [pinned];
   return DEFAULT_ORDER;
 }
+
+/**
+ * Degradation meter: incremented every time a query embedding fails and the
+ * caller falls back to lexical-only. Sweep rows with fallbacks > 0 are
+ * flagged non-comparable — a silent catch turned a vector outage into a
+ * plausible-looking lexical number at least once.
+ */
+export const embedMeter = {
+  fallbacks: 0,
+  reset() {
+    this.fallbacks = 0;
+  },
+  snapshot() {
+    return { fallbacks: this.fallbacks };
+  },
+};
 
 /** The engine that will serve requests, or "none" when nothing is reachable. */
 export async function resolveEngine(): Promise<EmbeddingEngine | "none"> {
@@ -115,8 +185,12 @@ export async function resolveEngine(): Promise<EmbeddingEngine | "none"> {
 }
 
 /** Embed with one specific engine — no fallback, so a backfill never mixes tables. */
-export async function embedTextsWith(engine: EmbeddingEngine, texts: string[]): Promise<number[][]> {
-  return getProvider(engine).embedTexts(texts);
+export async function embedTextsWith(
+  engine: EmbeddingEngine,
+  texts: string[],
+  groups?: string[],
+): Promise<number[][]> {
+  return getProvider(engine).embedTexts(texts, groups);
 }
 
 /**

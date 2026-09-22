@@ -1,0 +1,18 @@
+{
+  "out": "sweeps/results.sqlite",
+  "jobs": 1,
+  "cells": [
+    {
+      "name": "baseline-defaults",
+      "corpus": "fixture",
+      "arms": ["lexical", "hybrid", "rerank"],
+      "env": {}
+    },
+    {
+      "name": "trajectories-baseline",
+      "corpus": "trajectories",
+      "arms": ["lexical", "hybrid", "rerank"],
+      "env": {}
+    }
+  ]
+}

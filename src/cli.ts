@@ -2,7 +2,9 @@
 /** CLI transport — `gateway <command>`. Human/debug interface; agents use MCP/HTTP. */
 import { rerankDefaultOn } from "./search/reranker.js";
 import { Command } from "commander";
+import { join } from "node:path";
 import { createApp, closeApp, type GatewayApp } from "./app.js";
+import { dumpConfig } from "./settings.js";
 import { listSources, listSessions, searchOnce, decideOnce, getRelated, traverseArtifacts, listInvalidations, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, recordFeedback, getSession, getTurn, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "./commands.js";
 import { addRemote, removeRemote, loadRemotes } from "./remotes.js";
 import { readServeInfo, probeServer, remoteCall, connectHost, HttpError } from "./remote.js";
@@ -480,6 +482,209 @@ program
   .description("Index status, source availability, last sync")
   .action(async () => {
     print((await fetchRemote("GET", "/health")) ?? (await withLocal((app) => health(app))), false);
+  });
+
+program
+  .command("init")
+  .description("First-run onboarding: detect histories, set keys, sync, backfill, hooks, verify")
+  .option("--yes", "accept defaults, prompt only for missing API keys")
+  .option("--no-hooks", "skip the Claude SessionEnd hook install")
+  .option("--no-backfill", "skip vector backfill (lexical index only)")
+  .option("--no-verify", "skip the end-to-end smoke search")
+  .action(async (cmdOpts) => {
+    const { createInterface } = await import("node:readline");
+    const { detectHistories, keyStatus, appendEnvKeys, installClaudeHook } = await import("./setup.js");
+    const ask = (q: string): Promise<string> =>
+      new Promise((res) => {
+        if (cmdOpts.yes) return res("");
+        const rl = createInterface({ input: process.stdin, output: process.stdout });
+        rl.question(q, (a) => {
+          rl.close();
+          res(a.trim());
+        });
+      });
+    const report: Record<string, unknown> = { steps: [] as string[] };
+    const done = (s: string) => (report.steps as string[]).push(s);
+
+    // 1. Histories.
+    const sources = detectHistories();
+    const found = sources.filter((s) => s.present);
+    print({ histories: sources }, false);
+    if (found.length === 0) {
+      console.error("No agent histories found — sync would index nothing. Point a harness at this machine first.");
+      process.exitCode = 1;
+      return;
+    }
+    done(`histories: ${found.map((s) => s.kind).join(", ")}`);
+
+    // 2. Keys (append-only; existing values never shown or overwritten).
+    const envPath = join(process.cwd(), ".env");
+    const keys = keyStatus();
+    const missing = Object.entries(keys)
+      .filter(([, v]) => !v)
+      .map(([k]) => k);
+    const fresh: Record<string, string> = {};
+    for (const k of missing) {
+      const v = await ask(`${k} (empty = skip, lexical-only for its path): `);
+      if (v) fresh[k] = v;
+    }
+    const added = appendEnvKeys(envPath, fresh);
+    // Reload what we just wrote so this process resolves engines correctly.
+    for (const k of added) process.env[k] = fresh[k];
+
+    // Telemetry: explicit opt-in, default No. Aggregates only, never content.
+    const { setTelemetry } = await import("./settings.js");
+    const tel = await ask("Share anonymous usage aggregates to improve the engine? (yes/no, default no): ");
+    if (/^(yes|y|on|1)$/i.test(tel)) {
+      setTelemetry(undefined, true);
+      done("telemetry: on (aggregates only)");
+    } else {
+      done("telemetry: off (default; `gateway telemetry on` anytime)");
+    }
+    done(`keys: present=[${Object.entries({ ...keys, ...Object.fromEntries(added.map((k) => [k, true])) }).filter(([, v]) => v).map(([k]) => k).join(", ")}] added=[${added.join(", ")}]`);
+
+    // 3-4. Sync + backfill.
+    const synced = await withLocal((app) => syncNow(app, false, {}));
+    done(`sync: ${JSON.stringify(synced)}`);
+    if (cmdOpts.backfill) {
+      const filled = await withLocal((app) => backfillEmbeddings(app, {}));
+      done(`backfill: ${JSON.stringify(filled)}`);
+    } else {
+      done("backfill: skipped");
+    }
+
+    // 5. SessionEnd hook.
+    if (cmdOpts.hooks) {
+      const cliPath = join(process.cwd(), "src", "cli.ts");
+      const hook = installClaudeHook(undefined, cliPath);
+      done(`hook: ${hook.installed ? `installed${hook.backupPath ? ` (backup ${hook.backupPath})` : ""}` : "already present"}`);
+    } else {
+      done("hook: skipped");
+    }
+
+    // 6. Verify: sources answer.
+    if (cmdOpts.verify) {
+      const check = await withLocal(async (app) => ({
+        sources: (await listSources(app)).length,
+        sessions: (await listSessions(app, {})).length,
+        models: (await import("./components.js")).lockedStack(),
+      }));
+      done(`verify: ${JSON.stringify(check)}`);
+    } else {
+      done("verify: skipped");
+    }
+    print(report, false);
+  });
+
+program
+  .command("doctor")
+  .description("Diagnose setup: histories, keys, index, vectors, models")
+  .action(async () => {
+    const { detectHistories, keyStatus } = await import("./setup.js");
+    const { lockedStack } = await import("./components.js");
+    const report = await withLocal(async (app) => {
+      const h = await health(app);
+      return {
+        histories: detectHistories(),
+        keys: keyStatus(),
+        health: h,
+        vectors: app.vectors ? { backend: app.vectorBackend } : null,
+        locked: lockedStack(),
+      };
+    });
+    print(report, false);
+  });
+
+program
+  .command("stats")
+  .description("Usage aggregates: per-arm latency, harness mix, zero-hit rate (shape only, never content)")
+  .action(async () => {
+    const { aggregateUsage, defaultUsagePath } = await import("./observability/usage.js");
+    print(aggregateUsage(defaultUsagePath()), false);
+  });
+
+program
+  .command("telemetry <action>")
+  .description("Anonymous aggregate telemetry: status | on | off (default off; aggregates only, never queries or content)")
+  .action(async (action: string) => {
+    const { setTelemetry, defaultStateDir } = await import("./settings.js");
+    const { buildReport, flushReport } = await import("./observability/report.js");
+    if (action === "status") {
+      const { resolveSettings } = await import("./settings.js");
+      print({ telemetry: resolveSettings().telemetry, sends: "aggregates only (counts, buckets, percentiles)" }, false);
+      return;
+    }
+    if (action === "on" || action === "off") {
+      setTelemetry(undefined, action === "on");
+      print({ telemetry: action === "on" }, false);
+      if (action === "on") {
+        // Immediate first flush proves the path works while the user watches.
+        const ok = await withLocal(async (app) => {
+          const report = buildReport(defaultStateDir(), {
+            backend: app.backend,
+            engine: app.vectors ? app.vectorBackend : null,
+            reranker: app.reranker,
+            judge: null,
+          });
+          return flushReport(report);
+        }).catch(() => false);
+        console.error(ok ? "first report delivered" : "first report failed (will retry on next flush; nothing breaks)");
+      }
+      return;
+    }
+    console.error(`unknown telemetry action "${action}" (want status|on|off)`);
+    process.exitCode = 1;
+  });
+
+program
+  .command("config")
+  .description("Show effective tunable values (env > settings.json > defaults)")
+  .action(() => {
+    print(dumpConfig(), false);
+  });
+
+/** Attach availability to a component row without fighting literal types.
+ *  Keyed components report key presence; keyless ones report the live probe
+ *  (an MLX row on Linux must read false even though nothing is "missing"). */
+function withKey(row: Record<string, unknown>, available: Record<string, boolean>): Record<string, unknown> {
+  const keyEnv = typeof row.keyEnv === "string" ? row.keyEnv : null;
+  const name = typeof row.name === "string" ? row.name : "";
+  return { ...row, keyPresent: keyEnv ? (available[name] ?? false) : (available[name] ?? true) };
+}
+
+program
+  .command("models")
+  .description("Swappable pipeline components, availability, and resolved defaults")
+  .action(async () => {
+    const { ENGINE_DEFS, RERANKER_DEFS, JUDGE_DEFS, lockedStack } = await import("./components.js");
+    const { resolveEngine } = await import("./embeddings/provider.js");
+    const { resolveRerankerName } = await import("./search/reranker.js");
+    const { resolveJudgeName } = await import("./decisions/select.js");
+    // Live availability per engine (side-effect free probes).
+    const { getProvider } = await import("./embeddings/provider.js");
+    const { ENGINES } = await import("./embeddings/provider.js");
+    const available: Record<string, boolean> = { jev: Boolean(process.env.TYPESAFE_API_KEY || process.env.JEV_API_KEY) };
+    for (const name of ENGINES) {
+      try {
+        available[name] = await getProvider(name).isAvailable();
+      } catch {
+        available[name] = false;
+      }
+    }
+    print(
+      {
+        locked: lockedStack(),
+        resolved: {
+          engine: await resolveEngine().catch(() => "none"),
+          reranker: resolveRerankerName(),
+          judge: resolveJudgeName(),
+        },
+        engines: ENGINE_DEFS.map((e) => withKey(e, available)),
+        rerankers: RERANKER_DEFS.map((r) => withKey(r, available)),
+        judges: JUDGE_DEFS.map((j) => withKey(j, available)),
+      },
+      false,
+    );
   });
 
 await program.parseAsync(process.argv);

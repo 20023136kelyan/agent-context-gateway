@@ -1,0 +1,20 @@
+{
+  "instance_id": "cratesort-207",
+  "repo": "ferrous-labs/cratesort",
+  "issue": "Paginated rarity sort returns duplicate cards: page 2 repeats two rows from page 1 when sorting the binder by rarity.",
+  "resolved": false,
+  "steps": [
+    {
+      "thought": "Duplicates across OFFSET pages usually mean a non-unique ORDER BY: equal rarity values let the database return tied rows in any order, so rows drift between pages.",
+      "action": "read src/cards/sort.ts",
+      "observation": "query is ORDER BY rarity DESC LIMIT 25 OFFSET 25 with no tiebreaker column.",
+      "timestamp": "2026-08-03T14:00:00Z"
+    },
+    {
+      "thought": "Prime suspect confirmed by reading. Try adding the card id as a tiebreaker and re-run the page walk.",
+      "action": "edit src/cards/sort.ts: ORDER BY rarity DESC, id ASC",
+      "observation": "page-walk test still fails: expected 25 unique ids, got 23 — the seed script inserts new rows mid-walk so offsets shift underfoot. Fix incomplete, abandoning this approach.",
+      "timestamp": "2026-08-03T14:11:00Z"
+    }
+  ]
+}

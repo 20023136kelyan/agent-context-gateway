@@ -1,0 +1,110 @@
+[
+  {
+    "id": "ent-1",
+    "domain": "code",
+    "query": "backoffMs in src/net/reconnect.ts",
+    "description": "entity pinpoint: function + path both name the answer; vectors should be unnecessary",
+    "relevantSessionIds": [
+      "f0000007-0000-4000-8000-000000000007"
+    ]
+  },
+  {
+    "id": "ent-2",
+    "domain": "code",
+    "query": "PresenceChannel.publish batching interval",
+    "description": "entity pinpoint: class method name is distinctive",
+    "relevantSessionIds": [
+      "f0000008-0000-4000-8000-000000000008"
+    ]
+  },
+  {
+    "id": "ent-3",
+    "domain": "code",
+    "query": "compactSnapshots in src/storage/compact.ts",
+    "description": "entity pinpoint: function + path",
+    "relevantSessionIds": [
+      "f0000009-0000-4000-8000-000000000009"
+    ]
+  },
+  {
+    "id": "ent-4",
+    "domain": "code",
+    "query": "resetWindow token bucket",
+    "description": "short distinctive query (3 terms): exact-lookup shape without a path",
+    "relevantSessionIds": [
+      "f0000043-0000-4000-8000-000000000043"
+    ]
+  },
+  {
+    "id": "ent-5",
+    "domain": "code",
+    "query": "OutboxStore causal replay order",
+    "description": "short distinctive query: class name plus behavior",
+    "relevantSessionIds": [
+      "f0000044-0000-4000-8000-000000000044"
+    ]
+  },
+  {
+    "id": "ent-6",
+    "domain": "code",
+    "query": "buildTrigrams overlapping grams src/search/index.ts",
+    "description": "entity pinpoint: rare function name plus path",
+    "relevantSessionIds": [
+      "f0000045-0000-4000-8000-000000000045"
+    ]
+  },
+  {
+    "id": "ent-7",
+    "domain": "code",
+    "query": "FanoutQueue.publish dedup keys",
+    "description": "entity pinpoint: class method plus mechanism",
+    "relevantSessionIds": [
+      "f0000046-0000-4000-8000-000000000046"
+    ]
+  },
+  {
+    "id": "ent-8",
+    "domain": "code",
+    "query": "mapPosition anchor characters src/collab/cursor-map.ts",
+    "description": "entity pinpoint with path; overlaps session 008 cursor vocabulary so precision matters",
+    "relevantSessionIds": [
+      "f0000047-0000-4000-8000-000000000047"
+    ]
+  },
+  {
+    "id": "ent-9",
+    "domain": "code",
+    "query": "rotateTokens per-user mutex",
+    "description": "short distinctive query: rare function name",
+    "relevantSessionIds": [
+      "f0000048-0000-4000-8000-000000000048"
+    ]
+  },
+  {
+    "id": "ent-10",
+    "domain": "code",
+    "query": "RetryQueue dead-letter src/billing/retry.ts",
+    "description": "entity pinpoint: class plus path",
+    "relevantSessionIds": [
+      "f0000051-0000-4000-8000-000000000051"
+    ]
+  },
+  {
+    "id": "ent-11",
+    "domain": "code",
+    "query": "exportMarkdown blockquotes author tags",
+    "description": "entity pinpoint: rare function name plus behavior",
+    "relevantSessionIds": [
+      "f0000052-0000-4000-8000-000000000052"
+    ]
+  },
+  {
+    "id": "ent-12",
+    "domain": "code",
+    "query": "restoreFromCheckpoint journal replay",
+    "description": "entity pinpoint: long distinctive function name",
+    "relevantSessionIds": [
+      "f0000055-0000-4000-8000-000000000055"
+    ]
+  }
+]

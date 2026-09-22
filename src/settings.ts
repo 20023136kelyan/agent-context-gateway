@@ -20,11 +20,15 @@
  * rotate it without restarting. Snapshotting it into immutable settings would
  * break both, so it stays where it is.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { VectorBackendName } from "./indexing/vector-backend.js";
 import type { EmbeddingEngine } from "./embeddings/provider.js";
 import type { RerankerName } from "./search/reranker.js";
+import { ENGINE_DEFS, RERANKER_DEFS } from "./components.js";
+import { RRF_K, HALF_LIFE_DAYS, RANK_WEIGHTS, SIM_FLOOR, SIM_SPAN } from "./search/rank.js";
+import { EMBED_CHUNK_CHARS } from "./adapters/text.js";
+import { LIVE_WINDOW_MS, LIVE_MAX_TURNS, RECENT_LIMIT } from "./collaboration/live.js";
 
 export interface GatewaySettings {
   readonly version: 1;
@@ -41,6 +45,13 @@ export interface GatewaySettings {
   readonly reranker: RerankerName | null;
   /** Extra Host header values accepted without a token; null = loopback only. */
   readonly allowedHosts: string[] | null;
+  /**
+   * Anonymous aggregate telemetry (report-only, never per-request rows).
+   * Default OFF everywhere: env GATEWAY_TELEMETRY=on|off beats the file,
+   * the file beats the default. Shipping to users with no data to improve
+   * on is why this exists; shipping it silent is why it defaults off.
+   */
+  readonly telemetry: boolean;
 }
 
 /** The subset of AppOptions that settings resolve. Kept here to avoid a cycle. */
@@ -61,6 +72,7 @@ interface SettingsFile {
   embedEngine?: EmbeddingEngine;
   reranker?: RerankerName;
   allowedHosts?: string[];
+  telemetry?: boolean;
 }
 
 export function defaultStateDir(): string {
@@ -69,6 +81,14 @@ export function defaultStateDir(): string {
 
 export function settingsPath(stateDir?: string): string {
   return join(stateDir ?? defaultStateDir(), "settings.json");
+}
+
+/** Persist one field of our own settings file (merge, never clobber). */
+export function setTelemetry(stateDir: string | undefined, on: boolean): void {
+  mkdirSync(stateDir ?? defaultStateDir(), { recursive: true });
+  const file = loadSettingsFile(stateDir);
+  file.telemetry = on;
+  writeFileSync(settingsPath(stateDir), JSON.stringify({ ...file, version: 1 }, null, 2));
 }
 
 /** Missing or malformed file is not an error — settings fall back to env and defaults. */
@@ -122,10 +142,65 @@ export function resolveSettings(opts: SettingsOverrides = {}): GatewaySettings {
     vectorBackend:
       oneOf(process.env.GATEWAY_VECTOR_BACKEND, ["lance", "sqlite"] as const) ?? file.vectorBackend ?? null,
     embedEngine:
-      oneOf(process.env.GATEWAY_EMBED_ENGINE, ["mlx", "ollama", "voyage", "voyage-code"] as const) ??
+      oneOf<EmbeddingEngine>(process.env.GATEWAY_EMBED_ENGINE, ENGINE_DEFS.map((e): EmbeddingEngine => e.name)) ??
       file.embedEngine ??
       null,
-    reranker: oneOf(process.env.GATEWAY_RERANKER, ["jev", "cross-encoder", "none"] as const) ?? file.reranker ?? null,
+    reranker: oneOf<RerankerName>(process.env.GATEWAY_RERANKER, RERANKER_DEFS.map((r): RerankerName => r.name)) ?? file.reranker ?? null,
     allowedHosts,
+    telemetry: telemetryEnabled(file.telemetry),
+  };
+}
+
+/** Explicit opt-in only: unset/anything-else = off. */
+function telemetryEnabled(fileValue: boolean | undefined): boolean {
+  const env = process.env.GATEWAY_TELEMETRY?.trim().toLowerCase();
+  if (env === "on" || env === "1" || env === "true") return true;
+  if (env === "off" || env === "0" || env === "false") return false;
+  return fileValue === true;
+}
+
+/** Effective tunable values for sweepability: every GATEWAY_* knob in one place.
+ *
+ * Sources of truth stay in their modules (rank.ts, text.ts, live.ts,
+ * search.ts); this snapshots them alongside resolveSettings() so `gateway
+ * config` prints what a sweep actually ran with. Plain JSON-serializable.
+ */
+export function dumpConfig(): Record<string, unknown> {
+  const s = resolveSettings();
+  // Mirrors src/search/search.ts (kept local so settings stays free of the
+  // search dependency chain): same defaults, same validation.
+  const minVectorSim = (() => {
+    const raw = Number(process.env.GATEWAY_MIN_VECTOR_SIM ?? 0.25);
+    return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : 0.25;
+  })();
+  const rerankPool = (() => {
+    const raw = Number(process.env.GATEWAY_RERANK_POOL ?? 30);
+    return Number.isFinite(raw) && raw >= 1 && raw <= 100 ? Math.floor(raw) : 30;
+  })();
+  // Mirrors src/decisions/select.ts: a pin never falls back; null = auto.
+  const judgeRaw = process.env.GATEWAY_JUDGE;
+  const judge = judgeRaw === "jev" || judgeRaw === "neural-judge" ? judgeRaw : null;
+  return {
+    stateDir: s.stateDir,
+    indexDir: s.indexDir,
+    vectorDir: s.vectorDir,
+    backend: s.backend,
+    vectorBackend: s.vectorBackend,
+    embedEngine: s.embedEngine,
+    reranker: s.reranker,
+    judge,
+    allowedHosts: s.allowedHosts,
+    minVectorSim,
+    rerankPool,
+    tokenizer: process.env.GATEWAY_TOKENIZER === "en_stem" ? "en_stem" : "default",
+    simFloor: SIM_FLOOR,
+    simSpan: SIM_SPAN,
+    rrfK: RRF_K,
+    halfLifeDays: HALF_LIFE_DAYS,
+    weights: { ...RANK_WEIGHTS },
+    chunkChars: EMBED_CHUNK_CHARS,
+    liveWindowMs: LIVE_WINDOW_MS,
+    liveTurns: LIVE_MAX_TURNS,
+    subRecent: RECENT_LIMIT,
   };
 }

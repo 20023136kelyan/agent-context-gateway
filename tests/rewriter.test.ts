@@ -100,3 +100,13 @@ describe("rewriteConversationalQuery end-to-end", () => {
     expect(rewritten.variants.length).toBeGreaterThan(0);
   });
 });
+
+describe("prototype-pollution guard", () => {
+  it("survives query words that resolve via Object.prototype", () => {
+    // Real SWE-Gym query: "_constructor" strips to "constructor", which is a
+    // truthy function on Object.prototype — spreading it crashed retrieval.
+    const { primary, variants } = generateQueryVariants("BUG: call to _constructor of Series drops timezone");
+    expect(primary).toContain("call to _constructor");
+    expect(Array.isArray(variants)).toBe(true);
+  });
+});

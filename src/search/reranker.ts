@@ -37,9 +37,12 @@
  */
 import { getSharedReranker, type CrossEncoderReranker } from "./rerank.js";
 import { JevReranker } from "../judgments/rerank-jev.js";
+import { VoyageReranker } from "./rerank-voyage.js";
 import { jevAvailable } from "../judgments/jev.js";
+import { voyageAvailable } from "../embeddings/voyage.js";
 
-export type RerankerName = "jev" | "cross-encoder" | "none";
+import type { RerankerName } from "../components.js";
+export type { RerankerName } from "../components.js";
 
 export type Reranker = Pick<CrossEncoderReranker, "rerank">;
 
@@ -58,16 +61,21 @@ export const noopReranker: Reranker = {
 
 export function rerankerAvailable(name: RerankerName): boolean {
   if (name === "jev") return jevAvailable();
+  if (name === "voyage") return voyageAvailable();
   return true; // cross-encoder is in-process; none is trivially available
 }
 
 export function makeReranker(name: RerankerName): Reranker {
   if (name === "jev") return new JevReranker();
+  if (name === "voyage") return new VoyageReranker();
   if (name === "cross-encoder") return getSharedReranker();
   return noopReranker;
 }
 
-const ORDER: RerankerName[] = ["jev", "cross-encoder"];
+// Voyage sits behind Jev (unmeasured as of writing) and ahead of the
+// cross-encoder (measured below hybrid on real documents). Position is
+// provisional until the reranker bake-off lands numbers.
+import { RERANKER_ORDER as ORDER } from "../components.js";
 
 /**
  * Which reranker this process will use when a request asks for reranking.
@@ -90,7 +98,7 @@ export function rerankDefaultOn(name: RerankerName): boolean {
 
 export function resolveRerankerName(): RerankerName {
   const pinned = process.env.GATEWAY_RERANKER as RerankerName | undefined;
-  if (pinned === "jev" || pinned === "cross-encoder" || pinned === "none") return pinned;
+  if (pinned === "jev" || pinned === "voyage" || pinned === "cross-encoder" || pinned === "none") return pinned;
   return ORDER.find((n) => rerankerAvailable(n)) ?? "none";
 }
 

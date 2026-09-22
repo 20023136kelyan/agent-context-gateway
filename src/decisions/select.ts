@@ -14,7 +14,8 @@ import { NeuralEntailmentJudge } from "./extract.js";
 import { JevDecisionJudge } from "../judgments/judge-jev.js";
 import { jevAvailable } from "../judgments/jev.js";
 
-export type JudgeName = "jev" | "neural-judge";
+import type { JudgeName } from "../components.js";
+export type { JudgeName } from "../components.js";
 
 export function makeJudge(name: JudgeName): DecisionJudge {
   return name === "jev" ? new JevDecisionJudge() : new NeuralEntailmentJudge();

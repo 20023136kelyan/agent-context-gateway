@@ -32,7 +32,7 @@ export function chunkTurnId(id: string): string {
   return /^\d+$/.test(id.slice(hash + 1)) ? id.slice(0, hash) : id;
 }
 
-const VALID_HARNESSES = new Set(["claude-code", "codex", "cursor", "zep", "git"]);
+const VALID_HARNESSES = new Set(["claude-code", "codex", "cursor", "zep", "git", "trajectory", "opencode"]);
 
 export function parseTurnId(id: string): { harness: Harness; sessionId: string; turnKey: string } | null {
   const parts = id.split(":");

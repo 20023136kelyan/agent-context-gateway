@@ -12,7 +12,7 @@ import type { VectorBackend } from "../indexing/vectors.js";
 import type { TopologyStore } from "../topology/store.js";
 import type { FeedbackStore } from "../feedback/store.js";
 import { routeAutoScope } from "../topology/store.js";
-import { embedQueryResolved } from "../embeddings/provider.js";
+import { embedQueryResolved, embedMeter } from "../embeddings/provider.js";
 import { parseTurnId } from "../core/id.js";
 import { normalizeQuery, type NormalizedQuery } from "./query.js";
 import { finalScore, rrfBaseScore } from "./rank.js";
@@ -103,6 +103,9 @@ const SESSION_TTL_MS = 10_000;
 
 export class SearchService {
   private vectors: VectorBackend | null = null;
+  /** Engine that served the last search's vectors (null = lexical-only).
+   *  Read by usage telemetry; avoids re-probing availability per request. */
+  lastEngine: string | null = null;
   private topology: TopologyStore | null = null;
   private feedback: FeedbackStore | null = null;
   private temporal: TemporalStore | null = null;
@@ -170,6 +173,7 @@ export class SearchService {
   }
 
   async search(rawQuery: string, opts: SearchOptions = {}): Promise<SearchResponse> {
+    this.lastEngine = null;
     const scope = opts.scope ?? "project";
     if (!["project", "parent", "children", "siblings", "auto"].includes(scope)) {
       throw new Error(`bad_request: unknown scope "${scope}" (want project|parent|children|siblings|auto)`);
@@ -312,6 +316,7 @@ export class SearchService {
         // The engine comes back with the vector: a query embedding is only
         // comparable against the table that same engine wrote.
         const resolved = await embedQueryResolved(nq.indexQuery);
+        this.lastEngine = resolved?.engine ?? "none";
         let vhits: { turnId: string; similarity: number }[] = [];
         if (resolved) {
           const { vector: qv, engine } = resolved;
@@ -341,6 +346,7 @@ export class SearchService {
         }
       } catch {
         // embedding backend down — lexical results stand alone
+        embedMeter.fallbacks += 1;
       }
     }
 

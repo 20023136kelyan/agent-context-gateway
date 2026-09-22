@@ -9,8 +9,44 @@
  */
 import type { NormalizedQuery } from "./query.js";
 
-const HALF_LIFE_DAYS = 30;
-export const RRF_K = 10;
+/** Recency half-life: a turn this many days old scores half a fresh one.
+ *
+ * 30 days from the original hybrid ranking — recent work outranks last
+ * month's without erasing it.
+ *
+ * Overridable with GATEWAY_HALFLIFE_DAYS; invalid values fall back to the default. */
+export const HALF_LIFE_DAYS = (() => {
+  const raw = Number(process.env.GATEWAY_HALFLIFE_DAYS ?? 30);
+  return Number.isFinite(raw) && raw > 0 ? raw : 30;
+})();
+/** RRF damping factor: lower k rewards top ranks more steeply.
+ *
+ * 10, not the classic 60 — with only two fused lists (lexical + vector) the
+ * smaller k keeps rank-1 agreement decisive instead of washing it out.
+ *
+ * Overridable with GATEWAY_RRF_K; invalid values fall back to the default. */
+export const RRF_K = (() => {
+  const raw = Number(process.env.GATEWAY_RRF_K ?? 10);
+  return Number.isFinite(raw) && raw >= 1 && raw <= 100 ? Math.floor(raw) : 10;
+})();
+
+/** Final-score blend weights. Defaults are the hand-tuned blend from the
+ * original finalScore (0.65 RRF + 0.10 project + 0.10 repo + 0.10 recency +
+ * 0.05 entity) that the pooled-judging eval isolates against the reranker.
+ *
+ * Each overridable with its GATEWAY_W_* var (0..1); invalid values fall back
+ * to the default for that weight only. */
+function envWeight(name: string, def: number): number {
+  const raw = Number(process.env[name] ?? def);
+  return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : def;
+}
+export const RANK_WEIGHTS = {
+  rrf: envWeight("GATEWAY_W_RRF", 0.65),
+  project: envWeight("GATEWAY_W_PROJECT", 0.1),
+  repo: envWeight("GATEWAY_W_REPO", 0.1),
+  recency: envWeight("GATEWAY_W_RECENCY", 0.1),
+  entity: envWeight("GATEWAY_W_ENTITY", 0.05),
+};
 
 /**
  * Reciprocal Rank Fusion single-rank term normalized to [0, 1].
@@ -43,10 +79,12 @@ const SIM_FLOOR = (() => {
   const raw = Number(process.env.GATEWAY_SIM_FLOOR ?? 0.15);
   return Number.isFinite(raw) && raw >= 0 && raw < 1 ? raw : 0.15;
 })();
+export { SIM_FLOOR };
 const SIM_SPAN = (() => {
   const raw = Number(process.env.GATEWAY_SIM_SPAN ?? 0.35);
   return Number.isFinite(raw) && raw > 0 && raw <= 1 ? raw : 0.35;
 })();
+export { SIM_SPAN };
 
 export function similarityWeight(sim?: number): number {
   if (sim === undefined || !Number.isFinite(sim)) return 0.0;
@@ -106,11 +144,11 @@ export function finalScore(
 ): number {
   return Math.max(
     0,
-    0.65 * rrfBase +
-      0.1 * (projectMatch ? 1 : 0) +
-      0.1 * (repoMatch ? 1 : 0) +
-      0.1 * recencyScore(turnTs, nowMs) +
-      0.05 * entityScore(nq, turnContent, turnFileRefs) +
+    RANK_WEIGHTS.rrf * rrfBase +
+      RANK_WEIGHTS.project * (projectMatch ? 1 : 0) +
+      RANK_WEIGHTS.repo * (repoMatch ? 1 : 0) +
+      RANK_WEIGHTS.recency * recencyScore(turnTs, nowMs) +
+      RANK_WEIGHTS.entity * entityScore(nq, turnContent, turnFileRefs) +
       feedbackDelta,
   );
 }

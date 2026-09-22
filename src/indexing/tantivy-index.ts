@@ -25,14 +25,42 @@ const require = createRequire(import.meta.url);
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const tantivy = require("@pngwasi/node-tantivy-binding") as typeof import("@pngwasi/node-tantivy-binding");
 
-const { SchemaBuilder, Index, Document, Query, Occur } = tantivy;
+const { SchemaBuilder, Index, Document, Query, Occur, TokenizerStatic, FilterStatic, TextAnalyzerBuilder } = tantivy;
 
 type TantivyIndexHandle = InstanceType<typeof Index>;
 
+/**
+ * Content-field analyzer, selectable for sweeps (GATEWAY_TOKENIZER).
+ * Default is stock Tantivy behavior (no stemming — the Porter leaks live
+ * here, not in SQLite). `en_stem` adds simple + lowercase + English stemmer;
+ * ids and filters stay `raw` regardless. Schema is immutable per index dir,
+ * so sweep this as fresh-dir comparisons, never in place. Query parsing
+ * (`parseQueryLenient` on `content`) uses the same analyzer symmetrically.
+ */
+export function contentTokenizerName(): string {
+  return process.env.GATEWAY_TOKENIZER === "en_stem" ? "en_stem" : "default";
+}
+
+/** Register named analyzers on an index handle (both create and open paths). */
+function registerAnalyzers(index: TantivyIndexHandle): void {
+  try {
+    const analyzer = new TextAnalyzerBuilder(TokenizerStatic.simple())
+      .filter(FilterStatic.lowercase())
+      .filter(FilterStatic.stemmer("english"))
+      .build();
+    index.registerTokenizer("en_stem", analyzer);
+  } catch {
+    // Binding without analyzer support: en_stem cells fail loudly at search
+    // time (unknown tokenizer) rather than silently measuring the default.
+  }
+}
+
 export function buildSchema() {
+  const contentOpts: { stored: boolean; tokenizerName?: string } = { stored: true };
+  if (contentTokenizerName() !== "default") contentOpts.tokenizerName = contentTokenizerName();
   return new SchemaBuilder()
     .addTextField("id", { stored: true, tokenizerName: "raw" })
-    .addTextField("content", { stored: true })
+    .addTextField("content", contentOpts)
     .addTextField("harness", { stored: true, tokenizerName: "raw" })
     .addTextField("projectId", { stored: true, tokenizerName: "raw" })
     .addTextField("repo", { stored: true, tokenizerName: "raw" })
@@ -111,6 +139,7 @@ export class TantivyIndex implements SearchIndex {
         this.index = new Index(schema(), dir);
       }
     }
+    registerAnalyzers(this.index);
   }
 
   private ensureWriter(): InstanceType<typeof tantivy.IndexWriter> {

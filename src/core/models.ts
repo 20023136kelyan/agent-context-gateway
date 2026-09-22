@@ -4,7 +4,7 @@
  * See IMPLEMENTATION_PLAN_V2.md §3 and spec §8.
  */
 
-export type Harness = "claude-code" | "codex" | "cursor" | "zep" | "git";
+export type Harness = "claude-code" | "codex" | "cursor" | "zep" | "git" | "trajectory" | "opencode";
 
 export type TurnRole = "user" | "assistant" | "tool" | "system" | "unknown";
 

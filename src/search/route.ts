@@ -15,6 +15,7 @@
  * on NDCG parity plus the share of queries spared the embedding call.
  */
 import { normalizeQuery } from "./query.js";
+import { isWhyQuery } from "../decisions/cues.js";
 
 export interface RetrievalPlan {
   semantic: boolean;
@@ -55,4 +56,26 @@ export async function planRetrieval(query: string): Promise<RetrievalPlan> {
     // No key, offline, timeout — fall through to full retrieval.
   }
   return { semantic: true, reason: "default-hybrid" };
+}
+
+/**
+ * Deterministic policy (W4 brief #4 hypothesis): zero network, pure string
+ * ops. Entity-dominated or very short queries are exact-lookup tasks;
+ * why-worded queries target verdicts whose wording rarely overlaps the query
+ * (the paraphrase-shaped hole), so they always get vectors. Expectation: ≥30%
+ * skip the embedding call at <0.01 overall NDCG@5 loss vs always-hybrid.
+ */
+export function planRetrievalDeterministic(query: string): RetrievalPlan {
+  const nq = normalizeQuery(query);
+  const termCount = nq.indexQuery.split(" ").filter(Boolean).length;
+  if (nq.prNumbers.length > 0 || nq.fileRefs.length > 0) {
+    return { semantic: false, reason: "det-entity" };
+  }
+  if (isWhyQuery(query)) {
+    return { semantic: true, reason: "det-why" };
+  }
+  if (termCount <= 3) {
+    return { semantic: false, reason: "det-short" };
+  }
+  return { semantic: true, reason: "det-hybrid" };
 }
