@@ -18,6 +18,28 @@ import { scrubText } from "../security/scrub.js";
 const ENDPOINT = process.env.VOYAGE_ENDPOINT ?? "https://api.voyageai.com/v1/embeddings";
 const TIMEOUT_MS = Number(process.env.VOYAGE_TIMEOUT_MS ?? 30_000);
 
+/**
+ * Transient failures retry with exponential backoff: a timeout, a network
+ * error, 429 or 5xx. Without this one slow response killed a 46k-chunk
+ * backfill outright (2026-09-23). A 400 or a dimension mismatch will not change
+ * on retry, so those still fail at once. Read per call so tests can shorten it.
+ */
+const maxAttempts = () => Math.max(1, Number(process.env.VOYAGE_MAX_ATTEMPTS ?? 4));
+const backoffBaseMs = () => Math.max(0, Number(process.env.VOYAGE_BACKOFF_MS ?? 1000));
+
+function retryable(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+/** Retry-After (seconds) when the server sends one, else jittered exponential. */
+function backoffMs(attempt: number, retryAfter: string | null): number {
+  const hinted = retryAfter ? Number(retryAfter) * 1000 : NaN;
+  if (Number.isFinite(hinted) && hinted >= 0) return Math.min(hinted, 60_000);
+  return backoffBaseMs() * 2 ** (attempt - 1) * (0.5 + Math.random());
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export interface VoyageConfig {
   model: string;
   dim: number;
@@ -70,18 +92,28 @@ async function call(cfg: VoyageConfig, input: string[], inputType: "query" | "do
   // Scrubbed here as the last line of defence; callers that chunk scrub first.
   input = input.map((t) => scrubText(t).replace(LONE_SURROGATE, "\uFFFD"));
 
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
+  const payload = JSON.stringify({ model: cfg.model, input, input_type: inputType, output_dimension: cfg.dim });
   let res: Response;
-  try {
-    res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model: cfg.model, input, input_type: inputType, output_dimension: cfg.dim }),
-      signal: ac.signal,
-    });
-  } finally {
-    clearTimeout(timer);
+  for (let attempt = 1; ; attempt++) {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
+    try {
+      res = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+        body: payload,
+        signal: ac.signal,
+      });
+    } catch (err) {
+      // Timeout (AbortError) or a dropped connection: transient.
+      if (attempt >= maxAttempts()) throw err;
+      await sleep(backoffMs(attempt, null));
+      continue;
+    } finally {
+      clearTimeout(timer);
+    }
+    if (res.ok || !retryable(res.status) || attempt >= maxAttempts()) break;
+    await sleep(backoffMs(attempt, res.headers.get("retry-after")));
   }
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
