@@ -9,31 +9,39 @@ no whole-context handoffs, no central source of truth beyond the native historie
 Full concept: [`Agent Context Gateway — Project Specification.md`](./Agent%20Context%20Gateway%20—%20Project%20Specification.md) (§1–80).
 Build plan: [`IMPLEMENTATION_PLAN_V2.md`](./IMPLEMENTATION_PLAN_V2.md).
 Review fixes: [`REVIEW_FIX_PLAN.md`](./REVIEW_FIX_PLAN.md).
+Fixture corpus: [`FIXTURE_CORPUS_BRIEF.md`](./FIXTURE_CORPUS_BRIEF.md).
 
-## Status: All Phases Complete (MVP through Phase F) + review fixes
+## Status: 0.2.0 — locked Voyage/Jev stack
 
 - [x] MVP — adapters (Claude Code, Codex), Tantivy/SQLite, hybrid search, CLI/HTTP/MCP, acceptance test, watcher, hooks
 - [x] Phase 2 — background serve with port-delegation, topology links (`parent|children|siblings|auto`), Cursor adapter, repo-root awareness, bearer auth & read-only federation, artifact polish
 - [x] Phase 3 — heuristic decision extraction, bi-temporal reasoning, artifact graph BFS, feedback ranking, mDNS discovery, native SwiftUI menu-bar app
-- [x] Phase A — 24-query domain-stratified golden benchmark (`tests/eval/golden.json`), evaluation runner, NDCG/MRR/ALCE metrics, committed baseline
-- [x] Phase B — CAsT conversational query rewriting, RRF fusion with similarity calibration, local ONNX neural cross-encoder reranker, multi-hop BFS graph traversal
+- [x] Phase A — domain-stratified golden benchmark, evaluation runner, NDCG/MRR/ALCE metrics
+- [x] Phase B — CAsT conversational query rewriting, RRF fusion with similarity calibration, reranking, multi-hop BFS graph traversal
 - [x] Phase C — Derived bi-temporal invalidation markers (non-destructive supersession, point-in-time `asOf` queries), resource-level ACLs
-- [x] Phase D — Native Apple Silicon MLX GPU embedding sidecar (BGE-small on Metal, in-process venv), LanceDB integration
-- [x] Phase E — Zep Context Lake adapter (`harness: "zep"`), Neural Entailment Decision Judge (`method: "neural-judge"`)
+- [x] Phase E — Zep Context Lake adapter (`harness: "zep"`)
 - [x] Phase F — Real-time live active-session search (bypassing index), context subscriptions & webhook delivery, full agent lineage explorer
 - [x] Review fixes (2026-09-16) — correctness, security and performance pass over the whole codebase; see [`REVIEW_FIX_PLAN.md`](./REVIEW_FIX_PLAN.md)
+- [x] 0.2.0 (2026-09-22) — Voyage embeddings, Jev reranker and decision judge, component registry, OpenCode and trajectory adapters, sqlite-vec backend (Intel Macs), fixture/BEIR eval program and sweep harness, `init`/`doctor`/`models`/`stats`/`telemetry`
+- [x] Stack focus (2026-09-23) — local fallbacks deleted: MLX and Ollama embedders, ONNX cross-encoder, neural-entailment and Apple FM judges. They were measured and lost (see [Reranking](#reranking)).
 
 ## Quickstart
 
 ```bash
 npm install
+cp .env.example .env          # optional: VOYAGE_API_KEY, TYPESAFE_API_KEY
 npx tsx src/cli.ts init       # detects histories, sets keys, syncs, backfills, installs hooks, verifies
 npx tsx src/cli.ts search "What did Codex decide about collaboration?"
 npx tsx src/cli.ts health
 npx tsx src/cli.ts doctor     # histories, keys, index, vectors, models in one report
-npx tsx src/cli.ts models     # swappable engines/rerankers/judges, availability, resolved defaults
+npx tsx src/cli.ts models     # locked stack vs what resolves here, availability, prices
+npx tsx src/cli.ts config     # effective tunables (flag > env > settings.json > default)
 npx tsx src/cli.ts stats      # shape-only usage aggregates (never content)
 ```
+
+No key is required. Without keys the gateway runs lexical-only: no vectors, no
+reranking, and decision verdicts stay labelled as heuristic candidates.
+`npm run dev -- <command>` is the same CLI with `.env` loaded.
 
 HTTP (loopback) and MCP:
 
@@ -41,6 +49,29 @@ HTTP (loopback) and MCP:
 npx tsx src/cli.ts serve --port 3000   # http://127.0.0.1:3000/{health,sources,sessions,search,sync}
 npx tsx src/cli.ts mcp                # stdio MCP server: context.search, context.get_turn, …
 ```
+
+## The model stack
+
+Every swappable piece lives in one registry, [`src/components.ts`](./src/components.ts).
+Types, resolution order, settings allow-lists and sweep cost basis all derive from it.
+
+| Role | Locked | Also available (pin only) | Opt-in key |
+|---|---|---|---|
+| Embeddings | `voyage` (voyage-4, 1024-dim) | `voyage-code`, `voyage-context` | `VOYAGE_API_KEY` |
+| Reranker | `voyage` (rerank-2.5) | `jev` (pairwise), `none` | `VOYAGE_API_KEY` / `TYPESAFE_API_KEY` |
+| Decision judge | `jev` | `heuristic` | `TYPESAFE_API_KEY` |
+
+"Locked" is the measured production stack. Unpinned resolution is
+first-available-wins: rerankers are tried `jev` then `voyage`, so **with both keys
+set, Jev reranks** even though Voyage is the locked reranker. `gateway models`
+prints both. Pin with `GATEWAY_EMBED_ENGINE`, `GATEWAY_RERANKER` and
+`GATEWAY_JUDGE`. A pin never falls back, so a deployment cannot silently switch
+vendors mid-corpus.
+
+**Privacy.** Every model in the stack is remote. Setting a key is the opt-in, and
+it is a deliberate departure from the spec's local-first principle (§73.5):
+Voyage sees the turn text you backfill plus each query; Jev sees each query plus
+candidate excerpts on every reranked search or `decide`.
 
 ## Network access and auth
 
@@ -75,27 +106,31 @@ npx tsx src/cli.ts decide "Why did we reject Monaco?"
 ```
 
 Two-stage architecture:
-1. Heuristic recall scans discussion regions for decision shape (conclusion, rationale, alternatives, question) with speech-act and relevance gating: conversational roles only, whole-word cues, sentence-scoped matching, no heading anchors, speaker-or-colon form, no attributive adjectives ("the selected session" ≠ "we selected X"). Only sentences that *end* in "?" count as questions, so a URL or `?.` in a turn no longer hides a verdict.
-2. The Neural Entailment Judge (`src/decisions/extract.ts`) scores whether a candidate conclusion answers the query, using local cross-attention (`method: "neural-judge"`). If that model can't run, the verdict keeps its `heuristic` label instead of claiming a judgement that never happened.
+1. Heuristic recall scans discussion regions for decision shape (conclusion, rationale, alternatives, question) with speech-act and relevance gating: conversational roles only, whole-word cues, sentence-scoped matching, no heading anchors, speaker-or-colon form, no attributive adjectives ("the selected session" ≠ "we selected X"). Only sentences that *end* in "?" count as questions, so a URL or `?.` in a turn no longer hides a verdict. Cues come from per-locale packs (`src/decisions/locales/`, `GATEWAY_LOCALE`, default `en`).
+2. The Jev judge (`src/judgments/judge-jev.ts`) asks two typed questions per candidate: does this passage answer the query, and is it proposed, decided or reversed? The second keeps a session that merely restates open topics out of the citations. Without `TYPESAFE_API_KEY` the verdict keeps its `heuristic` label instead of claiming a judgement that never happened.
 
 Every claim carries source turn IDs. Confidence blends shape-completeness with
 *relevance*: verdicts sharing no query terms collapse to ~0.3 (low-confidence
-leads) instead of parading as answers.
+leads) instead of parading as answers. On the fixture corpus, the Jev judge takes
+decision-citation Hit@1 from 0.381 (the deleted neural-entailment judge) to 0.952.
 
 ## Semantic search
 
 Lexical search matches words, not meaning. Embeddings add paraphrase-level recall:
 
-- **Default engine: MLX** (BGE-small, 384-dim) on the Apple Silicon GPU, run by an
-  in-process Python worker from `~/.context-gateway/mlx-venv`. The worker script is
-  resolved next to its module, so MCP servers and hooks started in other
-  directories use the same engine (and therefore the same vector table).
-- **Fallback: Ollama** (`qwen3-embedding:0.6b`, 1024-dim) when the venv is absent.
-  A worker that dies is reported immediately and skipped for 60s rather than
-  stalling every call, and each request has a timeout.
+- **Engine: Voyage** (`voyage-4`, 1024-dim) when `VOYAGE_API_KEY` is set. The
+  provider asserts the returned width and throws on a mismatch, so a wrong
+  model/dim pairing cannot write a foreign vector space into a valid-looking table.
+- **Storage:** LanceDB, or sqlite-vec where Lance's native addon is missing. That
+  is always the case on Intel Macs, since LanceDB dropped darwin-x64 after 0.22.3.
+  Force one with `GATEWAY_VECTOR_BACKEND=lance|sqlite`.
+- **Chunking:** turns are embedded in ~1600-char windows (`GATEWAY_CHUNK_CHARS`),
+  so one long turn becomes several vector rows.
 
-Each engine writes its own table (`turns_384`, `turns_1024`), and backfill pins one
-engine per run so a mid-run fallback can't scatter a session across tables.
+Each engine writes its own table (`turns_voyage_1024`, `turns_voyage_code_1024`).
+Vector width is not an identity, so tables are keyed by engine. Backfill pins one
+engine per run so a session cannot scatter across tables. Tables from the deleted
+MLX/Ollama engines are ignored; backfill re-embeds under the live engine.
 
 ```bash
 npx tsx src/cli.ts backfill              # resumable; compacts and indexes ids when done
@@ -104,8 +139,30 @@ npx tsx src/cli.ts search "…" --json     # add ?semantic=false (HTTP) or seman
 
 Hybrid ranking fuses Tantivy BM25 and cosine similarity with RRF, plus
 project/repo/recency/entity/feedback boosts. Missing vectors degrade to lexical.
-Vectors live in LanceDB (`~/.context-gateway/vectors-lance`), disposable like the
-lexical index.
+Vectors live under the state dir (`~/.context-gateway` by default), disposable
+like the lexical index. The similarity floor and ramp (`GATEWAY_SIM_FLOOR`,
+`GATEWAY_SIM_SPAN`, `GATEWAY_MIN_VECTOR_SIM`) are calibrated for voyage-4:
+re-sweep them before trusting another engine.
+
+## Reranking
+
+The top 30 fused candidates (`GATEWAY_RERANK_POOL`) go to the installed reranker.
+Whether a request reranks when it doesn't say is decided per reranker: **on for
+Jev, off for Voyage and `none`**. `?rerank=true|false`, `--no-rerank` or MCP
+`rerank` override it; `GATEWAY_RERANKER=none` turns it off everywhere.
+
+Why these components, measured on BEIR nfcorpus (3633 real documents, 100 judged queries):
+
+| Arm | NDCG@5 | p50 |
+|---|---:|---:|
+| lexical | 0.374 | 6 ms |
+| hybrid, no rerank | 0.445 | 318 ms |
+| local ONNX cross-encoder, pool 30 (deleted) | 0.433 | 6984 ms |
+| Jev pairwise | 0.489 | 620 ms |
+
+The cross-encoder landed *below* plain hybrid on real document lengths while
+costing seconds, and a smaller pool recovered none of it. That is why it was
+deleted rather than kept as a local fallback.
 
 ## Staying fresh (new chats)
 
@@ -116,11 +173,11 @@ Three layers, fastest first:
    npx tsx src/cli.ts sync-session claude-code "$SESSION_ID" --embed
    ```
    Claude Code (`~/.claude/settings.json`) — hooks receive JSON on stdin,
-   so extract `session_id` with `jq`:
+   so extract `session_id` with `jq`. `init` installs this for you:
    ```json
    { "hooks": { "SessionEnd": [{
      "hooks": [{ "type": "command",
-       "command": "SID=$(jq -r .session_id); node --import tsx \"/Users/admin/dev/Agent Context Gateway/src/cli.ts\" sync-session claude-code \"$SID\"" }]
+       "command": "SID=$(jq -r .session_id); node --import tsx \"/path/to/ACG/src/cli.ts\" sync-session claude-code \"$SID\"" }]
    }] } }
    ```
 2. **Watch mode (catch-all)** — `serve --watch [--embed]` re-syncs seconds after any
@@ -136,6 +193,9 @@ npx tsx src/cli.ts git-hooks install --repo /path/to/repo
 The hook posts url-encoded fields (multi-line messages, quotes and backslashes
 survive), honours `GATEWAY_PORT`/`GATEWAY_TOKEN`, and preserves any existing
 post-commit/post-merge hook as `<name>.pre-gateway`, which it runs first.
+
+`gateway.sh` is a stable entrypoint (resolves nvm's node, loads `.env`) for
+launchd (`launchd/com.context-gateway.serve.plist`) and hooks.
 
 ## Subscriptions
 
@@ -167,11 +227,11 @@ opencode (`~/.config/opencode/opencode.json`):
 ```json
 { "mcp": { "context-gateway": {
   "type": "local",
-  "command": ["node", "--import", "tsx", "/Users/admin/dev/Agent Context Gateway/src/cli.ts", "mcp"]
+  "command": ["node", "--import", "tsx", "/path/to/ACG/src/cli.ts", "mcp"]
 } } }
 ```
 
-Claude Code: `claude mcp add context-gateway -- node --import tsx /Users/admin/dev/Agent\ Context\ Gateway/src/cli.ts mcp`.
+Claude Code: `claude mcp add context-gateway -- node --import tsx /path/to/ACG/src/cli.ts mcp`.
 Tools: `context.search`, `context.decide`, `context.get_session`, `context.get_turn`,
 `context.get_context`, `context.get_topology`, `context.explore_lineage`,
 `context.get_related`, `context.traverse_artifacts`, `context.get_invalidations`,
@@ -195,88 +255,119 @@ Swift models is tested, not assumed.
 ## Evaluation
 
 ```bash
-npm run eval -- --mode hybrid --save tests/eval/baseline.json
+npm run eval -- --fixture --mode lexical,hybrid,jev-pairwise,rerank-voyage
+npm run eval -- --beir /path/to/beir/nfcorpus --mode hybrid,jev-pairwise
+npm run sweep -- sweeps/example.json
 ```
 
-Modes are distinct pipelines: `lexical` (no vectors), `hybrid` (vectors + RRF;
-`rrf` is an alias) and `rerank` (hybrid + cross-encoder). 24 domain-stratified
-golden queries report NDCG@5, MRR@5, P@1, P@5, latency and ALCE citation metrics.
+- **Corpora.** A 72-session synthetic fixture corpus (`tests/fixtures/corpus.ts`,
+  68 golden queries in `tests/eval/golden-fixture.json`), SWE-Gym-style
+  trajectories, and BEIR datasets (`src/eval/beir.ts`) — corpora nobody here
+  wrote, to check that constants tuned on the fixture hold up.
+- **Arms.** `--mode` takes a comma-separated list and runs every arm in one
+  process against one index, since BM25 statistics drift between processes.
+  Arms: `lexical`, `hybrid` (`rrf`), `lexical-jev`, `jev`, `lexical-jev-pairwise`,
+  `jev-pairwise`, `jev-pure` (reranker order only, no boosts), `rerank-voyage`,
+  and judge arms `judge-heuristic`, `judge-jev`, `judge-jev-noul`.
+- **Metrics.** NDCG@5, MRR@5, P@1, P@5, latency, ALCE citation metrics and judge Hit@1.
+- **Sweeps.** `scripts/sweep.ts` runs manifest cells, each in its own env-isolated
+  process, and writes quality *and* third-party cost per row to
+  `sweeps/results.sqlite` (git-ignored).
 
 `npx tsx scripts/bench.ts [--sync]` times the hot paths against the real local
 histories (read-only).
 
+A custom embedder track (domain-adaptive pretraining and contrastive triplets on
+BGE-small) was tried and parked after both regressed; see
+[`experiments/training/README.md`](./experiments/training/README.md).
+
 ## Architecture
 
 ```text
-Claude history ──► ClaudeAdapter ──┐
-                                   ├──► Tantivy index (disposable) ──► SearchService ──► CLI / HTTP / MCP
-Codex history ───► CodexAdapter ───┘         ▲                              │
-        native truth (never mutated)         │                              ▼
-                                             │                     adapters (truth) for
-                                             │                     expansion + packaging
+Claude Code ─┐
+Codex ───────┤
+Cursor ──────┤                       ┌─► Tantivy/SQLite (BM25) ─┐
+OpenCode ────┼──► adapters ─► sync ──┤                          ├─► RRF + boosts ─► rerank ─► SearchService ─► CLI / HTTP / MCP
+Zep ─────────┤   (read-only)         └─► Voyage ─► Lance/       │   (project, repo,   (Jev/     │
+Trajectories ┤                             sqlite-vec vectors ──┘    recency, feedback) Voyage)   ▼
+Git ─────────┘                                                               adapters (truth) for expansion + packaging
+       native truth (never mutated)          disposable derived state
 ```
 
 Principles (§73): native history is truth; provenance always; least context
-necessary (summary + ±3-turn evidence + budgets); local-first; disposable index
+necessary (summary + ±3-turn evidence + budgets); disposable index
 (`sync --rebuild` reproduces it); no hallucinated context (extractive summaries only).
+Local-first holds for storage and history; the models are remote and opt-in (see
+[The model stack](#the-model-stack)).
 
 ## Measured performance (2026-09-16, 159 sessions / ~107k turns / 100k docs, M4)
 
-Before/after the review-fix pass (`scripts/bench.ts`, medians):
+Before/after the review-fix pass (`scripts/bench.ts`, medians). Rows that measured
+the since-deleted local models are omitted; see [Reranking](#reranking) for the
+current retrieval numbers.
 
 | Operation | Before | After |
 |---|---:|---:|
 | `index.stats()` (called on every search) | 37.5 ms | 0.2 ms |
 | Codex `listTurns` ×5, caches warm | 21 ms | 0.1 ms |
 | 24 golden queries, lexical | 3957 ms | 2692 ms |
-| 24 golden queries, hybrid | 1972 ms | 822 ms |
 | `extractDecisions` over a 2529-turn session | 308 ms | 44 ms |
-| `decideOnce` (search + judge) | 1359 ms | 1294 ms |
-| Rerank 15 candidates (cross-encoder) | 1374 ms | 1355 ms |
 | Cold full sync | 52.7 s | 12.8 s |
 | Incremental sync, no changes | 46.8 ms | 14.3 ms |
-
-Batching the cross-encoder was tried and reverted: padding every pair to the
-longest made it slower (2.7 s vs 1.7 s for 15 pairs) on CPU ONNX.
 
 ## Layout
 
 ```text
-src/core/          Agent/Session/Turn/Provenance model + stable IDs, LruCache
-src/adapters/      claude.ts, codex.ts, cursor.ts, zep.ts, git.ts, text.ts, repo.ts
-src/embeddings/    provider.ts (engine + dim), mlx.ts (Apple Silicon GPU), ollama.ts
-src/indexing/      types.ts, tantivy-index.ts, sqlite-index.ts, vectors.ts (LanceDB), sync.ts, embed-sync.ts
-src/search/        query.ts, rank.ts (RRF), rewriter.ts (CAsT), rerank.ts (ONNX), search.ts
-src/topology/      store.ts (links, auto routing), lineage.ts (lineage tree explorer)
-src/temporal/      bi-temporal.ts (non-destructive invalidations, asOf point-in-time)
-src/security/      acl.ts (resource-level ACL rules, PermCov measurement)
-src/collaboration/ live.ts (real-time active session search, subscriptions + delivery)
-src/artifacts/     graph.ts (co-occurrence & multi-hop BFS graph traversal)
-src/feedback/      store.ts (feedback loop + ranking bias)
-src/eval/          metrics.ts (NDCG, MRR, ALCE), runner.ts (eval harness, modes)
-src/transports/    http.ts (token auth, host/origin checks), mcp.ts (17 tools)
-src/app.ts         shared singleton factory + write locks
-src/commands.ts    transport-agnostic logic
-src/cli.ts         (auto-delegating CLI)
-src/remote.ts      port file, probe, loop-guard federation client
-src/remotes.ts     remotes.json (0600) + read-only fan-out
-src/watch.ts       fs watcher for serve --watch
-scripts/           run-eval.ts, bench.ts
-launchd/           com.context-gateway.serve.plist
-gateway.sh         nvm-resolving entrypoint
-ui/                SwiftUI MenuBarExtra native macOS app (GatewayMenuCore + App)
-tests/             27 suites (154 tests) + 3 Swift XCTest tests
+src/core/           Agent/Session/Turn/Provenance model + stable IDs, LruCache
+src/adapters/       claude, codex, cursor, opencode, zep, trajectories, git, text (chunking), repo
+src/components.ts   component registry: engines, rerankers, judges, locked stack, prices
+src/settings.ts     typed config (flag > env > settings.json > default)
+src/embeddings/     provider.ts (engine registry + query-vector cache), voyage.ts, voyage-context.ts
+src/indexing/       tantivy-index.ts, sqlite-index.ts, vectors.ts (LanceDB), vectors-sqlite.ts (sqlite-vec),
+                    vector-backend.ts, sync.ts, embed-sync.ts, store.ts (cursors)
+src/search/         query.ts, rank.ts (RRF), rewriter.ts (CAsT), reranker.ts (selection + contract),
+                    rerank-voyage.ts, route.ts (experimental retrieval router, eval-only), search.ts
+src/judgments/      jev.ts (TypeSafe client), rerank-jev.ts, judge-jev.ts
+src/decisions/      cues.ts, locales/, extract.ts (heuristic recall), select.ts (judge selection)
+src/topology/       store.ts (links, auto routing), lineage.ts (lineage tree explorer)
+src/temporal/       bi-temporal.ts (non-destructive invalidations, asOf point-in-time)
+src/security/       acl.ts (resource-level ACL rules, PermCov measurement)
+src/collaboration/  live.ts (real-time active session search, subscriptions + delivery)
+src/artifacts/      graph.ts (co-occurrence & multi-hop BFS graph traversal)
+src/feedback/       store.ts (feedback loop + ranking bias)
+src/eval/           metrics.ts (NDCG, MRR, ALCE), runner.ts (arms), beir.ts (BEIR corpora)
+src/observability/  usage.ts (shape-only usage log), report.ts (opt-in aggregate telemetry)
+src/discovery/      mdns.ts
+src/git/            hooks.ts
+src/transports/     http.ts (token auth, host/origin checks), mcp.ts (17 tools)
+src/app.ts          shared singleton factory + write locks
+src/commands.ts     transport-agnostic logic
+src/setup.ts        onboarding primitives behind `init`
+src/cli.ts          auto-delegating CLI
+src/remote.ts       port file, probe, loop-guard federation client
+src/remotes.ts      remotes.json (0600) + read-only fan-out
+src/watch.ts        fs watcher for serve --watch
+scripts/            run-eval.ts, sweep.ts, sweep-cell.ts, bench.ts, build-swe-gym.py, fetch-native-binding.py
+sweeps/             sweep manifests (results.sqlite is git-ignored)
+experiments/        parked custom-embedder training, paid-hosting note
+launchd/            com.context-gateway.serve.plist
+gateway.sh          nvm-resolving entrypoint
+ui/                 SwiftUI MenuBarExtra native macOS app (GatewayMenuCore + App)
+tests/              37 suites (235 tests) + 3 Swift XCTest tests
 ```
 
 ## Known limits
 
 - Single user. Loopback by default; serving the network is opt-in and requires `GATEWAY_TOKEN`.
+- No local models. Without `VOYAGE_API_KEY` search is lexical-only; without `TYPESAFE_API_KEY` there is no Jev reranking and `decide` returns heuristic candidates.
+- Voyage is the locked reranker, but unpinned resolution picks Jev first when both keys are present (see [The model stack](#the-model-stack)).
 - Summaries are extractive (first lines), never LLM-generated.
 - Changing adapter ID schemes or normalization requires `sync --rebuild` (incremental sync keys on file mtime/size and can't see ID changes).
 - One `TantivyIndex` writer per index dir per process — the CLI delegates writes to a live `serve`; readers are unaffected.
 - The Cursor adapter follows the documented 2026 format but has never been verified against a real Cursor history.
+- `init` detects Claude Code and Codex histories only; the other adapters read their default locations or need their path configured.
 - The Git adapter lists HEAD's last 50 commits for every branch session, so branch sessions other than the checked-out one repeat HEAD's log.
 - `deriveFromTurns` (automatic supersession detection) is library-only: nothing runs it during sync, so invalidations come from `POST /temporal/invalidate`.
-- The cross-encoder reranker downloads its model from Hugging Face on first use; without network the search falls back to RRF ranking.
+- Almost every tuned constant was measured on the synthetic fixture corpus; BEIR checks the retrieval side, but the embedding chunk size has not been re-tuned since the switch from BGE-small to Voyage.
 - Parsed turns are cached per adapter (256 sessions / 200M chars, ~222 MB for the measured corpus).
 - Zep sessions served by the REST API are re-indexed at most every 5 minutes (the API exposes no change stamp).

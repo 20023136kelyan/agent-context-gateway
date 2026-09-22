@@ -97,8 +97,8 @@ export type EvalMode =
   | "lexical"
   | "hybrid"
   | "rrf"
-  // Jev arms mirror the cross-encoder arms exactly, differing only in which
-  // reranker is installed, so a delta is attributable to the model alone.
+  // Jev arms mirror lexical/hybrid retrieval exactly, differing only in the
+  // installed reranker, so a delta is attributable to the model alone.
   | "lexical-jev"
   | "jev"
   | "lexical-jev-pairwise"

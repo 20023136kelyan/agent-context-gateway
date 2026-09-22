@@ -63,7 +63,7 @@ export interface GatewayApp {
   vectors: VectorBackend | null;
   /** Which backend served the vectors, once opened. */
   vectorBackend: VectorBackendName | null;
-  /** Which reranker is installed. Only used when a request passes rerank. */
+  /** Which reranker is installed. Runs when a request reranks, explicitly or by default. */
   reranker: RerankerName;
   /** Resolved configuration. Reaches every transport, since all take `app`. */
   readonly settings: GatewaySettings;
@@ -108,8 +108,9 @@ export function createApp(opts: AppOptions = {}): GatewayApp {
   search.attachFeedback(feedback);
   search.attachTemporal(temporal);
   search.attachAcl(acl);
-  // Installed once, used only when a request opts in: `rerank` is default-off
-  // on every transport, so selecting a remote reranker here sends nothing.
+  // Installed once. Whether a request uses it is decided per request: an
+  // explicit `rerank` wins, otherwise `rerankDefaultOn` — ON for jev, so a
+  // TYPESAFE_API_KEY alone sends query text to Jev on every search.
   const { name: reranker, reranker: rerankerImpl } = settings.reranker
     ? { name: settings.reranker, reranker: makeReranker(settings.reranker) }
     : resolveReranker();

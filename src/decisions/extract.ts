@@ -5,9 +5,9 @@
  * region's turns for decision SHAPE (conclusion anchor + rationale +
  * alternatives + triggering question). No comprehension involved.
  *
- * Future: an Apple Foundation Models judge implements DecisionJudge over the
- * same candidate windows for precision (method: "apple-fm"). The heuristic
- * stays as the cheap recall stage either way.
+ * Precision comes from a DecisionJudge over the same candidate windows: Jev
+ * when TYPESAFE_API_KEY is set (see `select.ts`), otherwise the heuristic
+ * passthrough, whose verdicts stay labelled as heuristic candidates.
  */
 import type { Turn } from "../core/models.js";
 import { CONCLUSION_STRONG, CONCLUSION_WEAK, RATIONALE_CUES, ALTERNATIVE_CUES, sentenceHits, isQuestion, isHeading, hasSpeaker, isAttributiveUse } from "./cues.js";

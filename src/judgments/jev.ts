@@ -13,9 +13,9 @@
  * call ships live query text on every request. Presence of an API key is the
  * opt-in; no call site may enable it implicitly.
  *
- * Note the local cross-encoder measures 798ms for 15 candidates on this
- * hardware against Jev's 904ms, so this is not a performance substitution. It
- * has to win on judgement quality or it should not be the default.
+ * The deleted local cross-encoder measured 798ms for 15 candidates against
+ * Jev's 904ms, so Jev was never a performance substitution. It is the default
+ * because it won on judgement quality (see `search/reranker.ts`).
  */
 const ENDPOINT = process.env.JEV_ENDPOINT ?? "https://api.typesafe.ai/v1/systemone";
 const TIMEOUT_MS = Number(process.env.JEV_TIMEOUT_MS ?? 30_000);

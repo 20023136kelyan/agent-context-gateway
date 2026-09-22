@@ -644,8 +644,8 @@ program
   });
 
 /** Attach availability to a component row without fighting literal types.
- *  Keyed components report key presence; keyless ones report the live probe
- *  (an MLX row on Linux must read false even though nothing is "missing"). */
+ *  Keyed components report key presence; keyless ones (`none`, `heuristic`)
+ *  report the live probe, or true when there is nothing to probe. */
 function withKey(row: Record<string, unknown>, available: Record<string, boolean>): Record<string, unknown> {
   const keyEnv = typeof row.keyEnv === "string" ? row.keyEnv : null;
   const name = typeof row.name === "string" ? row.name : "";

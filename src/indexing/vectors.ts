@@ -2,8 +2,8 @@
  * LanceDB vector store for turn embeddings (Phase 2 semantic slice).
  * Disposable derived state: delete the dir and re-backfill from natives.
  * Cosine distance (embeddings are compared by angle, not magnitude).
- * One table per ENGINE (turns_mlx_384, turns_voyage_1024), not per dimension.
- * Width is not an identity: Ollama's Qwen and a 1024-dim Voyage model are both
+ * One table per ENGINE (turns_voyage_1024, turns_voyage_code_1024), not per
+ * dimension. Width is not an identity: voyage-4 and voyage-code-4 are both
  * 1024 wide but are different vector spaces, and keying on width alone would
  * blend them into one table where every similarity is meaningless.
  */

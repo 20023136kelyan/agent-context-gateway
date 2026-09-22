@@ -9,7 +9,7 @@
  * eval has to decide between them rather than us:
  *
  *   "pairwise"— one request per candidate, judged alone. The cookbook's shape,
- *               and it matches the cross-encoder's independent-pair semantics.
+ *               and it matches a cross-encoder's independent-pair semantics.
  *   "fanout"  — one request, one Noul per candidate over shared state, so
  *               candidates are visible to each other. Cheaper: one request
  *               instead of N.
@@ -40,7 +40,7 @@ const CRITERIA = {
   false: "The candidate is only on a similar topic, or mentions the subject without resolving it.",
 } as const;
 
-/** Identical shape to the cross-encoder's degraded path, and for the same reasons. */
+/** Same shape as `noopReranker`: scores pass through, flagged `neural: false`. */
 function passthrough(pool: RerankCandidate[]): RerankResult[] {
   return pool.map((c) => ({
     id: c.id,

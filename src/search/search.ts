@@ -34,7 +34,8 @@ export interface SearchOptions {
   callerSessionId?: string;
   /** Caller identity for resource-level ACL enforcement (Phase C.2) */
   callerPrincipal?: string;
-  /** Neural Cross-Encoder reranker over top candidates (Phase B.2) */
+  /** Rerank the top RERANK_POOL candidates with the installed reranker. Transports
+   *  default this per reranker (see `rerankDefaultOn`). */
   rerank?: boolean;
   /**
    * Pooled-judging mode (Jev-branch experiment): the RRF score still selects
@@ -163,7 +164,7 @@ export class SearchService {
     return { map, cached: false };
   }
 
-  /** Replace the cross-encoder (tests; alternative rerankers). */
+  /** Install the reranker used when a request passes `rerank` (app factory, tests). */
   setReranker(reranker: Reranker): void {
     this.reranker = reranker;
   }
@@ -286,7 +287,7 @@ export class SearchService {
     // were dropped only after consuming rank positions, muting the vector head.
     // With asOf bounded inside the query, hybrid is 0.831 against lexical 0.841
     // — vectors at full influence cost a little when they rank unaided. Behind
-    // the cross-encoder they pay instead (0.885 vs 0.861), which is the case for
+    // the (since deleted) cross-encoder they paid instead (0.885 vs 0.861), the case for
     // leaving this permissive: the gate would starve the pool the reranker
     // depends on. Re-sweeping it on the chunked, correctly-pinned index is the
     // obvious lever — do not trust the pre-chunking numbers above when tuning.
@@ -311,8 +312,9 @@ export class SearchService {
         // embedding the natural question instead is worth +0.003 NDCG@5 —
         // noise — and on a zero-lexical-overlap paraphrase it drags the vector
         // toward a distractor ("how SHOULD teammates jointly EDIT" pulls to
-        // "Monaco EDITOR SHOULD be replaced"). The win was the query prefix
-        // (see BGE_QUERY_PREFIX), not the word order.
+        // "Monaco EDITOR SHOULD be replaced"). The win was BGE's query prefix,
+        // not the word order; Voyage gets the same effect from input_type "query".
+        // (That A/B predates the Voyage switch and has not been re-run.)
         // The engine comes back with the vector: a query embedding is only
         // comparable against the table that same engine wrote.
         const resolved = await embedQueryResolved(nq.indexQuery);
@@ -420,7 +422,7 @@ export class SearchService {
     }
     ranked.sort((a, b) => b.score - a.score);
 
-    // Neural Cross-Encoder precision reranking over top candidates (Phase B.2)
+    // Precision reranking over the top candidates with the installed reranker.
     if (opts.rerank === true && ranked.length > 1) {
       try {
         const topSlice = ranked.slice(0, RERANK_POOL);

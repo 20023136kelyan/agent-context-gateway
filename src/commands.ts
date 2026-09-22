@@ -169,15 +169,13 @@ export async function decideOnce(
   const t0 = Date.now();
   // Region retrieval: find the discussion sessions the judge will then weigh.
   //
-  // Reranking here was hard-coded off to "prevent redundant passes" — sound when
-  // the judge WAS the cross-encoder, since that meant running one model twice.
-  // Reranker and judge are now separable, and this stage is the real bottleneck
-  // for `decide`: on the fixture set, four of six why-queries fail before the
-  // judge sees anything, either returning no candidates or only a distractor.
-  // A judge cannot cite what retrieval never found. Default stays off so the
-  // original cost argument holds for cross-encoder-only deployments.
-  // Same reranker-aware default as search: the judge can only choose among the
-  // sessions retrieval hands it, so decide is bounded by the same ranking.
+  // Reranking here was once hard-coded off to "prevent redundant passes", which
+  // was sound while the judge WAS the cross-encoder. Reranker and judge are now
+  // separate models, and this stage is the real bottleneck for `decide`: on the
+  // fixture set, four of six why-queries fail before the judge sees anything,
+  // returning no candidates or only a distractor. A judge cannot cite what
+  // retrieval never found, so decide uses the same reranker-aware default as
+  // search.
   const res = await app.search.search(query, {
     ...opts,
     maxResults: 6,

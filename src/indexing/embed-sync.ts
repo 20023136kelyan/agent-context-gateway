@@ -2,10 +2,10 @@
  * Vector backfill: embed only the windows missing from the store (stable IDs
  * make appends cheap). Resumable: re-running embeds just the remainder.
  *
- * The unit is an embedding window, not a turn — a turn longer than BGE's
- * context becomes several rows (see `chunkForEmbedding`), so a corpus yields
- * more rows than turns and a backfill costs correspondingly more than the
- * 39 turns/s an M4 GPU managed when each turn was one embed. Run in background.
+ * The unit is an embedding window, not a turn — a turn longer than
+ * EMBED_CHUNK_CHARS becomes several rows (see `chunkForEmbedding`), so a corpus
+ * yields more rows than turns, and a Voyage backfill bills for every row. Run
+ * in background.
  */
 import type { ContextAdapter } from "../adapters/types.js";
 import type { Session, Turn } from "../core/models.js";

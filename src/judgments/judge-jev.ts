@@ -1,9 +1,9 @@
 /**
  * Jev decision judge.
  *
- * Replaces the cross-encoder in the precision stage of `context.decide`. That
- * substitution is not merely a speed or quality swap: `NeuralEntailmentJudge`
- * runs a *relevance reranker* and calls its output *entailment*. Relevance and
+ * The precision stage of `context.decide`. It replaced `NeuralEntailmentJudge`
+ * (since deleted), and not merely as a speed or quality swap: that judge ran a
+ * *relevance reranker* and called its output *entailment*. Relevance and
  * "does this answer the question" are different questions, and the reranker was
  * never trained on the second one. A Noul asks it directly.
  *
@@ -24,7 +24,7 @@
 import type { DecisionJudge, DecisionMethod, DecisionState, ExtractedDecision } from "../decisions/extract.js";
 import { httpJevClient, type JevClient } from "./jev.js";
 
-/** Same blend as NeuralEntailmentJudge, so a delta is attributable to the model. */
+/** The blend NeuralEntailmentJudge used, kept so the judge duels compared models, not blends. */
 const MODEL_WEIGHT = 0.65;
 
 /** A proposal that answers nothing should not outrank a real decision. */

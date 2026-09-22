@@ -3,15 +3,17 @@
  *
  * Mirrors `src/embeddings/provider.ts`: a registry keyed by name,
  * first-available-wins, with key presence as the opt-in. Callers ask for "a
- * reranker" and never name a vendor.
+ * reranker" and never name a vendor. The rows themselves live in
+ * `src/components.ts`.
  *
- * Order: jev → cross-encoder → none.
+ * Order: jev → voyage → none. Both rerankers are remote; there is no local
+ * model any more, so with neither key set the pool passes through untouched.
  *
  * Jev leads on measured quality, not assumption. On the fixture golden set,
  * identical lexical retrieval and differing only in reranker:
  *
  *   lexical                 NDCG@5 0.628   P@1 0.333
- *   cross-encoder           NDCG@5 0.702   P@1 0.533
+ *   cross-encoder           NDCG@5 0.702   P@1 0.533   (since deleted)
  *   jev (pairwise)          NDCG@5 0.839   P@1 0.800
  *
  * Those figures are from the synthetic fixture corpus. Measured again on BEIR
@@ -24,16 +26,14 @@
  *   cross-encoder pool 30   NDCG@5 0.433    p50 6984ms
  *   jev (pairwise)          NDCG@5 0.489    p50  620ms
  *
- * On realistic document lengths the cross-encoder lands BELOW plain hybrid
- * while costing seconds. Shrinking the pool cuts the latency and recovers none
- * of the quality, so it is not a budget problem — the model simply does not
- * help on this material. The fixture's short chat turns flattered it.
+ * On realistic document lengths the local ONNX cross-encoder landed BELOW plain
+ * hybrid while costing seconds, and shrinking the pool recovered none of the
+ * quality. That result is why it was deleted rather than kept as a fallback.
  *
- * Hence `rerankDefaultOn`: reranking is default-ON for Jev, which earns it, and
- * default-OFF for the cross-encoder, which does not. The cross-encoder remains
- * a legitimate explicit choice — local, deterministic, rate-limit free, nothing
- * leaves the machine — via GATEWAY_RERANKER=cross-encoder plus an explicit
- * `rerank` on the request.
+ * Note that `components.ts` marks voyage, not jev, as the locked reranker, while
+ * resolution still tries jev first. With both keys set, `gateway models` shows a
+ * resolved reranker that differs from the locked one; pin GATEWAY_RERANKER to
+ * run exactly the locked stack.
  */
 import { JevReranker } from "../judgments/rerank-jev.js";
 import { VoyageReranker } from "./rerank-voyage.js";
@@ -44,8 +44,8 @@ import type { RerankerName } from "../components.js";
 export type { RerankerName } from "../components.js";
 
 /**
- * Shared reranker contract (moved here when the ONNX cross-encoder was
- * deleted; the interface outlives any one model).
+ * Shared reranker contract. It lives here, beside selection, so no single
+ * vendor module owns the interface every reranker implements.
  */
 export const RERANK_CONTENT_CHARS = 1000;
 
@@ -89,7 +89,7 @@ export const noopReranker: Reranker = {
 export function rerankerAvailable(name: RerankerName): boolean {
   if (name === "jev") return jevAvailable();
   if (name === "voyage") return voyageAvailable();
-  return true; // cross-encoder is in-process; none is trivially available
+  return true; // none is trivially available
 }
 
 export function makeReranker(name: RerankerName): Reranker {
@@ -98,23 +98,14 @@ export function makeReranker(name: RerankerName): Reranker {
   return noopReranker;
 }
 
-// Voyage sits behind Jev (unmeasured as of writing) and ahead of the
-// cross-encoder (measured below hybrid on real documents). Position is
-// provisional until the reranker bake-off lands numbers.
 import { RERANKER_ORDER as ORDER } from "../components.js";
 
 /**
- * Which reranker this process will use when a request asks for reranking.
- * GATEWAY_RERANKER pins one; a pinned name is a hard selection and does not
- * fall back, so a deployment cannot silently switch vendors mid-corpus.
- */
-/**
  * Should reranking happen when the caller expresses no preference?
  *
- * Reranker-aware rather than a blanket default, because the two rerankers
- * measure nothing alike on real documents (see above). A blanket default-on
- * gave keyless deployments multi-second searches for no measurable gain; a
- * blanket default-off gave everyone else 0.445 when 0.489 was available.
+ * Reranker-aware rather than a blanket default. Jev earns default-on: 0.445 ->
+ * 0.489 NDCG@5 on BEIR nfcorpus. Voyage stays default-off until a bake-off
+ * against hybrid says otherwise, and `none` has nothing to run.
  *
  * An explicit `rerank` on the request always wins over this.
  */
@@ -122,6 +113,11 @@ export function rerankDefaultOn(name: RerankerName): boolean {
   return name === "jev";
 }
 
+/**
+ * Which reranker this process will use when a request asks for reranking.
+ * GATEWAY_RERANKER pins one; a pinned name is a hard selection and does not
+ * fall back, so a deployment cannot silently switch vendors mid-corpus.
+ */
 export function resolveRerankerName(): RerankerName {
   const pinned = process.env.GATEWAY_RERANKER as RerankerName | undefined;
   if (pinned === "jev" || pinned === "voyage" || pinned === "none") return pinned;

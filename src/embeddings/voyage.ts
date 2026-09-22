@@ -1,7 +1,8 @@
 /**
  * Voyage AI embedding provider (remote).
  *
- * Unlike MLX and Ollama this sends turn text to a third party, which is a
+ * This sends turn text to a third party, and since the local engines (MLX,
+ * Ollama) were deleted every engine does. That is a
  * deliberate departure from spec §73 Principle 5 (local-first) and §25
  * (security boundary). It is therefore never selected implicitly: a request
  * needs VOYAGE_API_KEY, and setting that key is the opt-in.

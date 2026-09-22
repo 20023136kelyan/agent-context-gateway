@@ -20,13 +20,12 @@ export function truncate(s: string, max = MAX_CONTENT): string {
 }
 
 /**
- * ~500 tokens at the ~3.2 chars/token that code-heavy turns tokenize to,
- * leaving room under BGE-small's 512-token window. Prose runs nearer 3.9
- * chars/token, so prose chunks land further inside the window, never outside.
- *
- * 1600 chars is that ~500-token budget; smaller windows splinter long turns
- * into more rows the backfill must embed, larger ones push BGE past its
- * window and silently truncate.
+ * ~500 tokens at the ~3.2 chars/token that code-heavy turns tokenize to. The
+ * size was set to fit BGE-small's 512-token window, the engine at the time.
+ * Voyage reads far longer inputs, so nothing truncates at this size any more;
+ * 1600 stays because every eval baseline was measured with it. Smaller windows
+ * splinter long turns into more rows (more to embed and pay for); whether
+ * larger windows help retrieval under Voyage is unmeasured.
  *
  * Overridable with GATEWAY_CHUNK_CHARS; invalid values fall back to the default. */
 export const EMBED_CHUNK_CHARS = (() => {
@@ -59,7 +58,8 @@ function breakBefore(s: string, start: number, end: number): number {
 /**
  * Split a turn into windows the embedder can actually read.
  *
- * BGE-small reads at most 512 tokens and silently drops the rest: appending
+ * Measured on BGE-small, the engine at the time, which reads at most 512 tokens
+ * and silently drops the rest: appending
  * 400 tokens to an 842-token document returns a bit-identical vector
  * (cos = 1.00000, against 0.874 for a short control). Since turns are kept to
  * 8000 chars and were embedded whole, ~32% of every indexed character was
