@@ -16,6 +16,7 @@ import {
   type RerankCandidate,
   type RerankResult,
 } from "./reranker.js";
+import { scrubText } from "../security/scrub.js";
 
 const ENDPOINT = process.env.VOYAGE_ENDPOINT ?? "https://api.voyageai.com/v1/embeddings";
 const RERANK_ENDPOINT = ENDPOINT.replace(/\/embeddings\/?$/, "") + "/rerank";
@@ -77,8 +78,9 @@ export class VoyageReranker {
         headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
         body: JSON.stringify({
           model,
-          query,
-          documents: pool.map((c) => c.content.slice(0, RERANK_CONTENT_CHARS)),
+          query: scrubText(query),
+          // Scrub before truncating: a cut can split a secret past recognition.
+          documents: pool.map((c) => scrubText(c.content).slice(0, RERANK_CONTENT_CHARS)),
           top_k: pool.length,
           truncation: true,
         }),

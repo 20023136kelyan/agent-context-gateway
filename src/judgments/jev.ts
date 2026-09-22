@@ -17,6 +17,8 @@
  * Jev's 904ms, so Jev was never a performance substitution. It is the default
  * because it won on judgement quality (see `search/reranker.ts`).
  */
+import { scrubDeep } from "../security/scrub.js";
+
 const ENDPOINT = process.env.JEV_ENDPOINT ?? "https://api.typesafe.ai/v1/systemone";
 const TIMEOUT_MS = Number(process.env.JEV_TIMEOUT_MS ?? 30_000);
 const MODEL = process.env.JEV_MODEL ?? "jev-latest";
@@ -97,7 +99,8 @@ async function post(state: unknown, questions: Record<string, WireQuestion>): Pr
     res = await fetch(ENDPOINT, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify({ state, model: MODEL, questions }),
+      // Every Jev call (rerank, judge, router) passes here: scrub the state.
+      body: JSON.stringify({ state: scrubDeep(state), model: MODEL, questions }),
       signal: ac.signal,
     });
   } finally {

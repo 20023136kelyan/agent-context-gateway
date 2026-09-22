@@ -13,6 +13,8 @@
  * dimension is asserted against what the API actually returns and a mismatch
  * throws rather than corrupting the store.
  */
+import { scrubText } from "../security/scrub.js";
+
 const ENDPOINT = process.env.VOYAGE_ENDPOINT ?? "https://api.voyageai.com/v1/embeddings";
 const TIMEOUT_MS = Number(process.env.VOYAGE_TIMEOUT_MS ?? 30_000);
 
@@ -65,7 +67,8 @@ async function call(cfg: VoyageConfig, input: string[], inputType: "query" | "do
   const key = process.env.VOYAGE_API_KEY;
   if (!key) throw new Error("voyage-no-api-key");
   if (input.length === 0) return [];
-  input = input.map((t) => t.replace(LONE_SURROGATE, "\uFFFD"));
+  // Scrubbed here as the last line of defence; callers that chunk scrub first.
+  input = input.map((t) => scrubText(t).replace(LONE_SURROGATE, "\uFFFD"));
 
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);

@@ -74,6 +74,14 @@ it is a deliberate departure from the spec's local-first principle (§73.5):
 Voyage sees the turn text you backfill plus each query; Jev sees each query plus
 candidate excerpts on every reranked search or `decide`.
 
+Everything bound for either vendor is scrubbed first (`src/security/scrub.ts`):
+API keys and tokens, private keys, JWTs, auth headers, passwords in URLs and
+named credentials, plus emails and non-loopback IPv4 by default
+(`GATEWAY_SCRUB=all|secrets|off`). Text is scrubbed before it is chunked or
+truncated, since a key split in half is unrecognisable. The local index and
+your histories are never altered, so an exact search for a string you pasted
+still works locally.
+
 ## Network access and auth
 
 The API binds `127.0.0.1` by default and answers unauthenticated loopback callers,

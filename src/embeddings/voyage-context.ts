@@ -15,6 +15,7 @@
  */
 import type { VoyageConfig } from "./voyage.js";
 import { voyageMeter } from "./voyage.js";
+import { scrubText } from "../security/scrub.js";
 
 const ENDPOINT = process.env.VOYAGE_ENDPOINT ?? "https://api.voyageai.com/v1/embeddings";
 const CONTEXT_ENDPOINT = ENDPOINT.replace(/\/embeddings\/?$/, "") + "/contextualizedembeddings";
@@ -51,7 +52,7 @@ export async function embedDocumentGroups(cfg: VoyageConfig, groups: string[][])
     res = await fetch(CONTEXT_ENDPOINT, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model: cfg.model, inputs: groups, input_type: "document" }),
+      body: JSON.stringify({ model: cfg.model, inputs: groups.map((g) => g.map((t) => scrubText(t))), input_type: "document" }),
       signal: ac.signal,
     });
   } finally {
@@ -88,7 +89,7 @@ export async function embedQueryText(cfg: VoyageConfig, query: string): Promise<
     res = await fetch(CONTEXT_ENDPOINT, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model: cfg.model, inputs: [query], input_type: "query" }),
+      body: JSON.stringify({ model: cfg.model, inputs: [scrubText(query)], input_type: "query" }),
       signal: ac.signal,
     });
   } finally {

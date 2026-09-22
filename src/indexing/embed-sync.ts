@@ -10,6 +10,7 @@
 import type { ContextAdapter } from "../adapters/types.js";
 import type { Session, Turn } from "../core/models.js";
 import { chunkForEmbedding } from "../adapters/text.js";
+import { scrubText } from "../security/scrub.js";
 import { embedChunkId } from "../core/id.js";
 import { embedTextsWith, embeddingsAvailable, type EmbeddingEngine } from "../embeddings/provider.js";
 import type { VectorBackend } from "./vectors.js";
@@ -60,8 +61,10 @@ export async function embedSessionTurns(
   // model only the first ~512 tokens. Empty turns chunk to nothing and drop out
   // here, which is the old `content.trim()` filter.
   const planned: { id: string; text: string; turn: Turn }[] = [];
+  // Scrub the whole turn before chunking: a private key split across two
+  // windows is unrecognisable in either half (see security/scrub.ts).
   for (const t of turns) {
-    chunkForEmbedding(t.content).forEach((text, i) => planned.push({ id: embedChunkId(t.id, i), text, turn: t }));
+    chunkForEmbedding(scrubText(t.content)).forEach((text, i) => planned.push({ id: embedChunkId(t.id, i), text, turn: t }));
   }
   // Asking per window rather than per turn is what upgrades an existing corpus:
   // a long turn embedded before chunking has window 0 and gains only its tail.
