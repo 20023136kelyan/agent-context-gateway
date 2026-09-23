@@ -23,3 +23,16 @@ if (!process.env.JEV_ENDPOINT) {
   // Port 1 on loopback: refuses immediately rather than hanging on a timeout.
   process.env.JEV_ENDPOINT = "http://127.0.0.1:1/jev-disabled-in-tests";
 }
+
+/*
+ * Every test file gets a private state dir unless it chose one. Without this a
+ * test that syncs without naming a state dir writes derived stores (the action
+ * index, feedback, topology) into the developer's real ~/.context-gateway: a
+ * full run once created ~/.context-gateway/actions.sqlite that way.
+ */
+if (!process.env.CONTEXT_GATEWAY_STATE) {
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  process.env.CONTEXT_GATEWAY_STATE = mkdtempSync(join(tmpdir(), "acg-test-state-"));
+}
