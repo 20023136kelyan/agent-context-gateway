@@ -48,7 +48,8 @@ if (existsSync(out)) {
     done.add(`${j.qid}|${j.sessionId}`);
   }
 }
-const todo = pool.filter((p) => !done.has(`${p.qid}|${p.sessionId}`)).slice(0, limit);
+const pending = pool.filter((p) => !done.has(`${p.qid}|${p.sessionId}`));
+const todo = pending.slice(0, limit);
 
 // Batches share one query where possible: the judge reads the request once.
 todo.sort((a, b) => a.qid.localeCompare(b.qid));
@@ -119,4 +120,4 @@ for (const [i, batch] of batches.entries()) {
 }
 rmSync(cwd, { recursive: true, force: true });
 if (existsSync(projectsDir) && basename(projectsDir).includes("acg-judge-")) rmSync(projectsDir, { recursive: true, force: true });
-console.log(`judged ${judged} pairs (${failed} to retry) of ${todo.length} pending; ${pool.length - todo.length} were already judged -> ${out}`);
+console.log(`judged ${judged} pairs (${failed} to retry) of ${todo.length} taken; ${pool.length - pending.length} were already judged, ${pending.length - todo.length} left by --limit -> ${out}`);
