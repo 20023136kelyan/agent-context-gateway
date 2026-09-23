@@ -4,6 +4,7 @@ import { rerankDefaultOn } from "./search/reranker.js";
 import { Command } from "commander";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { createApp, closeApp, type GatewayApp } from "./app.js";
 import { dumpConfig, defaultStateDir } from "./settings.js";
 import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, recordFeedback, getSession, getTurn, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "./commands.js";
@@ -16,7 +17,8 @@ loadUserEnv();
 import { readServeInfo, probeServer, remoteCall, connectHost, HttpError } from "./remote.js";
 
 const program = new Command();
-program.name("acg").description("Agent Context Gateway — federated search over native agent histories");
+program.name("acg").description("Agent Context Gateway — federated search over native agent histories")
+  .version((createRequire(import.meta.url)("../package.json") as { version: string }).version, "-v, --version");
 program.option("--index-dir <dir>", "index directory (default ~/.context-gateway/index-tantivy)");
 program.option("--backend <name>", "tantivy (default) or sqlite");
 program.option("--state-dir <dir>", "base for derived state (default CONTEXT_GATEWAY_STATE or ~/.context-gateway)");
