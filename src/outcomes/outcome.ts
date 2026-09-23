@@ -128,6 +128,10 @@ const INJECTED = [
   /^Base directory for this skill/,
   /^This session is being continued from a previous conversation/,
   /^Continue from where you left off/i,
+  /^<turn_aborted>/,
+  /^<skill>/,
+  // Codex's automatic approval reviewer: a whole session of it is not the user's.
+  /^The following is the Codex agent history/,
 ];
 
 /** A reply that moves the session along without saying anything new. */
@@ -135,15 +139,15 @@ const CHATTER = /^((continue|go on|go ahead|proceed|ok(ay)?|k|yes|yep|yeah|sure|
 
 /**
  * What the user actually asked in a user turn, or null when the turn is
- * injected or mere chatter. Codex IDE turns wrap the request after a list of
- * mentioned files.
+ * injected or mere chatter. Codex IDE and in-app browser turns wrap the
+ * request after a list of mentioned files or the page being viewed.
  */
 export function userUtterance(t: Turn): string | null {
   if (t.role !== "user") return null;
   let text = t.content.trim();
-  const ide = /## My request for Codex:\s*([\s\S]+)$/.exec(text);
+  const ide = /## My request(?: for Codex)?:\s*([\s\S]+)$/.exec(text);
   if (ide) text = ide[1]!.trim();
-  else if (text.startsWith("# Files mentioned by the user") || text.startsWith("# Context from my IDE")) return null;
+  else if (text.startsWith("# Files mentioned by the user") || text.startsWith("# Context from my IDE") || text.startsWith("<in-app-browser-context")) return null;
   if (INJECTED.some((rx) => rx.test(text))) return null;
   if (text.length < 8 || CHATTER.test(text)) return null;
   return text;

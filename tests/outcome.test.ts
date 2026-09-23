@@ -36,6 +36,9 @@ describe("what the user asked", () => {
       "This session is being continued from a previous conversation that ran out of context.",
       "Base directory for this skill: /x",
       "<task-notification> <task-id>1</task-id>",
+      "<turn_aborted> The user interrupted the previous turn on purpose.",
+      "<skill> <name>review</name>",
+      "The following is the Codex agent history whose request action you are assessing.",
       "continue",
       "ok thanks!",
       "yo",
@@ -50,6 +53,9 @@ describe("what the user asked", () => {
     const ide = "# Files mentioned by the user:\n\n## app.ts: /repo/app.ts\n\n## My request for Codex:\nwhy does the build fail on node 22?";
     expect(userUtterance(turn("user", ide, T(0)))).toBe("why does the build fail on node 22?");
     expect(userUtterance(turn("user", "# Files mentioned by the user:\n\n## app.ts: /repo/app.ts", T(0)))).toBeNull();
+    const browser = '<in-app-browser-context source="localhost:3000">\n# Page\n...\n</in-app-browser-context>\n\n## My request:\nadd filters for the dictionary';
+    expect(userUtterance(turn("user", browser, T(0)))).toBe("add filters for the dictionary");
+    expect(userUtterance(turn("user", '<in-app-browser-context source="localhost:3000">\n# Page\n</in-app-browser-context>', T(0)))).toBeNull();
   });
 });
 
