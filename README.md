@@ -642,6 +642,38 @@ size is not evidence of a better search on its own. The pool is shallow
 (3.2 sessions per query, because the settings mostly agree), which limits
 how small a difference this can see.
 
+**Reranker bake-off (2026-09-23).** Twelve settings ran on the same 140
+queries and 30-excerpt pool: hybrid and lexical with no reranker, Jev,
+Voyage `rerank-2.5`, and open-weights rerankers served with vLLM on an
+NVIDIA L4 through the `self-hosted` reranker. Every setting's top 10 was
+pooled (778 pairs) and both judges graded all of it (same grade 74%, κ 0.58).
+Against plain hybrid, on the mean of both judges:
+
+| reranker | judged NDCG@10 Δ (95% CI) | top result better / worse | L4 ms per search | cost per 1k searches |
+|---|---:|---|---:|---:|
+| mxbai-rerank-base-v2 (0.5B) | +0.009 (−0.005, +0.025) | 4 / 5 | 206 | ≈ $0.04 GPU |
+| Qwen3-Reranker-0.6B | +0.009 (−0.011, +0.027) | 9 / 3 | 226 | ≈ $0.05 GPU |
+| llama-nemotron-rerank-1b-v2 | +0.007 (−0.004, +0.018) | 6 / 3 | 464 | ≈ $0.09 GPU |
+| Voyage rerank-2.5 | +0.007 (−0.013, +0.025) | 13 / 6 (Sonnet 16 / 3, Haiku 11 / 12) | hosted | ≈ $0.60 |
+| Qwen3-Reranker-4B, default instruction | +0.006 (−0.014, +0.026) | 10 / 4 | 1053 | ≈ $0.21 GPU |
+| mxbai-rerank-large-v2 (1.5B) | +0.005 (−0.007, +0.017) | 2 / 2 | 528 | ≈ $0.10 GPU |
+| Qwen3-Reranker-4B, task instruction | +0.003 (−0.015, +0.021) | 7 / 6 | 1053 | ≈ $0.21 GPU |
+| Qwen3-Reranker-8B | −0.002 (−0.023, +0.019) | 10 / 9 | 2064 | ≈ $0.41 GPU |
+| bge-reranker-v2-m3 | −0.005 (−0.023, +0.014) | 5 / 8 | 384 | ≈ $0.08 GPU |
+| Jev | −0.011 (−0.029, +0.006) | 7 / 20 (p = 0.02; Haiku 6 / 23) | hosted | ≈ $0.50 |
+| lexical only | −0.021 (−0.041, +0.000) | 8 / 9 | — | $0 |
+
+No reranker lifts plain hybrid beyond the noise. Hybrid already scores 0.86
+judged NDCG@10, and the rerankers only reorder its 30 excerpts. Jev puts a worse
+session first far more often than a better one, which both bake-offs agree on.
+The small open-weights models (0.5-0.6B) are the best trade: at least as good as
+anything hosted, about 0.2 s per search on one L4, and nothing per call. A
+larger model did no better, and a task-specific instruction for Qwen3 did no better than its
+default. GPU cost assumes one L4 at about $0.71 an hour, busy serving one
+search at a time. An idle GPU still costs that hour, so a self-hosted reranker
+pays off only under shared load (a team or a key proxy). Hosted cost is about
+12k tokens per search at list price.
+
 `npx tsx scripts/bench.ts [--sync]` times the hot paths against the real local
 histories (read-only).
 
