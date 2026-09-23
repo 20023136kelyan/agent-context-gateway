@@ -244,7 +244,13 @@ export async function runEval(
   app: GatewayApp,
   queries: GoldenQuery[],
   mode: EvalMode | EvalArm,
-  opts: { asOf?: string; projectScope?: ProjectScope; maxResults?: number } = {},
+  opts: {
+    asOf?: string;
+    projectScope?: ProjectScope;
+    maxResults?: number;
+    /** Sees each query's results as returned, after timing (payload dumps). */
+    onResults?: (q: GoldenQuery, results: Awaited<ReturnType<typeof searchOnce>>["results"]) => Promise<void>;
+  } = {},
 ): Promise<EvalRunResult> {
   const queryResults: QueryEvalResult[] = [];
   const arm: EvalArm = typeof mode === "string" ? armFor(mode) : mode;
@@ -274,6 +280,7 @@ export async function runEval(
     });
     const latencyMs = Date.now() - t0;
     process.stderr.write(`${latencyMs}ms\n`);
+    await opts.onResults?.(q, res.results);
 
     const rankedSessionIds = res.results.map((r) => r.provenance.sessionId);
     // Distinct in order of first appearance

@@ -14,7 +14,7 @@ import { embedMissing, embedSessionTurns } from "./indexing/embed-sync.js";
 import { embeddingsAvailable } from "./embeddings/provider.js";
 import { loadRemotes, queryRemote } from "./remotes.js";
 import { extractDecisions, type DecisionJudge } from "./decisions/extract.js";
-import { buildOutcome, summarizeOutcome, type OutcomeSession, type SessionOutcome } from "./outcomes/outcome.js";
+import { buildOutcome, summarizeOutcome, taskDigest, type OutcomeSession, type SessionOutcome } from "./outcomes/outcome.js";
 import { resolveJudge } from "./decisions/select.js";
 import { isWhyQuery } from "./decisions/cues.js";
 import { normalizeQuery } from "./search/query.js";
@@ -256,6 +256,22 @@ async function attachOutcomes(app: GatewayApp, results: PackagedResult[], asOf?:
     // Summarized by the task the hit falls in, found by the hit turn's position.
     const seq = r.context.find((t) => t.id === r.provenance.turnId)?.seq;
     if (o) r.outcome = summarizeOutcome(o, seq);
+  }
+  // The session's whole task list, once, on its first result, every hit marked.
+  // Judged on 326 real (query, session) pairs, results with it made fewer useless
+  // sessions look useful and lost no useful one, for ~250 tokens a session.
+  const firsts = new Map<string, PackagedResult>();
+  const hitSeqs = new Map<string, number[]>();
+  for (const r of results) {
+    if (r.via || !r.outcome) continue;
+    const key = `${r.provenance.harness}:${r.provenance.sessionId}`;
+    if (!firsts.has(key)) firsts.set(key, r);
+    const seq = r.context.find((t) => t.id === r.provenance.turnId)?.seq;
+    if (seq !== undefined) hitSeqs.set(key, [...(hitSeqs.get(key) ?? []), seq]);
+  }
+  for (const [key, r] of firsts) {
+    const o = await bySession.get(key)!;
+    if (o) r.outcome!.digest = taskDigest(o, { matchedSeqs: hitSeqs.get(key) });
   }
 }
 

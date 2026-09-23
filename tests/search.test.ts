@@ -8,7 +8,7 @@ import { CodexAdapter } from "../src/adapters/codex.js";
 import { TantivyIndex } from "../src/indexing/tantivy-index.js";
 import { CursorStore } from "../src/indexing/store.js";
 import { syncAll } from "../src/indexing/sync.js";
-import { SearchService } from "../src/search/search.js";
+import { SearchService, focusOn } from "../src/search/search.js";
 import { normalizeQuery } from "../src/search/query.js";
 import type { VectorStore } from "../src/indexing/vectors.js";
 import { extractArtifacts, extractCommitShas, extractPrUrls, extractFileRefs } from "../src/adapters/text.js";
@@ -180,11 +180,24 @@ describe("SearchService", () => {
       const res = await svc.search("collaboration", { maxTokens: 100 });
       for (const r of res.results) {
         const chars = r.context.reduce((n, t) => n + t.content.length, 0);
-        expect(chars).toBeLessThanOrEqual(100 * 4 + 2000); // window kept, edges trimmed
+        expect(chars).toBeLessThanOrEqual(100 * 4); // the budget holds, even for one long turn
       }
     } finally {
       index.close();
     }
+  });
+
+  it("a turn longer than the budget is cut to the stretch holding the query terms", () => {
+    const text = "setup chatter. ".repeat(300) + "the reconnect backoff doubles up to 30s with jitter. " + "more logs. ".repeat(300);
+    const cut = focusOn(text, ["reconnect", "backoff", "jitter"], 400);
+    expect(cut.length).toBeLessThanOrEqual(400);
+    expect(cut).toContain("the reconnect backoff doubles up to 30s with jitter.");
+    expect(cut.startsWith("…") && cut.endsWith("…")).toBe(true);
+    // No term in it: the start, marked as cut.
+    const none = focusOn(text, ["zebra"], 400);
+    expect(none.startsWith("setup chatter.")).toBe(true);
+    expect(none.endsWith("…")).toBe(true);
+    expect(focusOn("short", ["x"], 400)).toBe("short");
   });
 
   it("semantic:false never touches the vector store", async () => {

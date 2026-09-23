@@ -12,7 +12,7 @@ import { createRequire } from "node:module";
 import type { Turn } from "../src/core/models.js";
 import type { Action } from "../src/actions/store.js";
 import { ActionStore } from "../src/actions/store.js";
-import { buildOutcome, userUtterance, isCheckCommand, summarizeOutcome } from "../src/outcomes/outcome.js";
+import { buildOutcome, userUtterance, isCheckCommand, summarizeOutcome, taskDigest } from "../src/outcomes/outcome.js";
 import { createApp, closeApp, type GatewayApp } from "../src/app.js";
 import { syncNow, searchOnce, sessionOutcome, browseSessions } from "../src/commands.js";
 
@@ -194,6 +194,20 @@ describe("tasks: a long session is several requests, each judged on its own", ()
     expect(o.statusBecause).toContain("1 shell command may have written files");
   });
 
+  it("the task digest lists every request, marks the hit's task and fits its budget", () => {
+    const ts = session();
+    const o = buildOutcome(S, ts, acts);
+    const d = taskDigest(o, { matchedSeqs: [ts[3]!.seq] });
+    expect(d).toContain("1. fix the flaky websocket test [verified; a.ts]");
+    expect(d).toContain("2. now add retry backoff to the uploader [unverified; upload.ts] <- hit");
+    expect(d.split("\n")[1]).not.toContain("<- hit");
+    const long = buildOutcome(S, Array.from({ length: 40 }, (_, i) => turn("user", `request number ${i} `.repeat(20), T(i))), []);
+    const short = taskDigest(long, { maxChars: 1200 });
+    expect(short.length).toBeLessThanOrEqual(1200);
+    // Shortened per request before anything is cut: the early requests stay listed.
+    expect(short).toContain("1. request number 0");
+  });
+
   it("work before any real request is a task without one", () => {
     const o = buildOutcome(S, [turn("assistant", "Reviewing the diff.", T(0))], [edit(T(1))]);
     expect(o.tasks).toHaveLength(1);
@@ -298,6 +312,10 @@ describe("end to end: native history -> outcome -> search result", () => {
     const res = await searchOnce(app, "websocket reconnect 401", { project: "*", semantic: false, rerank: false });
     const byId = Object.fromEntries(res.results.map((r) => [r.provenance.sessionId, r.outcome]));
     expect(byId.s1).toMatchObject({ status: "verified", problem: expect.stringContaining("reconnect loop") });
+    // The session's task digest rides on its first result only.
+    const s1 = res.results.filter((r) => r.provenance.sessionId === "s1");
+    expect(s1[0]!.outcome!.digest).toMatch(/1\. .*reconnect loop.*\[verified.*<- hit/);
+    expect(s1.slice(1).every((r) => r.outcome?.digest === undefined)).toBe(true);
     const off = await searchOnce(app, "websocket reconnect 401", { project: "*", semantic: false, rerank: false, outcomes: false });
     expect(off.results.every((r) => r.outcome === undefined)).toBe(true);
   });

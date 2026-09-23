@@ -362,6 +362,8 @@ export interface OutcomeSummary {
   alreadyFailing: boolean;
   /** "3/12": which of the session's tasks, so a long session reads right. */
   task: string;
+  /** Every request in the session and how it went (taskDigest), on the session's first result only. */
+  digest?: string;
 }
 
 export function summarizeOutcome(o: SessionOutcome, seq?: number): OutcomeSummary {
@@ -377,6 +379,33 @@ export function summarizeOutcome(o: SessionOutcome, seq?: number): OutcomeSummar
     alreadyFailing: t?.alreadyFailing ?? o.alreadyFailing,
     task: at ? `${at.index + 1}/${o.tasks.length}` : "0/0",
   };
+}
+
+/**
+ * The whole session in a few lines: every request, how it went and the files
+ * it touched, the tasks holding a hit marked. Copied fields only, shortened
+ * until it fits maxChars. A search hit's window shows one passage; this shows
+ * which work the session did around it.
+ */
+export function taskDigest(o: SessionOutcome, opts: { matchedSeqs?: number[]; maxChars?: number } = {}): string {
+  const maxChars = opts.maxChars ?? 1200;
+  const matched = new Set((opts.matchedSeqs ?? []).map((s) => taskAt(o, s)?.index).filter((i) => i !== undefined));
+  const tasks = o.tasks.map((t, i) => ({ t, i })).filter(({ t }) => t.request);
+  const head = `${o.startedAt.slice(0, 10)}, ${o.tasks.length} task(s), ${o.edits.count} edit(s), ended ${o.status}.`;
+  const render = (per: number, withFiles: boolean) =>
+    [
+      head,
+      ...tasks.map(({ t, i }) => {
+        const files = withFiles ? t.edits.files.map((f) => f.split("/").pop()).slice(-3) : [];
+        return `${i + 1}. ${excerpt(t.request!.text, per)} [${t.status}${files.length ? `; ${files.join(", ")}` : ""}]${matched.has(i) ? " <- hit" : ""}`;
+      }),
+    ].join("\n");
+  let text = render(160, true);
+  for (const [per, withFiles] of [[110, true], [80, false], [50, false], [30, false]] as const) {
+    if (text.length <= maxChars) break;
+    text = render(per, withFiles);
+  }
+  return text.length <= maxChars ? text : `${text.slice(0, maxChars - 1)}…`;
 }
 
 /** "verified (committed, user reported success)": the status and what backs it, in a few words. */

@@ -312,7 +312,10 @@ acg outcome codex 019a1c…          # the full record (--as-of <iso> for a poin
 MCP `context.session_outcome`, HTTP `GET /sessions/:harness/:id/outcome`.
 Search results carry a one-line summary (`outcome` in JSON; `--json` shows
 it, and the text output prints it under each hit), and the proactive hook
-says how each suggested session ended. Pass `outcomes: false` to leave it off.
+says how each suggested session ended. A session's first result also carries
+`outcome.digest`: every request in the session, how it went and the files it
+touched, the ones holding a hit marked (about 250 tokens). Pass
+`outcomes: false` to leave both off.
 
 Pass/fail comes from the history itself: Claude Code marks failed tool calls
 with `is_error`, and Codex prints the exit status in command output (newer
@@ -687,6 +690,28 @@ sessions that no setting returned beat the best returned session (mean grade:
 gave ten a 2, and on each of those queries it already gave a returned session a 2.
 Retrieval is not missing useful sessions. When search finds nothing useful, the
 history has nothing useful to find.
+
+**What the agent is handed.** The judges above read whole-session cards; an
+agent reads the search results. `run-eval --save-payloads` writes the results
+as sent (plain hybrid, 5 hits, 326 query-session pairs that grade cleanly), and
+Gemini graded each form. Scored against the Claude judges' card grades:
+
+| payload | useful sessions still shown as useful | useless ones shown as useful | tokens per session |
+|---|---:|---:|---:|
+| hit windows, budget not enforced (before) | 70% | 15% | 5,700 |
+| hit windows, budget enforced | 70% | 16% | 4,900 |
+| task digest alone | 49% | 2% | 250 |
+| windows + digest | 75% | 12% | 6,300 |
+
+A hit turn longer than the 2,000-token budget used to be sent whole (268 of
+700 hits went over it, up to 9x). It is now cut to the stretch holding the
+query terms, which saves 13% of tokens for the same grades. Adding the digest
+kept 5 useful sessions the windows lost and lost 1 (Claude-judged; Gemini's own
+card grades: 2 and 3), and made fewer useless sessions look useful under both
+judges (4 fewer lures and 1 more, 8 fewer and 2 more). The effect is small, and the digest is cheap, so each
+session's first result carries one. About a quarter of useful sessions still
+do not look useful from what is handed over: that gap, not ranking, is where
+the remaining headroom is.
 
 `npx tsx scripts/bench.ts [--sync]` times the hot paths against the real local
 histories (read-only).

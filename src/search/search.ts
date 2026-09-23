@@ -576,7 +576,8 @@ export class SearchService {
     }
 
     packaged.sort((a, b) => b.score - a.score);
-    const trimmed = packaged.slice(0, maxResults).map((p) => this.applyTokenBudget(p, maxTokens));
+    const terms = nq.indexQuery.toLowerCase().split(" ").filter((t) => t.length > 2);
+    const trimmed = packaged.slice(0, maxResults).map((p) => this.applyTokenBudget(p, maxTokens, terms));
     return { query: nq, scope: effectiveScope, results: trimmed, searchedAt: now };
   }
 
@@ -609,29 +610,69 @@ export class SearchService {
     };
   }
 
-  /** Trim window edges (keep center) until chars fit maxTokens*4. */
-  private applyTokenBudget(p: PackagedResult, maxTokens: number): PackagedResult {
+  /**
+   * Fit the window into maxTokens*4 chars: the hit turn first, then whole
+   * neighbours, nearest first, while they fit. A hit turn longer than the
+   * budget on its own (a pasted log, a long reply) is cut to the stretch
+   * holding the most query terms; sent whole, 268 of 700 real hits ran past
+   * the budget, some to 9x.
+   */
+  private applyTokenBudget(p: PackagedResult, maxTokens: number, terms: string[] = []): PackagedResult {
     const budget = maxTokens * 4;
-    let total = p.context.reduce((n, t) => n + t.content.length, 0);
+    const total = p.context.reduce((n, t) => n + t.content.length, 0);
     if (total <= budget) return p;
-    const centerId = p.provenance.turnId;
-    let ci = p.context.findIndex((t) => t.id === centerId);
+    let ci = p.context.findIndex((t) => t.id === p.provenance.turnId);
     if (ci < 0) ci = Math.floor(p.context.length / 2);
+    const center = p.context[ci]!;
+    if (center.content.length >= budget) {
+      return { ...p, context: [{ ...center, content: focusOn(center.content, terms, budget) }] };
+    }
     let lo = ci;
     let hi = ci;
-    total = p.context[ci].content.length;
-    // Expand outward alternately while budget allows (nearer turns first).
-    while ((lo > 0 || hi < p.context.length - 1) && total < budget) {
-      const dLo = lo > 0 ? ci - (lo - 1) : Infinity;
-      const dHi = hi < p.context.length - 1 ? hi + 1 - ci : Infinity;
-      if (dLo <= dHi) {
-        lo -= 1;
-        total += p.context[lo].content.length;
-      } else {
-        hi += 1;
-        total += p.context[hi].content.length;
+    let used = center.content.length;
+    // Nearer turns first; a neighbour that does not fit ends that side.
+    let loOpen = lo > 0;
+    let hiOpen = hi < p.context.length - 1;
+    while (loOpen || hiOpen) {
+      const takeLo = loOpen && (!hiOpen || ci - (lo - 1) <= hi + 1 - ci);
+      const next = takeLo ? p.context[lo - 1]! : p.context[hi + 1]!;
+      if (used + next.content.length > budget) {
+        if (takeLo) loOpen = false;
+        else hiOpen = false;
+        continue;
       }
+      used += next.content.length;
+      if (takeLo) lo -= 1;
+      else hi += 1;
+      loOpen = loOpen && lo > 0;
+      hiOpen = hiOpen && hi < p.context.length - 1;
     }
     return { ...p, context: p.context.slice(lo, hi + 1) };
   }
+}
+
+/** The maxChars stretch of text holding the most query-term occurrences; its start when none occur. */
+export function focusOn(text: string, terms: string[], maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  const lower = text.toLowerCase();
+  const hits: number[] = [];
+  for (const t of terms) {
+    for (let i = lower.indexOf(t); i >= 0 && hits.length < 5000; i = lower.indexOf(t, i + t.length)) hits.push(i);
+  }
+  hits.sort((a, b) => a - b);
+  const span = maxChars - 2; // room for the two ellipses
+  const lead = Math.floor(span / 4); // text leading into the match stays
+  let best = 0;
+  let bestCount = 0;
+  for (let i = 0, k = 0; i < hits.length; i++) {
+    const from = Math.max(0, hits[i]! - lead);
+    if (k < i) k = i;
+    while (k < hits.length && hits[k]! < from + span) k++;
+    if (k - i > bestCount) {
+      bestCount = k - i;
+      best = from;
+    }
+  }
+  const from = Math.min(best, text.length - span);
+  return `${from > 0 ? "…" : ""}${text.slice(from, from + span)}${from + span < text.length ? "…" : ""}`;
 }

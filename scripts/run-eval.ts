@@ -7,7 +7,15 @@
  *                               [--golden tests/eval/golden-fixture.json]
  *                               [--index-dir /path/to/frozen-index]
  *                               [--fixture | --beir <dir> | --real <root>]
+ *                               [--save-payloads <prefix>]
  *   (rrf = alias of hybrid)
+ *
+ * --save-payloads <prefix> writes judge pools (scripts/judge-pairs.ts) of what
+ * each arm returned: <prefix>-<arm>-returned.jsonl holds, per query and
+ * session, the results exactly as a search sends them to an agent;
+ * <prefix>-<arm>-digest.jsonl holds that session's task digest instead
+ * (outcomes/outcome.ts taskDigest). Grading both against the full-session
+ * cards shows whether what an agent is handed carries what made it useful.
  *
  * --real <root> measures real agent history mined by scripts/mine-pairs.ts:
  * adapters read <root>/claude and <root>/codex, the index and every derived
@@ -27,11 +35,12 @@
  * The run fails if docCount changes between the first and last arm, which turns
  * that drift from an invisible confound into an error.
  */
-import { writeFileSync, mkdtempSync, mkdirSync } from "node:fs";
+import { appendFileSync, writeFileSync, mkdtempSync, mkdirSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import { createApp, closeApp, initVectors } from "../src/app.js";
-import { backfillEmbeddings } from "../src/commands.js";
+import { backfillEmbeddings, sessionOutcome } from "../src/commands.js";
+import { taskDigest } from "../src/outcomes/outcome.js";
 import {
   loadGoldenQueries,
   runEval,
@@ -85,6 +94,7 @@ async function main() {
     if (!MODES.includes(m)) throw new Error(`unknown --mode "${m}" (want ${MODES.join("|")})`);
   }
   const savePath = argValue(args, "--save");
+  const payloadPrefix = argValue(args, "--save-payloads");
   const asOf = argValue(args, "--as-of");
   if (asOf && Number.isNaN(new Date(asOf).getTime())) throw new Error(`bad --as-of "${asOf}" (want an ISO timestamp)`);
   const goldenPath = argValue(args, "--golden");
@@ -238,7 +248,24 @@ async function main() {
   try {
     for (const mode of modes) {
       httpRerankMeter.reset();
-      const result = await runEval(app, queries, mode, { asOf, projectScope, maxResults });
+      const onResults = payloadPrefix
+        ? async (q: GoldenQuery, results: Parameters<NonNullable<Parameters<typeof runEval>[3]>["onResults"]>[1]) => {
+            const bySession = new Map<string, typeof results>();
+            for (const r of results) bySession.set(r.provenance.sessionId, [...(bySession.get(r.provenance.sessionId) ?? []), r]);
+            for (const [sessionId, hits] of bySession) {
+              const harness = hits[0]!.provenance.harness;
+              const base = { qid: q.id, query: q.query.slice(0, 3000), asOf: q.asOf ?? asOf ?? "", sessionId, harness };
+              const card = `Search results the agent is handed from this session (JSON, as sent):\n${JSON.stringify(hits, null, 2)}`;
+              appendFileSync(`${payloadPrefix}-${mode}-returned.jsonl`, JSON.stringify({ ...base, card }) + "\n");
+              const o = await sessionOutcome(app, harness, sessionId, { asOf: q.asOf ?? asOf }).catch(() => null);
+              if (!o) continue;
+              const seqs = hits.map((h) => h.context.find((t) => t.id === h.provenance.turnId)?.seq).filter((n): n is number => n !== undefined);
+              const digest = `Task digest the agent is handed for this session:\n${taskDigest(o, { matchedSeqs: seqs })}`;
+              appendFileSync(`${payloadPrefix}-${mode}-digest.jsonl`, JSON.stringify({ ...base, card: digest }) + "\n");
+            }
+          }
+        : undefined;
+      const result = await runEval(app, queries, mode, { asOf, projectScope, maxResults, onResults });
       // The self-hosted reranker's own call times: its share of the latency.
       if (mode === "rerank-http") {
         const calls = httpRerankMeter.snapshot();
