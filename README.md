@@ -701,14 +701,14 @@ Gemini graded each form. Scored against the Claude judges' card grades:
 | hit windows, budget not enforced (before) | 70% | 15% | 5,700 |
 | hit windows, budget enforced | 70% | 16% | 4,900 |
 | task digest alone | 49% | 2% | 250 |
-| windows + digest | 75% | 12% | 6,300 |
+| budget enforced + digest (now) | 74% | 14% | 5,500 |
 
 A hit turn longer than the 2,000-token budget used to be sent whole (268 of
 700 hits went over it, up to 9x). It is now cut to the stretch holding the
 query terms, which saves 13% of tokens for the same grades. Adding the digest
 kept 5 useful sessions the windows lost and lost 1 (Claude-judged; Gemini's own
 card grades: 2 and 3), and made fewer useless sessions look useful under both
-judges (4 fewer lures and 1 more, 8 fewer and 2 more). The effect is small, and the digest is cheap, so each
+judges (2 fewer lures and 1 more; 8 fewer and 3 more). The effect is small, and the digest is cheap, so each
 session's first result carries one. About a quarter of useful sessions still
 do not look useful from what is handed over: that gap, not ranking, is where
 the remaining headroom is.
