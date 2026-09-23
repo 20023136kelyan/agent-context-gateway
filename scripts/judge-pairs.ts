@@ -17,10 +17,13 @@
  * benefit (same problem, feature or code, or the decision it needs); 1 =
  * related area, some useful context; 0 = not useful. Grades are cached in the
  * judgments file: a pair is judged once, later experiments judge only new ones.
+ * A grade is kept only for the card it was given on (cardHash): rebuild the
+ * cards and every changed pair is judged again.
  *
- * Usage: npx tsx scripts/judge-pairs.ts --pool <pool.jsonl> --out <judgments.jsonl> [--batch 12] [--model haiku] [--limit N]
+ * Usage: npx tsx scripts/judge-pairs.ts --pool <pool.jsonl> --out <judgments.jsonl> [--batch 12] [--batch-chars 60000] [--model haiku] [--limit N]
  */
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -34,21 +37,23 @@ const poolFile = value("--pool");
 const out = value("--out");
 if (!poolFile || !out) throw new Error("usage: judge-pairs --pool <pool.jsonl> --out <judgments.jsonl>");
 const batchSize = Number(value("--batch") ?? 12);
+const batchChars = Number(value("--batch-chars") ?? 60_000);
 const model = value("--model") ?? "haiku";
 const limit = Number(value("--limit") ?? Infinity);
 
 interface PoolPair { qid: string; query: string; asOf: string; sessionId: string; harness: string; card: string }
-interface Judgment { qid: string; sessionId: string; grade: 0 | 1 | 2; model: string }
+interface Judgment { qid: string; sessionId: string; grade: 0 | 1 | 2; model: string; cardHash?: string }
+const hash = (card: string) => createHash("sha1").update(card).digest("hex").slice(0, 12);
 
 const pool = readFileSync(poolFile, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as PoolPair);
 const done = new Set<string>();
 if (existsSync(out)) {
   for (const l of readFileSync(out, "utf8").split("\n").filter(Boolean)) {
     const j = JSON.parse(l) as Judgment;
-    done.add(`${j.qid}|${j.sessionId}`);
+    done.add(`${j.qid}|${j.sessionId}|${j.cardHash ?? ""}`);
   }
 }
-const pending = pool.filter((p) => !done.has(`${p.qid}|${p.sessionId}`));
+const pending = pool.filter((p) => !done.has(`${p.qid}|${p.sessionId}|${hash(p.card)}`));
 const todo = pending.slice(0, limit);
 
 // Batches share one query where possible: the judge reads the request once.
@@ -56,7 +61,8 @@ todo.sort((a, b) => a.qid.localeCompare(b.qid));
 const batches: PoolPair[][] = [];
 for (const p of todo) {
   const last = batches[batches.length - 1];
-  if (last && last.length < batchSize && last[0]!.qid === p.qid) last.push(p);
+  const chars = last ? last.reduce((n, x) => n + x.card.length, 0) + p.card.length : 0;
+  if (last && last.length < batchSize && chars <= batchChars && last[0]!.qid === p.qid) last.push(p);
   else batches.push([p]);
 }
 
@@ -75,6 +81,12 @@ one object per earlier session, in order: [{"id":"<id>","grade":0|1|2}]`;
 // realpath: the CLI names the folder after the resolved path (/private/var/... on macOS).
 const cwd = realpathSync(mkdtempSync(join(tmpdir(), "acg-judge-")));
 const projectsDir = join(homedir(), ".claude", "projects", cwd.replace(/[^A-Za-z0-9]/g, "-"));
+const cleanUp = () => {
+  rmSync(cwd, { recursive: true, force: true });
+  if (existsSync(projectsDir) && basename(projectsDir).includes("acg-judge-")) rmSync(projectsDir, { recursive: true, force: true });
+};
+// Also when stopped part-way: the folders would otherwise be left behind.
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => (cleanUp(), process.exit(130)));
 
 let judged = 0;
 let failed = 0;
@@ -113,11 +125,10 @@ for (const [i, batch] of batches.entries()) {
       failed += 1;
       continue;
     }
-    appendFileSync(out, JSON.stringify({ qid: p.qid, sessionId: p.sessionId, grade: g, model } satisfies Judgment) + "\n");
+    appendFileSync(out, JSON.stringify({ qid: p.qid, sessionId: p.sessionId, grade: g, model, cardHash: hash(p.card) } satisfies Judgment) + "\n");
     judged += 1;
   }
   if ((i + 1) % 10 === 0) console.error(`batch ${i + 1}/${batches.length}: ${judged} judged, ${failed} to retry`);
 }
-rmSync(cwd, { recursive: true, force: true });
-if (existsSync(projectsDir) && basename(projectsDir).includes("acg-judge-")) rmSync(projectsDir, { recursive: true, force: true });
+cleanUp();
 console.log(`judged ${judged} pairs (${failed} to retry) of ${todo.length} taken; ${pool.length - pending.length} were already judged, ${pending.length - todo.length} left by --limit -> ${out}`);

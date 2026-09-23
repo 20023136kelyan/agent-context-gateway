@@ -60,22 +60,40 @@ if (existsSync(out)) {
   }
 }
 
-/** What the judge reads about an earlier session: copied fields only, capped. */
+/**
+ * What the judge reads about an earlier session: copied fields only. Every
+ * request is listed, shortened to fit, because the part of a long session that
+ * matters to a query is often far from its start; listing only the first few
+ * hid it for half the pool. Budgets are in characters.
+ */
+const CARD_CHARS = 12_000;
+const REQUESTS_CHARS = 8_000;
 function card(o: SessionOutcome): string {
-  const tasks = o.tasks
-    .filter((t) => t.request)
-    .slice(0, 12)
-    .map((t) => `- ${t.request!.text.replace(/\s+/g, " ").slice(0, 220)} [${t.status}${t.edits.files.length ? `; files: ${t.edits.files.slice(-4).join(", ")}` : ""}]`);
+  const tasks = o.tasks.filter((t) => t.request);
+  // Shorten every request (and drop per-task files) until the list fits, so a
+  // long session's later requests are never the ones cut.
+  const list = (per: number, withFiles: boolean) =>
+    tasks.map((t, i) => {
+      const text = t.request!.text.replace(/\s+/g, " ");
+      const files = withFiles ? t.edits.files.map((f) => f.split("/").pop()).slice(-3) : [];
+      return `${i + 1}. ${text.length > per ? `${text.slice(0, per)}…` : text} [${t.status}${files.length ? `; ${files.join(", ")}` : ""}]`;
+    });
+  let lines = list(220, true);
+  for (const [per, withFiles] of [[160, true], [120, true], [90, false], [60, false], [40, false]] as const) {
+    if (lines.join("\n").length <= REQUESTS_CHARS) break;
+    lines = list(per, withFiles);
+  }
+  const edited = o.edits.files.map((f) => f.split("/").slice(-2).join("/"));
   return [
-    `Project: ${o.project}. Started ${o.startedAt.slice(0, 10)}. ${o.tasks.length} task(s).`,
-    "Requests in this session:",
-    ...tasks,
-    o.edits.files.length ? `Files edited: ${o.edits.files.join(", ")}` : "Files edited: none",
-    o.finalReply ? `Agent's last message: ${o.finalReply.text}` : "",
+    `Project: ${o.project}. Started ${o.startedAt.slice(0, 10)}. ${o.tasks.length} task(s), ${o.edits.count} edit(s).`,
+    "Requests in this session, in order:",
+    ...lines,
+    edited.length ? `Latest files edited: ${edited.join(", ")}` : "Files edited: none",
+    o.finalReply ? `Agent's last message: ${o.finalReply.text.replace(/\s+/g, " ").slice(0, 600)}` : "",
   ]
     .filter(Boolean)
     .join("\n")
-    .slice(0, 3500);
+    .slice(0, CARD_CHARS);
 }
 
 const run = join(root, "judge-run");

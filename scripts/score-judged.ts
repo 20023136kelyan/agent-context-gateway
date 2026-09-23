@@ -27,12 +27,16 @@ const judgmentsFile = value("--judgments");
 const cellFiles = value("--cells")?.split(",").filter(Boolean) ?? [];
 if (!judgmentsFile || cellFiles.length === 0) throw new Error("usage: score-judged --judgments j.jsonl --cells a.json,b.json");
 
+// A pair graded again (a rebuilt card) keeps its latest grade, counted once.
 const grade = new Map<string, number>();
-const perQuery = new Map<string, number[]>();
 for (const l of readFileSync(judgmentsFile, "utf8").split("\n").filter(Boolean)) {
   const j = JSON.parse(l) as { qid: string; sessionId: string; grade: number };
   grade.set(`${j.qid}|${j.sessionId}`, j.grade);
-  perQuery.set(j.qid, [...(perQuery.get(j.qid) ?? []), j.grade]);
+}
+const perQuery = new Map<string, number[]>();
+for (const [key, g] of grade) {
+  const qid = key.slice(0, key.lastIndexOf("|"));
+  perQuery.set(qid, [...(perQuery.get(qid) ?? []), g]);
 }
 
 const gain = (g: number) => 2 ** g - 1;
