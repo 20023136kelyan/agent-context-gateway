@@ -5,6 +5,8 @@
  * The judge is Claude run headless through the Claude Code CLI (`claude -p`),
  * so no API key is needed: it uses the machine's Claude login. It is not Jev
  * and not Voyage, the components under test, so it cannot favour them.
+ * `--cli agy` runs Gemini through the Antigravity CLI (`agy -p`) instead, on
+ * the operator's agy key, to spare the Claude quota.
  *
  * Safeguards, all required:
  *   --no-session-persistence  no transcript is written to ~/.claude/projects,
@@ -12,6 +14,9 @@
  *                             hold other people's history and eval queries)
  *   --tools ""                the judge reads and grades, nothing else
  *   --strict-mcp-config       no MCP servers, so not this gateway's either
+ * agy has no such flags: it runs --sandbox in an empty directory. It keeps
+ * every conversation under ~/.gemini/antigravity-cli (not indexed by the
+ * gateway); their ids are appended to <out>.agy-conversations to find them.
  *
  * Grades, per pair: 2 = an agent starting the new request would directly
  * benefit (same problem, feature or code, or the decision it needs); 1 =
@@ -20,7 +25,7 @@
  * A grade is kept only for the card it was given on (cardHash): rebuild the
  * cards and every changed pair is judged again.
  *
- * Usage: npx tsx scripts/judge-pairs.ts --pool <pool.jsonl> --out <judgments.jsonl> [--batch 12] [--batch-chars 60000] [--model haiku] [--limit N]
+ * Usage: npx tsx scripts/judge-pairs.ts --pool <pool.jsonl> --out <judgments.jsonl> [--batch 12] [--batch-chars 60000] [--cli claude|agy] [--model haiku] [--limit N]
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -38,7 +43,9 @@ const out = value("--out");
 if (!poolFile || !out) throw new Error("usage: judge-pairs --pool <pool.jsonl> --out <judgments.jsonl>");
 const batchSize = Number(value("--batch") ?? 12);
 const batchChars = Number(value("--batch-chars") ?? 60_000);
-const model = value("--model") ?? "haiku";
+const cli = value("--cli") ?? "claude";
+if (cli !== "claude" && cli !== "agy") throw new Error("--cli is claude or agy");
+const model = value("--model") ?? (cli === "agy" ? "gemini-3.8-flash-high" : "haiku");
 const limit = Number(value("--limit") ?? Infinity);
 
 interface PoolPair { qid: string; query: string; asOf: string; sessionId: string; harness: string; card: string }
@@ -99,17 +106,26 @@ for (const [i, batch] of batches.entries()) {
     "",
     ...batch.map((p, j) => `EARLIER SESSION id=s${j}\n${p.card}\n`),
   ].join("\n");
-  const r = spawnSync("claude", ["-p", "--no-session-persistence", "--tools", "", "--strict-mcp-config", "--model", model, "--output-format", "json"], {
-    input: prompt,
-    cwd,
-    encoding: "utf8",
-    timeout: 180_000,
-    maxBuffer: 16 * 1024 * 1024,
-  });
+  const r =
+    cli === "agy"
+      ? spawnSync("agy", ["--output-format", "json", "--model", model, "--sandbox", "--disable-slash-commands", "-p", prompt], {
+          cwd,
+          encoding: "utf8",
+          timeout: 300_000,
+          maxBuffer: 16 * 1024 * 1024,
+        })
+      : spawnSync("claude", ["-p", "--no-session-persistence", "--tools", "", "--strict-mcp-config", "--model", model, "--output-format", "json"], {
+          input: prompt,
+          cwd,
+          encoding: "utf8",
+          timeout: 180_000,
+          maxBuffer: 16 * 1024 * 1024,
+        });
   let grades: { id: string; grade: number }[] | null = null;
   try {
-    const envelope = JSON.parse(r.stdout) as { result?: string };
-    const m = /\[[\s\S]*\]/.exec(envelope.result ?? "");
+    const envelope = JSON.parse(r.stdout) as { result?: string; response?: string; conversation_id?: string };
+    if (envelope.conversation_id) appendFileSync(`${out}.agy-conversations`, envelope.conversation_id + "\n");
+    const m = /\[[\s\S]*\]/.exec(envelope.result ?? envelope.response ?? "");
     grades = m ? (JSON.parse(m[0]) as { id: string; grade: number }[]) : null;
   } catch {
     grades = null;

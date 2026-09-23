@@ -622,8 +622,13 @@ session from its outcome record as of the query's time (every request, in
 order), `judge-pairs.ts` grades each pair 0/1/2 with Claude run headless
 (`claude -p`, no tools, no MCP, no saved transcript; grades are cached per
 card), and `score-judged.ts` reports graded NDCG@5, P@1 and useful-in-top-5
-beside the mined score. The judge is for evaluation only; the gateway never
-calls it.
+beside the mined score. `--cli agy` runs Gemini through the Antigravity CLI
+instead (`agy -p --sandbox`; agy keeps its transcripts, and their ids are
+listed beside the output). On the 778 bake-off pairs, Gemini 3.8 Flash gave
+the same grade as Haiku 70% of the time (κ 0.46) and as Sonnet 72% (κ 0.49).
+Haiku and Sonnet agree 74% (κ 0.58). Gemini is stricter (115 grades of 2)
+and reaches the same bake-off conclusions. The judge is for evaluation only;
+the gateway never calls it.
 
 Two judges (Haiku 4.5 and Sonnet 5) graded the same 451 pairs from 140
 queries. They gave the same grade 72% of the time (κ 0.57, weighted 0.67)
