@@ -18,7 +18,7 @@ import { TantivyIndex } from "./indexing/tantivy-index.js";
 import { SqliteIndex } from "./indexing/sqlite-index.js";
 import type { VectorBackend } from "./indexing/vectors.js";
 import { openVectorStore, type VectorBackendName } from "./indexing/vector-backend.js";
-import { resolveReranker, makeReranker, type RerankerName } from "./search/reranker.js";
+import { resolveReranker, makeReranker, rerankDefaultOn, type RerankerName } from "./search/reranker.js";
 import { resolveSettings, type GatewaySettings } from "./settings.js";
 import { CursorStore } from "./indexing/store.js";
 import { TopologyStore, defaultTopologyPath } from "./topology/store.js";
@@ -68,6 +68,8 @@ export interface GatewayApp {
   vectorBackend: VectorBackendName | null;
   /** Which reranker is installed. Runs when a request reranks, explicitly or by default. */
   reranker: RerankerName;
+  /** Whether a request that does not say reranks (rerankDefaultOn). */
+  rerankByDefault: boolean;
   /** Resolved configuration. Reaches every transport, since all take `app`. */
   readonly settings: GatewaySettings;
   vectorDir: string;
@@ -141,14 +143,16 @@ export function createApp(opts: AppOptions = {}): GatewayApp {
   search.attachTemporal(temporal);
   search.attachAcl(acl);
   // Installed once. Whether a request uses it is decided per request: an
-  // explicit `rerank` wins, otherwise `rerankDefaultOn` — ON for jev, so a
-  // TYPESAFE_API_KEY alone sends query text to Jev on every search.
+  // explicit `rerank` wins, otherwise rerankByDefault (rerankDefaultOn): off
+  // unless the user chose a reranker or hosts one.
   const { name: reranker, reranker: rerankerImpl } = settings.reranker
     ? { name: settings.reranker, reranker: makeReranker(settings.reranker) }
     : resolveReranker();
   search.setReranker(rerankerImpl);
+  search.setFacets(settings.facets);
+  const rerankByDefault = rerankDefaultOn(reranker, settings);
   return {
-    adapters, index, cursors, search, indexDir, backend, vectors: null, vectorBackend: null, reranker, settings, vectorDir, topology, feedback, temporal, acl, subscriptions, actions,
+    adapters, index, cursors, search, indexDir, backend, vectors: null, vectorBackend: null, reranker, rerankByDefault, settings, vectorDir, topology, feedback, temporal, acl, subscriptions, actions,
     indexLock: new AsyncLock(),
     vectorLock: new AsyncLock(),
   };

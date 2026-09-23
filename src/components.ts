@@ -47,15 +47,16 @@ export interface RerankerDef {
 }
 
 export const RERANKER_DEFS = [
-  { name: "jev", remote: true, keyEnv: "TYPESAFE_API_KEY", pricePerM: 0.042, mode: "pairwise", locked: true, notes: "only reranker measured above hybrid (BEIR 0.445 -> 0.489); judge duty too" },
-  { name: "voyage", remote: true, keyEnv: "VOYAGE_API_KEY", pricePerM: 0.05, mode: "listwise", locked: false, notes: "rerank-2.5; 1 req/pool; pin-only until a bake-off against jev; lite/3 via VOYAGE_RERANK_MODEL" },
-  { name: "self-hosted", remote: true, keyEnv: "GATEWAY_RERANK_URL", pricePerM: null, mode: "listwise", locked: false, notes: "a rerank endpoint you host (vLLM, TEI); GATEWAY_RERANK_MODEL; GPU time, no per-call bill; pin-only" },
-  { name: "none", remote: false, pricePerM: null, mode: "local", locked: false, notes: "passthrough" },
+  { name: "jev", remote: true, keyEnv: "TYPESAFE_API_KEY", pricePerM: 0.042, mode: "pairwise", locked: false, notes: "BEIR 0.445 -> 0.489, but judged below hybrid on real history (top result worse 20 / better 7); opt-in" },
+  { name: "voyage", remote: true, keyEnv: "VOYAGE_API_KEY", pricePerM: 0.05, mode: "listwise", locked: false, notes: "rerank-2.5; 1 req/pool; judged within noise of hybrid; lite/3 via VOYAGE_RERANK_MODEL" },
+  { name: "self-hosted", remote: true, keyEnv: "GATEWAY_RERANK_URL", pricePerM: null, mode: "listwise", locked: false, notes: "a rerank endpoint you host (vLLM, TEI); GATEWAY_RERANK_MODEL; Qwen3-Reranker-0.6B best top result in the bake-off; on by default when configured" },
+  { name: "none", remote: false, pricePerM: null, mode: "local", locked: true, notes: "default: plain hybrid; no reranker beat it beyond noise on real history" },
 ] as const;
 
 export type RerankerName = (typeof RERANKER_DEFS)[number]["name"];
 
-export const RERANKER_ORDER: readonly RerankerName[] = ["jev", "voyage"];
+/** Which reranker a request that asks for reranking gets, when none is chosen: the first available. */
+export const RERANKER_ORDER: readonly RerankerName[] = ["self-hosted", "jev", "voyage"];
 
 export interface JudgeDef {
   readonly name: string;
@@ -76,7 +77,7 @@ export type JudgeName = (typeof JUDGE_DEFS)[number]["name"];
 export function lockedStack(): { engine: string; reranker: string; judge: string } {
   return {
     engine: ENGINE_DEFS.find((e) => e.locked)?.name ?? "voyage",
-    reranker: RERANKER_DEFS.find((r) => r.locked)?.name ?? "jev",
+    reranker: RERANKER_DEFS.find((r) => r.locked)?.name ?? "none",
     judge: JUDGE_DEFS.find((j) => j.locked)?.name ?? "jev",
   };
 }

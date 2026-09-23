@@ -16,7 +16,7 @@ import { embedQueryResolved, embedMeter } from "../embeddings/provider.js";
 import { parseTurnId } from "../core/id.js";
 import { inProject } from "../core/project.js";
 import { normalizeQuery, type NormalizedQuery } from "./query.js";
-import { facetsEnabled, queryFacets } from "./facets.js";
+import { queryFacets } from "./facets.js";
 import { finalScore, rrfBaseScore } from "./rank.js";
 import { extractArtifacts } from "../adapters/text.js";
 import { rewriteConversationalQuery, type RewrittenQuery } from "./rewriter.js";
@@ -51,6 +51,8 @@ export interface SearchOptions {
   /** Rerank the top RERANK_POOL candidates with the installed reranker. Transports
    *  default this per reranker (see `rerankDefaultOn`). */
   rerank?: boolean;
+  /** Also search a long prompt's facets (facets.ts). Default: the service's (settings.facets, off). */
+  facets?: boolean;
   /**
    * Pooled-judging mode (Jev-branch experiment): the RRF score still selects
    * the pool, but project/repo/recency boosts and model/upstream blending are
@@ -198,6 +200,12 @@ export class SearchService {
     this.reranker = reranker;
   }
 
+  private facetsDefault = false;
+  /** Whether a request that does not pass `facets` searches a long prompt's facets too (settings.facets). */
+  setFacets(on: boolean): void {
+    this.facetsDefault = on;
+  }
+
   private adapterFor(harness: string): ContextAdapter | undefined {
     return this.adapters.find((a) => a.harness === harness);
   }
@@ -318,7 +326,7 @@ export class SearchService {
       }
       // A long prompt is also searched as its parts (facets.ts), each its own
       // ranked list: a hit keeps its best rank across them.
-      if (facetsEnabled()) {
+      if (opts.facets ?? this.facetsDefault) {
         for (const facet of queryFacets(rawQuery)) {
           const fq = normalizeQuery(facet.text).indexQuery;
           if (fq && fq !== nq.indexQuery) pushRanked(this.index.search(fq, { ...baseFilters, sessionId: opts.sessionId, limit: Math.floor(limit / 2) }));

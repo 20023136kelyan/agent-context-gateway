@@ -2,7 +2,6 @@
  * MCP transport — exposes the gateway to agents via Model Context Protocol.
  * Thin wrappers over commands.ts; same core as CLI/HTTP.
  */
-import { rerankDefaultOn } from "../search/reranker.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -56,13 +55,14 @@ export function buildMcpServer(app: GatewayApp, cwd: string = process.cwd()): Mc
       rerank: z
         .boolean()
         .optional()
-        .describe("Rerank top candidates for precision. Omitted = the server decides per reranker (on for Jev, off otherwise). true/false overrides."),
+        .describe("Rerank top candidates with the installed reranker. Omitted = the server's default (off unless a reranker was chosen). true/false overrides."),
+      facets: z.boolean().optional().describe("Also search a long prompt's parts (files, error lines, identifiers). Omitted = the server's default (off)."),
       maxResults: z.number().min(1).max(20).optional(),
       maxTurns: z.number().min(1).max(15).optional(),
       maxTokens: z.number().min(100).max(20000).optional(),
     },
     async (args) =>
-      text(await searchOnce(app, args.query, { ...args, defaultProject, rerank: args.rerank ?? rerankDefaultOn(app.reranker) })),
+      text(await searchOnce(app, args.query, { ...args, defaultProject, rerank: args.rerank ?? app.rerankByDefault })),
   );
 
   server.tool(
@@ -95,7 +95,7 @@ export function buildMcpServer(app: GatewayApp, cwd: string = process.cwd()): Mc
       maxTasks: z.number().min(1).max(50).optional(),
       asOf: z.string().optional(),
     },
-    async (args) => text(await browseSessions(app, args.query, { ...args, defaultProject, rerank: rerankDefaultOn(app.reranker) })),
+    async (args) => text(await browseSessions(app, args.query, { ...args, defaultProject, rerank: app.rerankByDefault })),
   );
 
   server.tool(

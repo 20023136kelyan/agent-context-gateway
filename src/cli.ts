@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 /** CLI transport — `gateway <command>`. Human/debug interface; agents use MCP/HTTP. */
-import { rerankDefaultOn } from "./search/reranker.js";
 import { Command } from "commander";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { createApp, closeApp, type GatewayApp } from "./app.js";
-import { dumpConfig, defaultStateDir } from "./settings.js";
+import { dumpConfig, defaultStateDir, resolveSettings } from "./settings.js";
 import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, recordFeedback, getSession, getTurn, sessionOutcome, browseSessions, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "./commands.js";
 import { addRemote, removeRemote, loadRemotes } from "./remotes.js";
 import { callerProject } from "./adapters/repo.js";
@@ -111,7 +110,10 @@ program
   .option("--as-principal <id>", "caller identity for resource-level ACL enforcement")
   .option("--as-of <iso>", "Point-in-time reconstruction (ISO timestamp)")
   .option("--include-superseded", "Include superseded historical knowledge without demotion")
-  .option("--no-rerank", "Skip precision reranking (default depends on the selected reranker: on for Jev, off otherwise)")
+  .option("--rerank", "Rerank with the installed reranker (default: off unless one was chosen; acg config)")
+  .option("--no-rerank", "Skip reranking even if it is on by default")
+  .option("--facets", "Also search a long prompt's parts (default off; acg config set facets)")
+  .option("--no-facets", "Skip facets even if they are on by default")
   .action(async (query: string, cmdOpts) => {
     const scope = projectArgs(cmdOpts);
     const path = `/search${qs({ q: query, ...scope, repo: cmdOpts.repo, harness: cmdOpts.harness, maxResults: String(cmdOpts.maxResults ?? 5), scope: cmdOpts.scope, callerSessionId: cmdOpts.asSession, principal: cmdOpts.asPrincipal, asOf: cmdOpts.asOf, includeSuperseded: cmdOpts.includeSuperseded ? "true" : undefined, rerank: cmdOpts.rerank === false ? "false" : undefined })}`;
@@ -127,9 +129,9 @@ program
           callerPrincipal: cmdOpts.asPrincipal,
           asOf: cmdOpts.asOf,
           includeSuperseded: cmdOpts.includeSuperseded ?? false,
-          // `--no-rerank` sets this false; otherwise the registry decides per
-          // reranker (on for Jev, off otherwise).
-          rerank: cmdOpts.rerank === false ? false : rerankDefaultOn(app.reranker),
+          // --rerank / --no-rerank decide; otherwise the gateway's default.
+          rerank: cmdOpts.rerank ?? app.rerankByDefault,
+          facets: cmdOpts.facets,
         }),
       ))) as Awaited<ReturnType<typeof searchOnce>>;
       if (program.opts().json) {
@@ -161,7 +163,7 @@ program
   .option("--max-sessions <n>", "", (v) => Number(v))
   .action(async (query: string, cmdOpts) => {
     const res = await withLocal((app) =>
-      browseSessions(app, query, { ...projectArgs(cmdOpts), maxSessions: cmdOpts.maxSessions, rerank: rerankDefaultOn(app.reranker) }),
+      browseSessions(app, query, { ...projectArgs(cmdOpts), maxSessions: cmdOpts.maxSessions, rerank: app.rerankByDefault }),
     );
     if (program.opts().json) return print(res, true);
     for (const s of res.sessions) {
@@ -941,9 +943,40 @@ program
 
 program
   .command("config")
-  .description("Show effective tunable values (env > settings.json > defaults)")
-  .action(() => {
-    print(dumpConfig(), false);
+  .description("Show effective tunable values (env > settings.json > defaults), or change one")
+  .argument("[op]", "set | unset (omit to show)")
+  .argument("[name]", "reranker | rerank-default | facets")
+  .argument("[value]", "reranker: jev|voyage|self-hosted|none; rerank-default, facets: on|off")
+  .addHelpText(
+    "after",
+    `
+Saved in settings.json; an environment variable still wins (GATEWAY_RERANKER,
+GATEWAY_RERANK_DEFAULT, GATEWAY_FACETS). Unset returns a value to its default.
+
+  acg config set reranker self-hosted      rerank with the endpoint GATEWAY_RERANK_URL names
+  acg config set rerank-default off        keep a reranker for explicit --rerank only
+  acg config set facets on                 also search a long prompt's parts
+  acg config unset reranker`,
+  )
+  .action(async (op?: string, name?: string, value?: string) => {
+    if (!op) return print(dumpConfig(), false);
+    const { SETTABLE, setSetting } = await import("./settings.js");
+    const envFor = { reranker: "GATEWAY_RERANKER", "rerank-default": "GATEWAY_RERANK_DEFAULT", facets: "GATEWAY_FACETS" } as const;
+    try {
+      if ((op !== "set" && op !== "unset") || !name || !(name in SETTABLE)) {
+        throw new Error(`usage: acg config [set <name> <value> | unset <name>], name one of ${Object.keys(SETTABLE).join(", ")}`);
+      }
+      const key = name as keyof typeof SETTABLE;
+      if (op === "set" && value === undefined) throw new Error(`usage: acg config set ${name} <${SETTABLE[key].help}>`);
+      setSetting(undefined, key, op === "set" ? value! : null);
+      const after = resolveSettings();
+      console.log(`${op === "set" ? `${name} = ${value}` : `${name} unset`} (saved in settings.json)`);
+      console.log(`now: reranker ${after.reranker ?? "auto"}, rerank by default ${after.rerankByDefault ?? "auto"}, facets ${after.facets ? "on" : "off"}`);
+      if (process.env[envFor[key]]) console.error(`note: ${envFor[key]} is set, and it overrides the saved value until it is unset`);
+    } catch (e) {
+      console.error(`acg config: ${(e as Error).message}`);
+      process.exitCode = 1;
+    }
   });
 
 /** Attach availability to a component row without fighting literal types.

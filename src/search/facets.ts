@@ -20,14 +20,14 @@
  * (search.ts), so a facet's top hit competes with the prompt's top hit rather
  * than trailing every one of its hits.
  *
- * On by default (roadmap 11c). Against mined labels it lifted NDCG@5 by about
- * +0.02 and the proactive hook's precision (0.651 -> 0.674, false alarms
- * 0.211 -> 0.158); two LLM judges found no difference either way (README,
- * "Judged relevance"). It costs no measurable latency. GATEWAY_FACETS=off turns it off.
+ * Off by default. Against mined labels it lifted NDCG@5 by about +0.02 and
+ * the proactive hook's precision (0.651 -> 0.674, false alarms 0.211 ->
+ * 0.158), but two LLM judges found no gain (-0.003; top result worse 6 times,
+ * better 2) (README, "Judged relevance"). It costs no measurable latency.
+ * Turn it on with GATEWAY_FACETS=on or `acg config set facets on`; a request
+ * can pass `facets` itself.
  */
 import { extractFileRefs } from "../adapters/text.js";
-
-export const facetsEnabled = (): boolean => !/^(off|0|false|no)$/i.test(process.env.GATEWAY_FACETS ?? "");
 
 /** Shorter prompts are already one facet. */
 const MIN_WORDS = 20;

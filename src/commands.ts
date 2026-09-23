@@ -5,7 +5,6 @@
  */
 import { PARSE_VERSION } from "./adapters/types.js";
 import { inProject } from "./core/project.js";
-import { rerankDefaultOn } from "./search/reranker.js";
 import { stat } from "node:fs/promises";
 import { syncAllDetailed, rebuildAll, enrichTurns, searchableTurns, isRemoteSource } from "./indexing/sync.js";
 import type { Session, Turn } from "./core/models.js";
@@ -383,7 +382,7 @@ export async function decideOnce(
   const res = await app.search.search(query, {
     ...opts,
     maxResults: 6,
-    rerank: opts.rerank ?? rerankDefaultOn(app.reranker),
+    rerank: opts.rerank ?? app.rerankByDefault,
   });
   // Full turns of top sessions (ordered by best hit) for extraction.
   const seen = new Set<string>();
@@ -788,10 +787,11 @@ export async function health(app: GatewayApp) {
     // excerpts off-machine, and that should be inspectable, not implicit.
     reranking: {
       reranker: app.reranker,
-      local: app.reranker !== "jev",
-      /** Reranker-aware: on for Jev, off otherwise. An explicit
-       *  `rerank` on the request overrides either way. */
-      defaultOn: rerankDefaultOn(app.reranker),
+      /** Only `none` stays on this machine; voyage, jev and self-hosted receive text. */
+      local: app.reranker === "none",
+      /** Off unless a reranker was chosen or is self-hosted (rerankDefaultOn).
+       *  An explicit `rerank` on the request overrides either way. */
+      defaultOn: app.rerankByDefault,
     },
   };
 }

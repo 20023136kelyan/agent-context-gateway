@@ -106,14 +106,23 @@ import { RERANKER_ORDER as ORDER } from "../components.js";
 /**
  * Should reranking happen when the caller expresses no preference?
  *
- * Reranker-aware rather than a blanket default. Jev earns default-on: 0.445 ->
- * 0.489 NDCG@5 on BEIR nfcorpus. Voyage stays default-off until a bake-off
- * against hybrid says otherwise, and `none` has nothing to run.
+ * Off unless chosen. Judged on real agent history (README, "Reranker
+ * bake-off"), no reranker lifted plain hybrid beyond noise, and Jev put a
+ * worse session first more often than a better one (7 / 20). So a key alone
+ * no longer turns reranking on. It runs by default when the user chose a
+ * reranker (GATEWAY_RERANKER or `acg config set reranker`), or runs one they
+ * host (GATEWAY_RERANK_URL); rerankByDefault (GATEWAY_RERANK_DEFAULT,
+ * `acg config set rerank-default`) overrides either way.
  *
  * An explicit `rerank` on the request always wins over this.
  */
-export function rerankDefaultOn(name: RerankerName): boolean {
-  return name === "jev";
+export function rerankDefaultOn(
+  name: RerankerName,
+  s: { reranker: RerankerName | null; rerankByDefault: boolean | null } = { reranker: null, rerankByDefault: null },
+): boolean {
+  if (name === "none") return false;
+  if (s.rerankByDefault !== null) return s.rerankByDefault;
+  return s.reranker !== null || name === "self-hosted";
 }
 
 /**

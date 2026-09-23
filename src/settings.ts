@@ -43,6 +43,14 @@ export interface GatewaySettings {
   readonly embedEngine: EmbeddingEngine | null;
   /** null = first available in preference order. */
   readonly reranker: RerankerName | null;
+  /**
+   * Rerank a search that does not say. null = auto: on only when a reranker
+   * was chosen (`reranker` above) or one you host is configured.
+   * GATEWAY_RERANK_DEFAULT=on|off beats the file.
+   */
+  readonly rerankByDefault: boolean | null;
+  /** Query facets (search/facets.ts). Default off; GATEWAY_FACETS=on|off beats the file. */
+  readonly facets: boolean;
   /** Extra Host header values accepted without a token; null = loopback only. */
   readonly allowedHosts: string[] | null;
   /**
@@ -71,6 +79,8 @@ interface SettingsFile {
   vectorBackend?: VectorBackendName;
   embedEngine?: EmbeddingEngine;
   reranker?: RerankerName;
+  rerankByDefault?: boolean;
+  facets?: boolean;
   allowedHosts?: string[];
   telemetry?: boolean;
   /** `acg paths`: where each harness's history lives, when not the default. */
@@ -160,9 +170,39 @@ export function resolveSettings(opts: SettingsOverrides = {}): GatewaySettings {
       file.embedEngine ??
       null,
     reranker: oneOf<RerankerName>(process.env.GATEWAY_RERANKER, RERANKER_DEFS.map((r): RerankerName => r.name)) ?? file.reranker ?? null,
+    rerankByDefault: onOff(process.env.GATEWAY_RERANK_DEFAULT) ?? file.rerankByDefault ?? null,
+    facets: onOff(process.env.GATEWAY_FACETS) ?? file.facets ?? false,
     allowedHosts,
     telemetry: telemetryEnabled(file.telemetry),
   };
+}
+
+/** on/1/true/yes and off/0/false/no; anything else is unset. */
+export function onOff(v: string | undefined): boolean | null {
+  const t = v?.trim().toLowerCase();
+  if (t === "on" || t === "1" || t === "true" || t === "yes") return true;
+  if (t === "off" || t === "0" || t === "false" || t === "no") return false;
+  return null;
+}
+
+/** What `acg config set` may change, and how each value is written to settings.json. */
+export const SETTABLE = {
+  reranker: { key: "reranker", parse: (v: string) => (RERANKER_DEFS.some((r) => r.name === v) ? v : undefined), help: RERANKER_DEFS.map((r) => r.name).join("|") },
+  "rerank-default": { key: "rerankByDefault", parse: (v: string) => onOff(v) ?? undefined, help: "on|off" },
+  facets: { key: "facets", parse: (v: string) => onOff(v) ?? undefined, help: "on|off" },
+} as const;
+export type SettableName = keyof typeof SETTABLE;
+
+/** Set (or with null, remove) one `acg config set` field in settings.json, merging. */
+export function setSetting(stateDir: string | undefined, name: SettableName, raw: string | null): void {
+  const def = SETTABLE[name];
+  const value = raw === null ? undefined : def.parse(raw);
+  if (raw !== null && value === undefined) throw new Error(`bad value "${raw}" for ${name} (want ${def.help})`);
+  mkdirSync(stateDir ?? defaultStateDir(), { recursive: true });
+  const file = loadSettingsFile(stateDir) as Record<string, unknown>;
+  if (value === undefined) delete file[def.key];
+  else file[def.key] = value;
+  writeFileSync(settingsPath(stateDir), JSON.stringify({ ...file, version: 1 }, null, 2));
 }
 
 /** Explicit opt-in only: unset/anything-else = off. */
@@ -202,6 +242,8 @@ export function dumpConfig(): Record<string, unknown> {
     vectorBackend: s.vectorBackend,
     embedEngine: s.embedEngine,
     reranker: s.reranker,
+    rerankByDefault: s.rerankByDefault,
+    facets: s.facets,
     judge,
     allowedHosts: s.allowedHosts,
     minVectorSim,

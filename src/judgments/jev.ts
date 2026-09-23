@@ -14,8 +14,9 @@
  * opt-in; no call site may enable it implicitly.
  *
  * The deleted local cross-encoder measured 798ms for 15 candidates against
- * Jev's 904ms, so Jev was never a performance substitution. It is the default
- * because it won on judgement quality (see `search/reranker.ts`).
+ * Jev's 904ms, so Jev was never a performance substitution. It was the
+ * default reranker on judgement quality (BEIR) until judged real-history runs
+ * put it below plain hybrid (see `search/reranker.ts`); it stays opt-in.
  */
 import { scrubDeep } from "../security/scrub.js";
 

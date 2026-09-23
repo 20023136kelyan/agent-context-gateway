@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveSettings, settingsPath, loadSettingsFile } from "../src/settings.js";
+import { resolveSettings, settingsPath, loadSettingsFile, setSetting } from "../src/settings.js";
 import { defaultTopologyPath } from "../src/topology/store.js";
 import { defaultAclPath } from "../src/security/acl.js";
 
@@ -22,6 +22,8 @@ const ENV = [
   "GATEWAY_VECTOR_BACKEND",
   "GATEWAY_EMBED_ENGINE",
   "GATEWAY_RERANKER",
+  "GATEWAY_RERANK_DEFAULT",
+  "GATEWAY_FACETS",
   "GATEWAY_ALLOWED_HOSTS",
 ] as const;
 let saved: Record<string, string | undefined> = {};
@@ -100,6 +102,29 @@ describe("resolveSettings", () => {
 
   it("places settings.json inside the state dir", () => {
     expect(settingsPath("/x/y")).toBe(join("/x/y", "settings.json"));
+  });
+});
+
+describe("acg config set: reranker, rerank-default, facets", () => {
+  it("defaults to auto reranking and facets off", () => {
+    const s = resolveSettings({ stateDir: mkdtempSync(join(tmpdir(), "acg-settings-")) });
+    expect(s).toMatchObject({ reranker: null, rerankByDefault: null, facets: false });
+  });
+
+  it("saves to settings.json, merging; unset removes; the environment still wins", () => {
+    const dir = mkdtempSync(join(tmpdir(), "acg-settings-"));
+    writeFileSync(join(dir, "settings.json"), JSON.stringify({ version: 1, telemetry: true }));
+    setSetting(dir, "reranker", "self-hosted");
+    setSetting(dir, "rerank-default", "off");
+    setSetting(dir, "facets", "on");
+    expect(resolveSettings({ stateDir: dir })).toMatchObject({ reranker: "self-hosted", rerankByDefault: false, facets: true, telemetry: true });
+    process.env.GATEWAY_FACETS = "off";
+    process.env.GATEWAY_RERANK_DEFAULT = "on";
+    expect(resolveSettings({ stateDir: dir })).toMatchObject({ rerankByDefault: true, facets: false });
+    setSetting(dir, "reranker", null);
+    expect(loadSettingsFile(dir)).not.toHaveProperty("reranker");
+    expect(() => setSetting(dir, "facets", "maybe")).toThrow(/on\|off/);
+    expect(() => setSetting(dir, "reranker", "cohere")).toThrow(/jev\|voyage/);
   });
 });
 

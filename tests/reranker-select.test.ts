@@ -1,14 +1,14 @@
 /**
  * Reranker selection and the default-off guarantee (Phase 2).
  *
- * The default is RERANKER-AWARE, and that is the thing to pin.
+ * The default is OFF UNLESS CHOSEN, and that is the thing to pin.
  *
- * A blanket default-off left every search at hybrid's quality when better was
- * available. A blanket default-on then gave keyless deployments multi-second
- * searches for nothing: on BEIR nfcorpus the deleted local cross-encoder
- * scored 0.433 NDCG@5 at 6984ms p50 against plain hybrid's 0.445 at 318ms,
- * while Jev scored 0.489 at 620ms. So the default is on for Jev and off for
- * everything not yet earned.
+ * Jev earned default-on from BEIR (0.445 -> 0.489 NDCG@5), then lost it on
+ * real agent history: judged, no reranker lifted plain hybrid beyond noise
+ * and Jev put a worse session first more often than a better one (README,
+ * "Reranker bake-off"). So a vendor key alone does not rerank. It runs by
+ * default when the user chose a reranker, or hosts one; rerankByDefault
+ * (GATEWAY_RERANK_DEFAULT, `acg config set rerank-default`) overrides both.
  *
  * Two properties must hold regardless of that default:
  *   - an explicit `rerank` on the request ALWAYS wins, both directions
@@ -24,7 +24,7 @@ import {
   rerankDefaultOn,
 } from "../src/search/reranker.js";
 
-const KEYS = ["TYPESAFE_API_KEY", "JEV_API_KEY", "GATEWAY_RERANKER"] as const;
+const KEYS = ["TYPESAFE_API_KEY", "JEV_API_KEY", "GATEWAY_RERANKER", "GATEWAY_RERANK_DEFAULT", "GATEWAY_RERANK_URL"] as const;
 let saved: Record<string, string | undefined> = {};
 
 beforeEach(() => {
@@ -93,13 +93,28 @@ describe("reranker selection", () => {
   });
 });
 
-describe("the default is reranker-aware", () => {
-  it("is on for Jev and off for the ones that did not earn it", () => {
-    expect(rerankDefaultOn("jev")).toBe(true);
-    // Voyage default stays off until a default-on bake-off earns it; explicit
-    // rerank requests always work regardless.
-    expect(rerankDefaultOn("voyage")).toBe(false);
-    expect(rerankDefaultOn("none")).toBe(false);
+describe("the default is off unless chosen", () => {
+  const auto = { reranker: null, rerankByDefault: null };
+  it("a key alone does not rerank; choosing a reranker or hosting one does", () => {
+    expect(rerankDefaultOn("jev", auto)).toBe(false);
+    expect(rerankDefaultOn("voyage", auto)).toBe(false);
+    expect(rerankDefaultOn("none", auto)).toBe(false);
+    expect(rerankDefaultOn("self-hosted", auto)).toBe(true);
+    expect(rerankDefaultOn("jev", { reranker: "jev", rerankByDefault: null })).toBe(true);
+    expect(rerankDefaultOn("voyage", { reranker: "voyage", rerankByDefault: null })).toBe(true);
+  });
+
+  it("rerankByDefault overrides either way, and none never reranks", () => {
+    expect(rerankDefaultOn("jev", { reranker: "jev", rerankByDefault: false })).toBe(false);
+    expect(rerankDefaultOn("self-hosted", { reranker: null, rerankByDefault: false })).toBe(false);
+    expect(rerankDefaultOn("jev", { reranker: null, rerankByDefault: true })).toBe(true);
+    expect(rerankDefaultOn("none", { reranker: "none", rerankByDefault: true })).toBe(false);
+  });
+
+  it("a hosted endpoint is picked first when reranking is asked for", () => {
+    process.env.TYPESAFE_API_KEY = "k";
+    process.env.GATEWAY_RERANK_URL = "http://127.0.0.1:1/v1/rerank";
+    expect(resolveRerankerName()).toBe("self-hosted");
   });
 
   it("SearchService reranks only on a strict `true`, so the gate cannot be tripped by a stray value", async () => {
@@ -115,7 +130,7 @@ describe("the default is reranker-aware", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("every transport defers to the registry when the caller says nothing", async () => {
+  it("every transport defers to the gateway's default when the caller says nothing", async () => {
     const fs = await import("node:fs");
     const http = fs.readFileSync("src/transports/http.ts", "utf8");
     const mcp = fs.readFileSync("src/transports/mcp.ts", "utf8");
@@ -123,15 +138,15 @@ describe("the default is reranker-aware", () => {
     const cmds = fs.readFileSync("src/commands.ts", "utf8");
     // HTTP: absent -> registry; only the literal "false"/"0" force it off.
     expect(http).toContain("q.rerank === undefined");
-    expect(http).toContain("rerankDefaultOn(app.reranker)");
+    expect(http).toContain("? app.rerankByDefault");
     // MCP: optional, so an omitted field is undefined rather than coerced true.
     expect(mcp).toMatch(/rerank: z\s*\n?\s*\.boolean\(\)\s*\n?\s*\.optional\(\)/);
-    expect(mcp).toContain("args.rerank ?? rerankDefaultOn(app.reranker)");
+    expect(mcp).toContain("args.rerank ?? app.rerankByDefault");
     // CLI: --no-rerank forces off; anything else defers.
     expect(cli).toContain("--no-rerank");
-    expect(cli).toContain("cmdOpts.rerank === false ? false : rerankDefaultOn(app.reranker)");
+    expect(cli).toContain("rerank: cmdOpts.rerank ?? app.rerankByDefault");
     // decide is bounded by the same ranking, so it uses the same default.
-    expect(cmds).toContain("opts.rerank ?? rerankDefaultOn(app.reranker)");
+    expect(cmds).toContain("opts.rerank ?? app.rerankByDefault");
   });
 
   it("GATEWAY_RERANKER=none disables it system-wide regardless of request", async () => {
@@ -150,7 +165,7 @@ describe("the default is reranker-aware", () => {
 
 describe("rerank plumbing, end to end", () => {
   /** One app + server per reranker pin, so createApp resolves it at build time. */
-  async function withServer(pin: string, fn: (server: any, spy: any) => Promise<void>) {
+  async function withServer(pin: string, fn: (server: any, spy: any) => Promise<void>, rerankDefault?: string) {
     const { mkdtemp } = await import("node:fs/promises");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
@@ -163,7 +178,8 @@ describe("rerank plumbing, end to end", () => {
     const prevState = process.env.CONTEXT_GATEWAY_STATE;
     process.env.CONTEXT_GATEWAY_STATE = join(root, "state");
     process.env.TYPESAFE_API_KEY = "k";
-    process.env.GATEWAY_RERANKER = pin;
+    if (pin) process.env.GATEWAY_RERANKER = pin;
+    if (rerankDefault) process.env.GATEWAY_RERANK_DEFAULT = rerankDefault;
     const app = createApp({ indexDir: join(root, "index"), claudeDir, codexDir });
 
     // Stub stands in for whichever reranker was selected, so this asserts the
@@ -183,22 +199,31 @@ describe("rerank plumbing, end to end", () => {
 
   const URL = "/search?q=why+did+we+reject+Monaco";
 
-  it("with Jev selected, reranks unasked and stops on ?rerank=false", async () => {
+  it("with a key and nothing chosen, stays off unless asked", async () => {
+    await withServer("", async (server, spy) => {
+      expect((await server.inject({ method: "GET", url: URL })).statusCode).toBe(200);
+      expect(spy).not.toHaveBeenCalled(); // a key alone does not rerank
+      expect((await server.inject({ method: "GET", url: `${URL}&rerank=true` })).statusCode).toBe(200);
+      expect(spy).toHaveBeenCalled(); // opt-in wins
+    });
+  }, 120_000);
+
+  it("with Jev chosen, reranks unasked and stops on ?rerank=false", async () => {
     await withServer("jev", async (server, spy) => {
       expect((await server.inject({ method: "GET", url: URL })).statusCode).toBe(200);
-      expect(spy).toHaveBeenCalled(); // default ON for jev
+      expect(spy).toHaveBeenCalled(); // the user chose it
       spy.mockClear();
       expect((await server.inject({ method: "GET", url: `${URL}&rerank=false` })).statusCode).toBe(200);
       expect(spy).not.toHaveBeenCalled(); // opt-out wins
     });
   }, 120_000);
 
-  it("with voyage selected, stays off unless asked", async () => {
+  it("with voyage chosen but rerank-default off, stays off unless asked", async () => {
     await withServer("voyage", async (server, spy) => {
       expect((await server.inject({ method: "GET", url: URL })).statusCode).toBe(200);
-      expect(spy).not.toHaveBeenCalled(); // default OFF until earned
+      expect(spy).not.toHaveBeenCalled(); // rerank-default off wins over the choice
       expect((await server.inject({ method: "GET", url: `${URL}&rerank=true` })).statusCode).toBe(200);
       expect(spy).toHaveBeenCalled(); // opt-in wins
-    });
+    }, "off");
   }, 120_000);
 });

@@ -41,7 +41,7 @@ describe("queryFacets", () => {
   });
 });
 
-describe("search with GATEWAY_FACETS", () => {
+describe("search with facets", () => {
   let root: string;
   let app: GatewayApp;
   beforeAll(async () => {
@@ -74,17 +74,26 @@ describe("search with GATEWAY_FACETS", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  const rankOfTarget = async () => {
-    const res = await searchOnce(app, PROMPT, { project: "*", semantic: false, rerank: false, maxResults: 10 });
+  const rankOfTarget = async (facets?: boolean) => {
+    const res = await searchOnce(app, PROMPT, { project: "*", semantic: false, rerank: false, maxResults: 10, facets });
     return res.results.findIndex((r) => r.provenance.sessionId === "target") + 1;
   };
 
   it("the pasted error lifts the session that met it", async () => {
-    vi.stubEnv("GATEWAY_FACETS", "off");
-    const without = await rankOfTarget();
-    vi.stubEnv("GATEWAY_FACETS", "");
-    const withFacets = await rankOfTarget();
+    const without = await rankOfTarget(false);
+    const withFacets = await rankOfTarget(true);
     expect(withFacets).toBeGreaterThan(0);
     expect(without === 0 || withFacets < without).toBe(true);
+  });
+
+  it("is off by default, and settings turn it on", async () => {
+    expect(app.settings.facets).toBe(false);
+    expect(await rankOfTarget()).toBe(await rankOfTarget(false));
+    app.search.setFacets(true);
+    try {
+      expect(await rankOfTarget()).toBe(await rankOfTarget(true));
+    } finally {
+      app.search.setFacets(false);
+    }
   });
 });

@@ -102,16 +102,16 @@ Types, resolution order, settings allow-lists and sweep cost basis all derive fr
 | Role | Locked | Also available (pin only) | Opt-in key |
 |---|---|---|---|
 | Embeddings | `voyage` (voyage-4, 1024-dim) | `voyage-code`, `voyage-context` | `VOYAGE_API_KEY` |
-| Reranker | `jev` (pairwise) | `voyage` (rerank-2.5), `none` | `TYPESAFE_API_KEY` / `VOYAGE_API_KEY` |
+| Reranker | `none` (plain hybrid) | `self-hosted` (your `/v1/rerank`), `jev`, `voyage` (rerank-2.5) | `GATEWAY_RERANK_URL` / `TYPESAFE_API_KEY` / `VOYAGE_API_KEY` |
 | Decision judge | `jev` | `heuristic` | `TYPESAFE_API_KEY` |
 
-"Locked" is the measured production stack. Unpinned resolution is
-first-available-wins: rerankers are tried `jev` then `voyage`, so a user with only
-`VOYAGE_API_KEY` gets Voyage reranking (off by default, opt in per request).
-Voyage stays pin-only until a bake-off against Jev. `gateway models` prints the
-locked and resolved stack. Pin with `GATEWAY_EMBED_ENGINE`, `GATEWAY_RERANKER` and
-`GATEWAY_JUDGE`. A pin never falls back, so a deployment cannot silently switch
-vendors mid-corpus.
+"Locked" is the measured production stack. No reranker beat plain hybrid on
+real agent history ("Reranker bake-off" below), so none runs unless you choose
+one (see Reranking). Unpinned resolution is first-available-wins: a request that
+asks for reranking gets `self-hosted`, then `jev`, then `voyage`. `gateway models`
+prints the locked and resolved stack. Pin with `GATEWAY_EMBED_ENGINE`,
+`GATEWAY_RERANKER` (or `acg config set reranker`) and `GATEWAY_JUDGE`. A pin
+never falls back, so a deployment cannot silently switch vendors mid-corpus.
 
 **Privacy.** Every model in the stack is remote. Setting a key is the opt-in, and
 it is a deliberate departure from the spec's local-first principle (§73.5). See
@@ -129,7 +129,7 @@ opts in to one vendor, for the uses below:
 |---|---|---|---|
 | Turn text, in ~1,600-character windows | Voyage (`VOYAGE_API_KEY`) | `backfill`, `sync --embed`, `serve --embed` | don't set the key, or don't embed |
 | Each search query | Voyage | every search with vectors | `semantic: false` / `?semantic=false` |
-| Query + up to 30 candidate excerpts (1,000 chars each) | Jev (`TYPESAFE_API_KEY`) | every search while Jev is the reranker (on by default) | `--no-rerank`, `?rerank=false`, `GATEWAY_RERANKER=none` |
+| Query + up to 30 candidate excerpts (1,000 chars each) | Jev or Voyage | a search that asks to rerank, or every search once you chose that reranker | `--no-rerank`, `?rerank=false`, `acg config set reranker none` |
 | Query + candidate decision passages | Jev | every `decide` | `GATEWAY_JUDGE=heuristic` |
 | Each non-trivial prompt you type | Voyage and Jev | only with the opt-in proactive hook | don't install it (`init` without `--proactive`) |
 | Aggregate counts (never text, ids or paths) | the URL in `GATEWAY_TELEMETRY_URL` | only after `acg telemetry on` | `acg telemetry off`; there is no default endpoint |
@@ -439,9 +439,23 @@ re-sweep them before trusting another engine.
 ## Reranking
 
 The top 30 fused candidates (`GATEWAY_RERANK_POOL`) go to the installed reranker.
-Whether a request reranks when it doesn't say is decided per reranker: **on for
-Jev, off for Voyage and `none`**. `?rerank=true|false`, `--no-rerank` or MCP
-`rerank` override it; `GATEWAY_RERANKER=none` turns it off everywhere.
+A request that doesn't say **does not rerank**, unless you chose a reranker or
+host one. A vendor key alone no longer turns it on: judged on real history, no
+reranker lifted plain hybrid beyond noise, and Jev put a worse session first
+more often than a better one. Qwen3-Reranker-0.6B, served yourself, had the
+best top result (9 better / 3 worse), at about 0.2 s per search on one L4.
+
+| you want | set (settings.json) | or the environment |
+|---|---|---|
+| rerank every search with your own endpoint | `GATEWAY_RERANK_URL` and `acg config set reranker self-hosted` | `GATEWAY_RERANKER=self-hosted` |
+| rerank every search with Jev | `acg config set reranker jev` | `GATEWAY_RERANKER=jev` |
+| keep a reranker for explicit requests only | `acg config set rerank-default off` | `GATEWAY_RERANK_DEFAULT=off` |
+| rerank by default whatever is available | `acg config set rerank-default on` | `GATEWAY_RERANK_DEFAULT=on` |
+| never rerank | `acg config set reranker none` | `GATEWAY_RERANKER=none` |
+
+`?rerank=true|false`, `--no-rerank` or MCP `rerank` override the default per
+request. The environment beats settings.json; `acg config unset <name>` returns
+to the default and `acg config` shows what is in effect.
 
 Why these components, measured on BEIR nfcorpus (3633 real documents, 100 judged queries):
 
@@ -594,8 +608,8 @@ mined labels:
 
 | change | broad | strict | kept? |
 |---|---:|---:|---|
-| query facets (below), hybrid | +0.017 (+7/−1) | +0.021 (+6/−1) | on by default; judged: no gain (below) |
-| query facets, Jev reranker | +0.012 (+8/−2) | +0.021 (+5/−0) | yes |
+| query facets (below), hybrid | +0.017 (+7/−1) | +0.021 (+6/−1) | opt-in: judged, no gain (below) |
+| query facets, Jev reranker | +0.012 (+8/−2) | +0.021 (+5/−0) | opt-in |
 | `voyage-code-4` instead of `voyage-4` | +0.032 (+29/−11) | +0.003 (+15/−10) | no: judged no gain, twice the price |
 | similarity floor, span, vector gate | ≤ +0.02 on one set, lost on the other | | no change |
 | RRF k 5 / 20 / 60 (default 10) | +0.002 / −0.010 / −0.023 | +0.001 / −0.003 / −0.022 | no change |
@@ -612,8 +626,10 @@ query better (facets), was not confirmed by judged relevance (below).
 also searched as the files it names, the error lines it pastes, its
 identifiers and its opening sentence. Each facet is its own ranked list,
 fused by best rank with the whole prompt's, so a pasted stack trace is not
-drowned by the paragraph around it. Nothing is generated; `GATEWAY_FACETS=off`
-turns it off. For the proactive hook it raised precision from 0.65 to 0.67,
+drowned by the paragraph around it. Nothing is generated. It is off by
+default, since judged relevance found no gain; turn it on with
+`acg config set facets on` (or `GATEWAY_FACETS=on`), or per request with
+`facets: true`. For the proactive hook it raised precision from 0.65 to 0.67,
 found the right session for 44% of prompts instead of 39%, and cut false
 alarms from 21% to 16%.
 
@@ -803,7 +819,7 @@ tests/              37 suites (235 tests) + 3 Swift XCTest tests
 ## Known limits
 
 - Single user. Loopback by default; serving the network is opt-in and requires `GATEWAY_TOKEN`.
-- No local models. Without `VOYAGE_API_KEY` search is lexical-only; without `TYPESAFE_API_KEY` there is no Jev reranking and `decide` returns heuristic candidates.
+- No local models. Without `VOYAGE_API_KEY` search is lexical-only; without `TYPESAFE_API_KEY` there is no Jev (reranking is opt-in anyway) and `decide` returns heuristic candidates.
 - Summaries are extractive (first lines), never LLM-generated.
 - A global install is about 412 MB, mostly LanceDB and the ML libraries it depends on (optional; the gateway falls back to sqlite-vec, and LanceDB cannot load on Intel Macs at all).
 - The `SessionEnd` hook installed by earlier versions of `init` used `node --import tsx`, which resolves tsx from the hook's working directory, so it only worked inside this repo. Re-run `init` (or `init --proactive`): it repairs the entry in place to go through `gateway.sh`.
