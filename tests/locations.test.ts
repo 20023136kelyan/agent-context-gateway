@@ -181,6 +181,6 @@ describe("history locations", () => {
     });
     expect(r.status).toBe(1);
     expect(r.stderr).toContain(join(home, ".local", "share", "opencode", "opencode.db"));
-    expect(r.stderr).toContain("CODEX_HOME");
+    expect(r.stderr).toContain("acg paths set");
   });
 });

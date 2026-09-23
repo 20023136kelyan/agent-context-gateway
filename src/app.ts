@@ -11,6 +11,8 @@ import { ZepAdapter } from "./adapters/zep.js";
 import { TrajectoryAdapter, defaultTrajectoryDir } from "./adapters/trajectories.js";
 import { OpenCodeAdapter } from "./adapters/opencode.js";
 import { GitAdapter } from "./adapters/git.js";
+import { CombinedAdapter } from "./adapters/combined.js";
+import { cursorStores, savedRoots, type HistoryKind } from "./adapters/locations.js";
 import type { SearchIndex } from "./indexing/types.js";
 import { TantivyIndex } from "./indexing/tantivy-index.js";
 import { SqliteIndex } from "./indexing/sqlite-index.js";
@@ -82,6 +84,24 @@ export interface GatewayApp {
   vectorLock: AsyncLock;
 }
 
+/** The adapter that reads one history location (see adapters/locations.ts for what each names). */
+export function adapterAt(kind: HistoryKind, path: string): ContextAdapter {
+  switch (kind) {
+    case "claude-code":
+      return new ClaudeAdapter(path);
+    case "codex":
+      return new CodexAdapter(path);
+    case "opencode":
+      return new OpenCodeAdapter(path);
+    case "cursor": {
+      const { globalDb, workspaceRoot } = cursorStores(path);
+      return new CursorAdapter(globalDb, workspaceRoot);
+    }
+    case "trajectory":
+      return new TrajectoryAdapter(path);
+  }
+}
+
 export function createApp(opts: AppOptions = {}): GatewayApp {
   const settings = resolveSettings(opts);
   const { backend, indexDir, stateDir } = settings;
@@ -89,13 +109,21 @@ export function createApp(opts: AppOptions = {}): GatewayApp {
   // CONTEXT_GATEWAY_STATE — so setting a state dir relocated six stores but left
   // the vectors behind. Now it hangs off stateDir like everything else.
   const vectorDir = settings.vectorDir;
+  // Locations saved with `acg paths` (in this app's own settings.json) replace a
+  // harness's default; an explicit option here still wins over both.
+  const saved = (kind: HistoryKind, fallback: () => ContextAdapter): ContextAdapter => {
+    const paths = savedRoots(kind, { ...process.env, CONTEXT_GATEWAY_STATE: stateDir });
+    if (!paths) return fallback();
+    const parts = paths.map((p) => adapterAt(kind, p));
+    return parts.length === 1 ? parts[0]! : new CombinedAdapter(kind, parts);
+  };
   const adapters: ContextAdapter[] = [
-    opts.claudeDir ? new ClaudeAdapter(opts.claudeDir) : new ClaudeAdapter(),
-    opts.codexDir ? new CodexAdapter(opts.codexDir) : new CodexAdapter(),
-    opts.cursorDb ? new CursorAdapter(opts.cursorDb) : new CursorAdapter(),
+    opts.claudeDir ? new ClaudeAdapter(opts.claudeDir) : saved("claude-code", () => new ClaudeAdapter()),
+    opts.codexDir ? new CodexAdapter(opts.codexDir) : saved("codex", () => new CodexAdapter()),
+    opts.cursorDb ? new CursorAdapter(opts.cursorDb) : saved("cursor", () => new CursorAdapter()),
     opts.zepDir ? new ZepAdapter({ localDir: opts.zepDir }) : new ZepAdapter(),
-    new TrajectoryAdapter(opts.trajectoryDir ?? defaultTrajectoryDir()),
-    new OpenCodeAdapter(opts.opencodeDb),
+    opts.trajectoryDir ? new TrajectoryAdapter(opts.trajectoryDir) : saved("trajectory", () => new TrajectoryAdapter(defaultTrajectoryDir())),
+    opts.opencodeDb ? new OpenCodeAdapter(opts.opencodeDb) : saved("opencode", () => new OpenCodeAdapter()),
     new GitAdapter(opts.gitRepos ?? []),
   ];
   const index: SearchIndex =

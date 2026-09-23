@@ -59,8 +59,29 @@ honoured:
 | Cursor | macOS `~/Library/Application Support/Cursor/User/`, Linux `~/.config/Cursor/User/`, Windows `%APPDATA%\Cursor\User\` | `XDG_CONFIG_HOME` (Linux), `APPDATA` (Windows) |
 | Trajectories | `~/.context-gateway/trajectories/` | `GATEWAY_TRAJECTORY_DIR` |
 
-If none of them exists, `init` lists each place it looked and stops. The
-Cursor adapter has not yet been checked against a real Cursor history.
+When an agent keeps its history somewhere else, point the gateway at it.
+Each location is checked before it is saved: one where no sessions are found
+is refused (`--force` saves it anyway), so a typo can't pass for an empty
+history. Parent folders are accepted (`~/.claude` for `~/.claude/projects`).
+
+```bash
+acg paths                                        # each agent: sessions found, location, and why that location
+acg paths set claude-code ~/work/claude-profile  # read from here instead of the default
+acg paths add codex /mnt/backup/codex            # read this as well as the current location
+acg paths unset codex [path]                     # forget one saved location, or all of them
+acg init --path opencode=/data/opencode          # the same check and save, during setup (repeatable)
+```
+
+Saved locations live in `~/.context-gateway/settings.json` and apply to
+`sync`, `init`, `doctor` and `serve --watch`. For each agent the first rule
+that applies wins: `GATEWAY_OPENCODE_DB` / `GATEWAY_TRAJECTORY_DIR`, then
+`acg paths`, then the agent's own variable from the table, then the default.
+With several locations, a session found in more than one is read from the
+first one listed.
+
+If nothing is found anywhere, `init` asks where to look (or, with `--yes`,
+lists each place it looked and stops). The Cursor adapter has not yet been
+checked against a real Cursor history.
 
 From a checkout, `./gateway.sh <command>` (or `npm run dev -- <command>`) is the
 same CLI running from source; it also loads the repo's `.env`. Everywhere below,

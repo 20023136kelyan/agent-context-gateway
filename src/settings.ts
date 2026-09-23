@@ -73,6 +73,8 @@ interface SettingsFile {
   reranker?: RerankerName;
   allowedHosts?: string[];
   telemetry?: boolean;
+  /** `acg paths`: where each harness's history lives, when not the default. */
+  historyPaths?: Record<string, string[]>;
 }
 
 export function defaultStateDir(): string {
@@ -88,6 +90,18 @@ export function setTelemetry(stateDir: string | undefined, on: boolean): void {
   mkdirSync(stateDir ?? defaultStateDir(), { recursive: true });
   const file = loadSettingsFile(stateDir);
   file.telemetry = on;
+  writeFileSync(settingsPath(stateDir), JSON.stringify({ ...file, version: 1 }, null, 2));
+}
+
+/** Replace one harness's saved locations (`acg paths`); null or [] removes the entry. Read by adapters/locations.ts. */
+export function setHistoryPaths(stateDir: string | undefined, kind: string, paths: string[] | null): void {
+  mkdirSync(stateDir ?? defaultStateDir(), { recursive: true });
+  const file = loadSettingsFile(stateDir);
+  const next = { ...(file.historyPaths ?? {}) };
+  if (paths && paths.length) next[kind] = [...new Set(paths)];
+  else delete next[kind];
+  if (Object.keys(next).length) file.historyPaths = next;
+  else delete file.historyPaths;
   writeFileSync(settingsPath(stateDir), JSON.stringify({ ...file, version: 1 }, null, 2));
 }
 

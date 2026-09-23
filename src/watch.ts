@@ -12,8 +12,9 @@ import { syncAllDetailed } from "./indexing/sync.js";
 import { notifyNewTurns } from "./commands.js";
 import { embedSessionTurns, resolveEmbeddingEngine } from "./indexing/embed-sync.js";
 
-export function defaultWatchTargets(): WatchTarget[] {
-  return watchTargets();
+/** What to follow for this app: its own settings.json decides saved locations. */
+export function defaultWatchTargets(stateDir?: string): WatchTarget[] {
+  return watchTargets(stateDir ? { ...process.env, CONTEXT_GATEWAY_STATE: stateDir } : process.env);
 }
 
 export interface WatchOptions {
@@ -30,7 +31,7 @@ export interface WatchOptions {
 export function watchSources(app: GatewayApp, opts: WatchOptions = {}): FSWatcher[] {
   const targets: Pick<WatchTarget, "dir" | "recursive" | "matches">[] = opts.dirs
     ? opts.dirs.map((dir) => ({ dir, recursive: true, matches: (f: string) => f.endsWith(".jsonl") }))
-    : defaultWatchTargets();
+    : defaultWatchTargets(app.settings?.stateDir);
   const debounceMs = opts.debounceMs ?? 2000;
   let timer: NodeJS.Timeout | null = null;
   let syncing = false;

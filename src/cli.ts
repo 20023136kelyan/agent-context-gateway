@@ -562,6 +562,60 @@ program
     print((await fetchRemote("GET", "/health")) ?? (await withLocal((app) => health(app))), false);
   });
 
+const paths = program
+  .command("paths")
+  .description("Where each agent's history is read from; set it when an agent keeps it somewhere unusual")
+  .action(async () => {
+    const { listPaths } = await import("./paths.js");
+    const rows = await listPaths({ ...process.env, CONTEXT_GATEWAY_STATE: pathsStateDir() });
+    if (program.opts().json) return print(rows, true);
+    for (const r of rows) {
+      const found = r.present ? `${r.sessions} session${r.sessions === 1 ? "" : "s"}` : "not found";
+      console.log(`${r.kind.padEnd(12)} ${found.padEnd(14)} ${r.path}${r.via === "default" ? "" : `  (${r.via})`}`);
+    }
+  });
+
+const pathsStateDir = () => program.opts().stateDir ?? defaultStateDir();
+
+async function changePathsCmd(mode: "set" | "add", harness: string, dirs: string[], o: { force?: boolean }) {
+  const { changePaths } = await import("./paths.js");
+  try {
+    const res = await changePaths(mode, harness, dirs, { force: o.force, stateDir: pathsStateDir() });
+    for (const p of res.paths) console.log(`${res.kind}: ${p.path} (${p.sessions} session${p.sessions === 1 ? "" : "s"})`);
+    if (res.shadowedBy) console.error(`note: ${res.shadowedBy} is set, and it overrides saved locations until it is unset`);
+    console.log("Run `acg sync` to index it.");
+  } catch (e) {
+    console.error(`acg paths ${mode}: ${(e as Error).message}`);
+    process.exitCode = 1;
+  }
+}
+
+paths
+  .command("set <harness> <paths...>")
+  .description("Read this harness's history from these locations instead of its default (checked first)")
+  .option("--force", "save even if no sessions are found there")
+  .action((harness: string, dirs: string[], o) => changePathsCmd("set", harness, dirs, o));
+
+paths
+  .command("add <harness> <paths...>")
+  .description("Also read this harness's history from these locations, alongside the current ones")
+  .option("--force", "save even if no sessions are found there")
+  .action((harness: string, dirs: string[], o) => changePathsCmd("add", harness, dirs, o));
+
+paths
+  .command("unset <harness> [path]")
+  .description("Forget one saved location, or all of them (back to the default)")
+  .action(async (harness: string, path?: string) => {
+    const { unsetPaths } = await import("./paths.js");
+    try {
+      const left = unsetPaths(harness, path, { stateDir: pathsStateDir() });
+      console.log(left.length ? `${harness}: still reading ${left.join(", ")}` : `${harness}: back to its default location`);
+    } catch (e) {
+      console.error(`acg paths unset: ${(e as Error).message}`);
+      process.exitCode = 1;
+    }
+  });
+
 program
   .command("init")
   .description("First-run onboarding: detect histories, set keys, sync, backfill, hooks, verify")
@@ -570,6 +624,7 @@ program
   .option("--proactive", "also install the UserPromptSubmit hook that injects related earlier work (sends each prompt to Voyage/Jev)")
   .option("--no-backfill", "skip vector backfill (lexical index only)")
   .option("--no-verify", "skip the end-to-end smoke search")
+  .option("--path <harness=path>", "read a harness's history from here (repeatable; same check as `acg paths add`)", (v: string, acc: string[]) => [...acc, v], [] as string[])
   .action(async (cmdOpts) => {
     const { createInterface } = await import("node:readline");
     const { detectHistories, keyStatus, appendEnvKeys, installClaudeHook } = await import("./setup.js");
@@ -585,8 +640,35 @@ program
     const report: Record<string, unknown> = { steps: [] as string[] };
     const done = (s: string) => (report.steps as string[]).push(s);
 
-    // 1. Histories.
-    const sources = detectHistories();
+    // 1. Histories: locations given with --path first, then (interactively,
+    // when nothing is found) one asked for, then what is detected.
+    const { changePaths } = await import("./paths.js");
+    const addPath = async (spec: string): Promise<boolean> => {
+      const m = /^([a-z-]+)[=\s]+(.+)$/.exec(spec.trim());
+      if (!m) {
+        console.error(`--path wants <harness>=<path>, got "${spec}"`);
+        return false;
+      }
+      try {
+        const res = await changePaths("add", m[1]!, [m[2]!.trim()], { stateDir: program.opts().stateDir ?? defaultStateDir() });
+        done(`paths: ${res.kind} += ${res.paths.at(-1)?.path}`);
+        return true;
+      } catch (e) {
+        console.error((e as Error).message);
+        return false;
+      }
+    };
+    for (const spec of cmdOpts.path as string[]) {
+      if (!(await addPath(spec))) {
+        process.exitCode = 1;
+        return;
+      }
+    }
+    let sources = detectHistories();
+    if (!sources.some((s) => s.present) && !cmdOpts.yes) {
+      const spec = await ask("No agent history found in the usual places. Where is it? <harness> <path> (empty to stop): ");
+      if (spec && (await addPath(spec))) sources = detectHistories();
+    }
     const found = sources.filter((s) => s.present);
     print({ histories: sources }, false);
     if (found.length === 0) {
@@ -594,14 +676,14 @@ program
         [
           "No agent histories found, so sync would index nothing. Looked in:",
           ...sources.map((s) => `  ${s.kind.padEnd(12)} ${s.path}`),
-          "Use one of these agents here first, or point at its history if it lives elsewhere:",
-          "  CLAUDE_CONFIG_DIR, CODEX_HOME, XDG_DATA_HOME (OpenCode), GATEWAY_OPENCODE_DB, GATEWAY_TRAJECTORY_DIR",
+          "If an agent keeps its history elsewhere, point at it and run init again:",
+          "  acg paths set <harness> <path>      (or: acg init --path <harness>=<path>)",
         ].join("\n"),
       );
       process.exitCode = 1;
       return;
     }
-    done(`histories: ${found.map((s) => s.kind).join(", ")}`);
+    done(`histories: ${[...new Set(found.map((s) => s.kind))].join(", ")}`);
 
     // 2. Keys (append-only; existing values never shown or overwritten).
     // One stable home for keys, wherever init runs from: <state dir>/.env,
