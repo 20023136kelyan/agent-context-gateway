@@ -36,10 +36,48 @@ import { scrubText } from "../security/scrub.js";
 
 export type JevScoringMode = "fanout" | "pairwise";
 
-const CRITERIA = {
-  true: "The candidate states the answer, decision, or reason the query asks about.",
-  false: "The candidate is only on a similar topic, or mentions the subject without resolving it.",
-} as const;
+/**
+ * What the reranker asks Jev about each candidate.
+ *
+ * `answer` (default) asks whether the candidate CONTAINS the answer. `work`
+ * asks whether the earlier session is relevant prior work, on the theory that
+ * "a previous chat was working on the risk feature, continue that" wants the
+ * session that DID the work rather than one stating an answer.
+ *
+ * Measured 2026-09-23, jev-pairwise, project-scoped, NDCG@5 answer vs work:
+ * real strict (14) 0.775 vs 0.770, real broad (27) 0.605 vs 0.598, synthetic
+ * fixture (68) 0.966 vs 0.974 — a tie. Individual queries moved both ways,
+ * and the continuation ask that prompted this ranked the same under both: the
+ * single run where `answer` seemed to demote it was largely Jev's run-to-run
+ * variance. Kept as a switch (JEV_RERANK_CRITERION, read per call) to re-test
+ * on a larger eval; not a lever at this size.
+ */
+export type JevCriterion = "answer" | "work";
+
+export function jevCriterion(): JevCriterion {
+  return process.env.JEV_RERANK_CRITERION === "work" ? "work" : "answer";
+}
+
+const QUESTIONS: Record<JevCriterion, { single: string; indexed: (i: number) => string; criteria: { true: string; false: string } }> = {
+  answer: {
+    single: "Does `candidate` contain the answer to `query`?",
+    indexed: (i) => `Does \`candidates[${i}]\` contain the answer to \`query\`?`,
+    criteria: {
+      true: "The candidate states the answer, decision, or reason the query asks about.",
+      false: "The candidate is only on a similar topic, or mentions the subject without resolving it.",
+    },
+  },
+  work: {
+    single:
+      "`query` is a request an agent has just been given. `candidate` is an excerpt from an earlier agent session. Is that earlier session relevant prior work for this request?",
+    indexed: (i) =>
+      `\`query\` is a request an agent has just been given. \`candidates[${i}]\` is an excerpt from an earlier agent session. Is that earlier session relevant prior work for this request?`,
+    criteria: {
+      true: "The excerpt is part of work on the same task, feature, bug, file or decision the request is about, including work the request asks to continue, check or redo, or it directly answers the request.",
+      false: "The excerpt is about a different task and only shares topic words or general subject matter with the request.",
+    },
+  },
+};
 
 /** Same shape as `noopReranker`: scores pass through, flagged `neural: false`. */
 function passthrough(pool: RerankCandidate[]): RerankResult[] {
@@ -103,8 +141,8 @@ export class JevReranker {
     // (harness:session:uuid) and are not safe as question keys.
     pool.forEach((_, i) => {
       questions[`c${i}`] = {
-        instructions: `Does \`candidates[${i}]\` contain the answer to \`query\`?`,
-        criteria: CRITERIA,
+        instructions: QUESTIONS[jevCriterion()].indexed(i),
+        criteria: QUESTIONS[jevCriterion()].criteria,
       };
     });
     const state = {
@@ -123,11 +161,12 @@ export class JevReranker {
 
   /** One request per candidate, judged in isolation — the cookbook's shape. */
   private async pairwise(query: string, pool: RerankCandidate[]): Promise<Map<string, number>> {
+    const criterion = jevCriterion();
     const results = await Promise.all(
       pool.map(async (c) => {
         const { answers } = await this.client.noul(
           { query, candidate: scrubText(c.content).slice(0, RERANK_CONTENT_CHARS) },
-          { answers_query: { instructions: "Does `candidate` contain the answer to `query`?", criteria: CRITERIA } },
+          { answers_query: { instructions: QUESTIONS[criterion].single, criteria: QUESTIONS[criterion].criteria } },
         );
         return [c.id, answers.answers_query] as const;
       }),
