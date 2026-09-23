@@ -674,6 +674,15 @@ search at a time. An idle GPU still costs that hour, so a self-hosted reranker
 pays off only under shared load (a team or a key proxy). Hosted cost is about
 12k tokens per search at list price.
 
+**Recall check.** For 50 queries, no returned session got a 2 from both judges.
+For those queries, `judge-pool --recall` pooled every earlier session of the
+same project, 612 sessions in all. Both judges graded each one. None of the 296
+sessions that no setting returned beat the best returned session (mean grade:
+242 at 0, 39 at 0.5, 14 at 1, 1 at 1.5). Sonnet gave none of them a 2. Haiku
+gave ten a 2, and on each of those queries it already gave a returned session a 2.
+Retrieval is not missing useful sessions. When search finds nothing useful, the
+history has nothing useful to find.
+
 `npx tsx scripts/bench.ts [--sync]` times the hot paths against the real local
 histories (read-only).
 

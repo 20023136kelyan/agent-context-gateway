@@ -13,13 +13,20 @@
  * AS OF THE QUERY'S TIME (point-in-time, like the eval), so the judge cannot
  * see work the session did after the question was asked.
  *
+ * Recall check (--recall <qids file>): for the listed queries, also pool
+ * every session of the query's project that started before it (newest first,
+ * up to --recall-max), whether or not any setting returned it. Graded, these
+ * show whether a useful session exists that retrieval never surfaced.
+ *
  * Usage: npx tsx scripts/judge-pool.ts --real <root> --cells <cell.json>[,<cell.json>...] [--k 5] [--out <root>/judge-pool.jsonl]
+ *        [--recall <qids file> [--recall-max 40]]
  * Pairs already in the pool file are kept; only new ones are added.
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createApp, closeApp } from "../src/app.js";
-import { sessionOutcome, syncNow } from "../src/commands.js";
+import { listSessions, sessionOutcome, syncNow } from "../src/commands.js";
+import type { Session } from "../src/core/models.js";
 import type { SessionOutcome } from "../src/outcomes/outcome.js";
 
 const args = process.argv.slice(2);
@@ -29,11 +36,13 @@ const value = (n: string) => {
 };
 const root = value("--real");
 const cellFiles = value("--cells")?.split(",").filter(Boolean) ?? [];
-if (!root || cellFiles.length === 0) throw new Error("usage: judge-pool --real <root> --cells a.json,b.json [--k 5]");
+const recallFile = value("--recall");
+const recallMax = Number(value("--recall-max") ?? 40);
+if (!root || (cellFiles.length === 0 && !recallFile)) throw new Error("usage: judge-pool --real <root> --cells a.json,b.json [--k 5] [--recall qids.txt]");
 const k = Number(value("--k") ?? 5);
 const out = value("--out") ?? join(root, "judge-pool.jsonl");
 
-interface Golden { id: string; query: string; asOf: string; project: string }
+interface Golden { id: string; query: string; asOf: string; project: string; mined?: string }
 interface QueryResult { id: string; topSessionIds: string[] }
 export interface PoolPair { qid: string; query: string; asOf: string; sessionId: string; harness: string; card: string }
 
@@ -110,6 +119,25 @@ const app = createApp({
 });
 try {
   await syncNow(app);
+  if (recallFile) {
+    const byProject = new Map<string, Session[]>();
+    for (const qid of readFileSync(recallFile, "utf8").split(/\s+/).filter(Boolean)) {
+      const g = golden.get(qid);
+      if (!g) continue;
+      // The session the query was asked in is not an earlier session.
+      const own = /'querySession': '([^']+)'/.exec(g.mined ?? "")?.[1];
+      let sessions = byProject.get(g.project);
+      if (!sessions) byProject.set(g.project, (sessions = await listSessions(app, { project: g.project })));
+      const asOf = Date.parse(g.asOf);
+      const earlier = sessions
+        .filter((s) => s.id !== own && Date.parse(s.startedAt) < asOf)
+        .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
+        .slice(0, recallMax);
+      const set = wanted.get(qid) ?? new Set<string>();
+      for (const s of earlier) set.add(s.id);
+      wanted.set(qid, set);
+    }
+  }
   let added = 0;
   for (const [qid, sessions] of wanted) {
     const g = golden.get(qid);
