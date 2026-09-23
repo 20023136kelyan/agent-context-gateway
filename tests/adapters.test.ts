@@ -164,3 +164,32 @@ describe("CodexAdapter: multi-agent runs", () => {
     expect(turns.map((t) => t.content)).toEqual(["Audit the devapp backend wiring"]);
   });
 });
+
+describe("Codex tool calls are indexed with their arguments", () => {
+  // function_call keeps its arguments in `arguments`; the adapter read `input`
+  // and indexed every shell call as `shell("")`.
+  //
+  // Claude tool_use calls are deliberately NOT turns: emitting them as their
+  // own turns cost the Jev pipeline 0.06 NDCG@5 on real history (broad set,
+  // 0.613 over 4 runs -> 0.555 over 3), because ~13k short, keyword-dense
+  // "Edit: path" turns crowded the rerank pool. Actions get their own index.
+  let dir: string;
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), "acg-actions-"));
+    await mkdir(join(dir, "codex", "2026", "09", "01"), { recursive: true });
+    await writeFile(
+      join(dir, "codex", "2026", "09", "01", "rollout-x.jsonl"),
+      [
+        { timestamp: "2026-09-01T09:00:00Z", type: "session_meta", payload: { id: "cx1", cwd: "/repo" } },
+        { timestamp: "2026-09-01T09:01:00Z", type: "response_item", payload: { type: "function_call", id: "f1", name: "shell", arguments: JSON.stringify({ command: ["bash", "-lc", "npm run db:migrate"] }), call_id: "c1" } },
+      ].map((l) => JSON.stringify(l)).join("\n"),
+    );
+  });
+
+  it("reads shell commands from `arguments`, joined into readable text", async () => {
+    const a = new CodexAdapter(join(dir, "codex"));
+    const [session] = await a.listSessions();
+    const turns = await a.listTurns(session.id);
+    expect(turns.map((t) => t.content)).toContain("shell(bash -lc npm run db:migrate)");
+  });
+});

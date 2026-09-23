@@ -25,6 +25,7 @@ import { TemporalStore, defaultTemporalPath } from "./temporal/bi-temporal.js";
 import { AclStore, defaultAclPath } from "./security/acl.js";
 import { SubscriptionStore, defaultSubscriptionsPath } from "./collaboration/live.js";
 import { SearchService } from "./search/search.js";
+import { ActionStore, defaultActionsPath } from "./actions/store.js";
 
 /** Promise-chain mutex: runs callbacks one at a time, in call order. */
 export class AsyncLock {
@@ -73,6 +74,8 @@ export interface GatewayApp {
   temporal: TemporalStore;
   acl: AclStore;
   subscriptions: SubscriptionStore;
+  /** What agents did (files edited, commands run), refreshed by every sync path. */
+  actions: ActionStore;
   /** Serializes index + cursor writes (watcher, POST /sync, rebuild, syncSession, git events). Never nest. */
   indexLock: AsyncLock;
   /** Serializes vector-store writes, separately so long backfills don't block lexical sync. */
@@ -103,6 +106,7 @@ export function createApp(opts: AppOptions = {}): GatewayApp {
   const temporal = new TemporalStore(defaultTemporalPath(stateDir));
   const acl = new AclStore(defaultAclPath(stateDir));
   const subscriptions = new SubscriptionStore(defaultSubscriptionsPath(stateDir));
+  const actions = new ActionStore(defaultActionsPath(stateDir));
   const search = new SearchService(adapters, index);
   search.attachTopology(topology);
   search.attachFeedback(feedback);
@@ -116,7 +120,7 @@ export function createApp(opts: AppOptions = {}): GatewayApp {
     : resolveReranker();
   search.setReranker(rerankerImpl);
   return {
-    adapters, index, cursors, search, indexDir, backend, vectors: null, vectorBackend: null, reranker, settings, vectorDir, topology, feedback, temporal, acl, subscriptions,
+    adapters, index, cursors, search, indexDir, backend, vectors: null, vectorBackend: null, reranker, settings, vectorDir, topology, feedback, temporal, acl, subscriptions, actions,
     indexLock: new AsyncLock(),
     vectorLock: new AsyncLock(),
   };
@@ -139,4 +143,5 @@ export function closeApp(app: GatewayApp): void {
   } catch {
     // best-effort
   }
+  app.actions?.close();
 }

@@ -64,6 +64,7 @@ export async function embedSessionTurns(
   // Scrub the whole turn before chunking: a private key split across two
   // windows is unrecognisable in either half (see security/scrub.ts).
   for (const t of turns) {
+    if (t.searchable === false) continue; // context-only: never retrieved, so never embedded
     chunkForEmbedding(scrubText(t.content)).forEach((text, i) => planned.push({ id: embedChunkId(t.id, i), text, turn: t }));
   }
   // Asking per window rather than per turn is what upgrades an existing corpus:

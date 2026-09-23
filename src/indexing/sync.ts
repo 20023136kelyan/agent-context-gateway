@@ -42,8 +42,14 @@ export function isRemoteSource(sourcePath: string): boolean {
 }
 
 /** Index rows carry session metadata that turns don't. */
+/** Turns retrieval may return. Context-only turns (Turn.searchable) are left out. */
+export function searchableTurns(turns: Turn[]): Turn[] {
+  return turns.filter((t) => t.searchable !== false);
+}
+
+/** The searchable turns, with the session fields the index filters on. */
 export function enrichTurns(turns: Turn[], s: Session): (Turn & { projectId: string; workspace: string; repo: string | null })[] {
-  return turns.map((t) => ({ ...t, projectId: s.projectId, workspace: s.workspace, repo: s.repo ?? null }));
+  return searchableTurns(turns).map((t) => ({ ...t, projectId: s.projectId, workspace: s.workspace, repo: s.repo ?? null }));
 }
 
 export async function syncAllDetailed(
@@ -104,7 +110,9 @@ export async function syncAllDetailed(
         }
         const known = opts.detectNew ? index.existingIds(turns.map((t) => t.id)) : null;
         index.indexTurns(enrichTurns(turns, s), s.sourcePath, { commit: false });
-        indexed.push({ adapter, session: s, turns, newTurns: known ? turns.filter((t) => !known.has(t.id)) : undefined });
+        // A context-only turn is never indexed, so it would read as "new" on
+        // every sync and re-notify subscribers forever: count only searchable ones.
+        indexed.push({ adapter, session: s, turns, newTurns: known ? searchableTurns(turns).filter((t) => !known.has(t.id)) : undefined });
         sessionsIndexed += 1;
         turnsIndexed += turns.length;
       }

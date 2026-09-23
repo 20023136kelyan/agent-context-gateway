@@ -18,6 +18,7 @@ import { join, basename } from "node:path";
 import { homedir } from "node:os";
 import type { Harness, Session, Turn, TurnRole } from "../core/models.js";
 import { turnId as makeTurnId } from "../core/id.js";
+import { actionsOfCall, type Action } from "../actions/store.js";
 import type { ContextAdapter, FileCursor } from "./types.js";
 import { truncate, extractFileRefs, codexContentToText, TURN_CACHE_SESSIONS, TURN_CACHE_CHARS, turnChars } from "./text.js";
 import { repoRoot } from "./repo.js";
@@ -44,6 +45,30 @@ interface SessionMetaPayload {
   timestamp?: string;
   cwd?: string;
   originator?: string;
+}
+
+/**
+ * What a Codex tool call was given. custom_tool_call (apply_patch) carries a
+ * string `input`; function_call (shell and friends) carries a JSON string in
+ * `arguments`, which this adapter used to ignore, indexing every shell call as
+ * `shell("")`. A shell command arrives as an argv array
+ * (["bash", "-lc", "git pull origin main"]) and is joined into readable text.
+ */
+function codexCallInput(p: Record<string, unknown>): string {
+  if (typeof p.input === "string") return p.input;
+  if (typeof p.arguments === "string") {
+    try {
+      const a = JSON.parse(p.arguments) as { command?: unknown; cmd?: unknown };
+      if (Array.isArray(a.command)) return a.command.map(String).join(" ");
+      if (typeof a.command === "string") return a.command;
+      // exec_command names it `cmd`.
+      if (typeof a.cmd === "string") return a.cmd;
+    } catch {
+      // not JSON: index it as written
+    }
+    return p.arguments;
+  }
+  return JSON.stringify(p.input ?? p.arguments ?? "");
 }
 
 /** A rollout file's own thread id; older files carry only `session_id`. */
@@ -301,8 +326,7 @@ export class CodexAdapter implements ContextAdapter {
 
     if (ptype === "function_call" || ptype === "custom_tool_call") {
       const name = (p.name as string | undefined) ?? ptype;
-      const input = typeof p.input === "string" ? p.input : JSON.stringify(p.input ?? "");
-      const content = truncate(`${name}(${input})`, 4000);
+      const content = truncate(`${name}(${codexCallInput(p)})`, 4000);
       if (!content.trim()) return null;
       const key = (p.id as string | undefined) ?? `${ptype}-${seq}`;
       return {
@@ -314,6 +338,11 @@ export class CodexAdapter implements ContextAdapter {
         content,
         raw: { id: p.id, call_id: p.call_id },
         toolNames: [name],
+        // A shell call is context (shown around results) and an action (the
+        // action index), not a retrieval candidate: indexed with its real
+        // command it cost hybrid 0.026 NDCG@5 on real history. apply_patch
+        // (custom_tool_call) stays searchable, as it always was.
+        searchable: ptype === "custom_tool_call",
         fileRefs: extractFileRefs(content),
         seq,
         byteOffset: offset,
@@ -362,6 +391,23 @@ export class CodexAdapter implements ContextAdapter {
     }
 
     return null;
+  }
+
+  /**
+   * Files patched and commands run. Codex tool calls ARE turns (context-only
+   * ones for shell calls), so each action points at its own call.
+   */
+  async listActions(sessionId: string): Promise<Action[]> {
+    const turns = await this.listTurns(sessionId).catch(() => [] as Turn[]);
+    const actions: Action[] = [];
+    for (const t of turns) {
+      const name = t.toolNames?.[0];
+      if (t.role !== "tool" || !name || !t.content.startsWith(`${name}(`)) continue;
+      // content is `name(input)`; input may be cut at the turn cap.
+      const input = t.content.slice(name.length + 1).replace(/\)$/, "");
+      actions.push(...actionsOfCall(name, input, t.timestamp, t.id));
+    }
+    return actions;
   }
 
   async getTurn(sessionId: string, turnId: string): Promise<Turn> {

@@ -177,6 +177,41 @@ export function isToolResultContent(content: unknown): boolean {
   return sawToolResult;
 }
 
+/**
+ * The argument that says what a tool call acted on, in priority order: the
+ * command it ran, the file it touched, what it searched for.
+ */
+const TOOL_ARG_KEYS = ["command", "file_path", "notebook_path", "pattern", "path", "url", "query", "description", "skill", "prompt"];
+const TOOL_ARG_CHARS = 1000;
+
+/**
+ * One line per tool call: "Bash: git pull origin main", "Edit: src/api.ts".
+ * What an agent DID. Not emitted as searchable turns: as their own turns these
+ * crowded the rerank pool and cost the Jev pipeline 0.06 NDCG@5 on real
+ * history. They feed the action index instead.
+ */
+export function toolCallText(name: string, input: unknown): string {
+  if (typeof input === "string") return `${name}: ${input.slice(0, TOOL_ARG_CHARS)}`;
+  if (!input || typeof input !== "object") return name;
+  const o = input as Record<string, unknown>;
+  const args = TOOL_ARG_KEYS.map((k) => o[k]).filter((v): v is string => typeof v === "string" && v.trim() !== "");
+  const body = args.length > 0 ? args.slice(0, 2).join("  ") : JSON.stringify(o);
+  return `${name}: ${body.slice(0, TOOL_ARG_CHARS)}`;
+}
+
+/** Claude `tool_use` blocks as tool-call lines (see toolCallText). */
+export function claudeToolCalls(content: unknown): string[] {
+  if (!Array.isArray(content)) return [];
+  const calls: string[] = [];
+  for (const b of content) {
+    const block = b as Record<string, unknown> | null;
+    if (block && typeof block === "object" && block.type === "tool_use" && typeof block.name === "string") {
+      calls.push(toolCallText(block.name, block.input));
+    }
+  }
+  return calls;
+}
+
 export function claudeToolNames(content: unknown): string[] {
   if (!Array.isArray(content)) return [];
   const names: string[] = [];

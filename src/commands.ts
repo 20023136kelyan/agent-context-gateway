@@ -3,11 +3,13 @@
  * Nothing here touches stdout/sockets; returns plain data + throws Errors
  * with `not_found` / `bad_request` messages that transports map to codes.
  */
+import { PARSE_VERSION } from "./adapters/types.js";
 import { inProject } from "./core/project.js";
 import { rerankDefaultOn } from "./search/reranker.js";
 import { stat } from "node:fs/promises";
-import { syncAll, syncAllDetailed, rebuildAll, enrichTurns, isRemoteSource } from "./indexing/sync.js";
-import type { Turn } from "./core/models.js";
+import { syncAllDetailed, rebuildAll, enrichTurns, searchableTurns, isRemoteSource } from "./indexing/sync.js";
+import type { Session, Turn } from "./core/models.js";
+import type { ContextAdapter } from "./adapters/types.js";
 import { embedMissing, embedSessionTurns } from "./indexing/embed-sync.js";
 import { embeddingsAvailable } from "./embeddings/provider.js";
 import { loadRemotes, queryRemote } from "./remotes.js";
@@ -38,10 +40,35 @@ function adapterFor(app: GatewayApp, harness: string) {
 }
 
 export async function ensureSynced(app: GatewayApp) {
-  if (app.index.docCount() > 0) return;
+  if (app.index.docCount() > 0) {
+    // Built by an older parser (or before versions were recorded): rebuild
+    // once, so an upgrade does not serve the old parse, or an empty action
+    // index, until someone happens to run `sync`.
+    if (app.cursors.parseVersion() !== PARSE_VERSION) await syncNow(app);
+    return;
+  }
   await app.indexLock.run(async () => {
-    if (app.index.docCount() === 0) await syncAll(app.adapters, app.index, app.cursors);
+    if (app.index.docCount() === 0) {
+      const { indexed } = await syncAllDetailed(app.adapters, app.index, app.cursors);
+      await recordActions(app, indexed);
+      app.cursors.setParseVersion(PARSE_VERSION);
+    }
   });
+}
+
+/**
+ * Refresh the action index for the sessions a sync just re-read. Called
+ * inside the index lock by every sync path, so it tracks the search index.
+ */
+async function recordActions(app: GatewayApp, sessions: { adapter: ContextAdapter; session: Session }[]): Promise<void> {
+  for (const { adapter, session } of sessions) {
+    if (!adapter.listActions) continue;
+    try {
+      app.actions.replaceSession(session.harness, session.id, session.workspace, await adapter.listActions(session.id));
+    } catch {
+      // An unreadable session loses its actions until the next sync, not the sync.
+    }
+  }
 }
 
 /** Evaluate subscriptions against turns that are new to the index; deliver webhooks. */
@@ -353,6 +380,7 @@ export async function syncSession(
     // New-turn detection costs an index lookup: only when someone subscribed.
     const known = app.subscriptions.all().length > 0 ? app.index.existingIds(turns.map((t) => t.id)) : null;
     app.index.indexTurns(enrichTurns(turns, session), session.sourcePath);
+    await recordActions(app, [{ adapter, session }]);
     // Stamp only a source this session owns alone: a shared source (Cursor DB,
     // Zep export, .git) still holds unsynced sessions the next full sync must see.
     const shared = sessions.some((s) => s !== session && s.sourcePath === session.sourcePath);
@@ -366,7 +394,8 @@ export async function syncSession(
       }
     }
     app.index.markSynced();
-    return known ? turns.filter((t) => !known.has(t.id)) : [];
+    // Context-only turns are never indexed; counting them would re-notify every sync.
+    return known ? searchableTurns(turns).filter((t) => !known.has(t.id)) : [];
   });
   app.search.invalidateSessions();
   await notifyNewTurns(app, fresh);
@@ -509,9 +538,16 @@ export function cancelSubscription(app: GatewayApp, id: string) {
 }
 
 export async function syncNow(app: GatewayApp, rebuild = false, opts: { embed?: boolean } = {}) {
+  let reparsed = false;
   const { result, fresh } = await app.indexLock.run(async () => {
-    if (!rebuild) {
+    // A parser change (PARSE_VERSION) is invisible to incremental sync, which
+    // skips unchanged files, and upserts leave behind docs whose ids moved.
+    // Rebuild once, then record the version.
+    const recorded = app.cursors.parseVersion();
+    reparsed = !rebuild && recorded !== PARSE_VERSION && app.index.docCount() > 0;
+    if (!rebuild && !reparsed) {
       const out = await syncAllDetailed(app.adapters, app.index, app.cursors, { detectNew: app.subscriptions.all().length > 0 });
+      await recordActions(app, out.indexed);
       return { result: out.result, fresh: out.indexed.flatMap((s) => s.newTurns ?? []) };
     }
     const create =
@@ -519,6 +555,8 @@ export async function syncNow(app: GatewayApp, rebuild = false, opts: { embed?: 
         ? () => new TantivyIndex(app.indexDir)
         : () => new SqliteIndex(app.indexDir);
     const out = await rebuildAll(app.adapters, create, app.cursors, app.indexDir, app.index);
+    app.actions.clear();
+    await recordActions(app, out.indexed);
     app.index = out.index;
     // Swap in place: a fresh SearchService would silently drop ACL, topology,
     // feedback and temporal attachments until restart.
@@ -526,6 +564,7 @@ export async function syncNow(app: GatewayApp, rebuild = false, opts: { embed?: 
     // Everything is "new" to a rebuilt index: that's history, not news — no notifications.
     return { result: out.result, fresh: [] as Turn[] };
   });
+  app.cursors.setParseVersion(PARSE_VERSION);
   if (result.sessionsIndexed > 0) app.search.invalidateSessions();
   await notifyNewTurns(app, fresh);
   // Semantic backfill is opt-in and resumable; lexical sync never blocks on it.
@@ -534,7 +573,42 @@ export async function syncNow(app: GatewayApp, rebuild = false, opts: { embed?: 
     const store = app.vectors ?? (await initVectors(app));
     vectors = await app.vectorLock.run(() => embedMissing(app.adapters, store));
   }
-  return { ...result, vectors };
+  return { ...result, reparsed, vectors };
+}
+
+/** One session's matching actions, newest first. */
+export interface ActionFinding {
+  harness: string;
+  sessionId: string;
+  last: string;
+  actions: { kind: string; target: string; ts: string; turnId: string }[];
+}
+
+/**
+ * Which sessions edited a file or ran a command: exact facts from tool calls
+ * (actions/store.ts), not a ranking. Scoped like search: an explicit project,
+ * "*" for every project, or the caller's own project when it has history.
+ * Each action carries the turn to open with context.get_context.
+ */
+export async function findActions(
+  app: GatewayApp,
+  q: { file?: string; command?: string; since?: string; maxSessions?: number } & Pick<SearchOptions, "project"> & ScopeOptions,
+): Promise<{ projectScope: ProjectScopeInfo; sessions: ActionFinding[] }> {
+  if (!q.file?.trim() && !q.command?.trim()) throw new Error("bad_request: pass a file or a command");
+  if (q.since && Number.isNaN(Date.parse(q.since))) throw new Error(`bad_request: invalid since "${q.since}" (want an ISO timestamp)`);
+  await ensureSynced(app);
+  const projectScope = await resolveProject(app, q);
+  const sessionIds = projectScope.project ? await app.search.projectSessionIds(projectScope.project) : undefined;
+  const rows = app.actions.find({ file: q.file, command: q.command, since: q.since, sessionIds, limit: 2000 });
+  const bySession = new Map<string, ActionFinding>();
+  for (const r of rows) {
+    const key = `${r.harness}:${r.sessionId}`;
+    const entry = bySession.get(key) ?? { harness: r.harness, sessionId: r.sessionId, last: r.ts, actions: [] };
+    if (entry.actions.length < 20) entry.actions.push({ kind: r.kind, target: r.target, ts: r.ts, turnId: r.turnId });
+    bySession.set(key, entry);
+  }
+  const maxSessions = Math.max(1, Math.min(q.maxSessions ?? 10, 50));
+  return { projectScope, sessions: [...bySession.values()].slice(0, maxSessions) };
 }
 
 /** Explicit background embedding backfill across historical sessions. */

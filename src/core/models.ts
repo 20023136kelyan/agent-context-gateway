@@ -47,6 +47,13 @@ export interface Turn {
   raw: unknown;
   toolNames?: string[];
   fileRefs?: string[];
+  /**
+   * false = context only: shown in result windows and read by the action
+   * index, but never indexed or embedded for retrieval. Tool CALLS (a shell
+   * command, an edit's path) are short and keyword-dense; ranked alongside
+   * discussion they crowded the pool and cost 0.03-0.06 NDCG@5 on real history.
+   */
+  searchable?: boolean;
   /** Order within session (0-based) */
   seq: number;
   /** Byte offset in source JSONL for direct retrieval */

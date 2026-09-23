@@ -8,7 +8,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import type { GatewayApp } from "../app.js";
 import { callerProject } from "../adapters/repo.js";
-import { listSources, listSessions, searchOnce, decideOnce, getRelated, traverseArtifacts, listInvalidations, listAclRules, searchLive, getLineage, createSubscription, listSubscriptions, recordFeedback, getSession, getTurn, getContext, showTopology } from "../commands.js";
+import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, listAclRules, searchLive, getLineage, createSubscription, listSubscriptions, recordFeedback, getSession, getTurn, getContext, showTopology } from "../commands.js";
 
 const Harness = z.enum(["claude-code", "codex", "cursor", "zep", "git", "trajectory", "opencode"]);
 
@@ -63,6 +63,19 @@ export function buildMcpServer(app: GatewayApp, cwd: string = process.cwd()): Mc
     },
     async (args) =>
       text(await searchOnce(app, args.query, { ...args, defaultProject, rerank: args.rerank ?? rerankDefaultOn(app.reranker) })),
+  );
+
+  server.tool(
+    "context.find_actions",
+    "Which sessions edited a file or ran a command: exact facts from agents' tool calls, not a ranking. Use for 'has another agent already changed X / run Y?'. Sessions come newest first, each action with the turn to open via context.get_context.",
+    {
+      file: z.string().optional().describe("A path or its tail: 'src/api/client.ts' or 'client.ts'"),
+      command: z.string().optional().describe("Part of a command line: 'db:migrate', 'git pull'"),
+      project: projectArg,
+      since: z.string().optional().describe("ISO timestamp: only actions at or after it"),
+      maxSessions: z.number().min(1).max(50).optional(),
+    },
+    async (args) => text(await findActions(app, { ...args, defaultProject })),
   );
 
   server.tool(

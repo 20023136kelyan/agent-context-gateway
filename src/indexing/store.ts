@@ -11,7 +11,7 @@ export class CursorStore {
   private path: string;
   private data: Record<string, CursorEntry>;
 
-  constructor(dir: string) {
+  constructor(private dir: string) {
     mkdirSync(dir, { recursive: true });
     this.path = join(dir, "cursors.json");
     this.data = {};
@@ -30,6 +30,20 @@ export class CursorStore {
 
   set(path: string, entry: CursorEntry): void {
     this.data[path] = entry;
+  }
+
+  /** Parser version that built this index (adapters/types.ts), null if never recorded. */
+  parseVersion(): number | null {
+    try {
+      const v = Number(readFileSync(join(this.dir, "parse-version"), "utf8").trim());
+      return Number.isFinite(v) ? v : null;
+    } catch {
+      return null;
+    }
+  }
+
+  setParseVersion(v: number): void {
+    writeFileSync(join(this.dir, "parse-version"), String(v));
   }
 
   save(): void {

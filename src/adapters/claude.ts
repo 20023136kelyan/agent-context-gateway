@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import type { Harness, Session, Turn, TurnRole } from "../core/models.js";
 import { turnId as makeTurnId } from "../core/id.js";
+import { actionsOfCall, type Action } from "../actions/store.js";
 import type { ContextAdapter, FileCursor } from "./types.js";
 import { truncate, extractFileRefs, claudeContentToText, claudeToolNames, isToolResultContent, TURN_CACHE_SESSIONS, TURN_CACHE_CHARS, turnChars } from "./text.js";
 import { LruCache } from "../core/lru.js";
@@ -250,6 +251,49 @@ export class ClaudeAdapter implements ContextAdapter {
       seq,
       byteOffset: offset,
     };
+  }
+
+  /**
+   * Files edited and commands run, from the session's tool_use blocks. Tool
+   * calls are not turns here (see Turn.searchable), so each action points at
+   * the nearest turn at or before its line: what `get_context` should open.
+   */
+  async listActions(sessionId: string): Promise<Action[]> {
+    const found = await this.findSessionFile(sessionId);
+    if (!found) return [];
+    const turns = await this.listTurns(sessionId).catch(() => [] as Turn[]);
+    if (turns.length === 0) return [];
+    let raw: string;
+    try {
+      raw = await readFile(found.path, "utf8");
+    } catch {
+      return [];
+    }
+    const actions: Action[] = [];
+    let offset = 0;
+    let anchor = 0;
+    for (const line of raw.split("\n")) {
+      const byteLen = Buffer.byteLength(line, "utf8") + 1;
+      while (anchor + 1 < turns.length && (turns[anchor + 1].byteOffset ?? Infinity) <= offset) anchor += 1;
+      if (line.includes('"tool_use"')) {
+        try {
+          const o = JSON.parse(line) as ClaudeLine;
+          const content = o.message?.content;
+          if (o.type === "assistant" && Array.isArray(content)) {
+            const ts = o.timestamp ?? turns[anchor].timestamp;
+            for (const b of content as Record<string, unknown>[]) {
+              if (b?.type === "tool_use" && typeof b.name === "string") {
+                actions.push(...actionsOfCall(b.name, b.input, ts, turns[anchor].id));
+              }
+            }
+          }
+        } catch {
+          // torn line at the end of a live file
+        }
+      }
+      offset += byteLen;
+    }
+    return actions;
   }
 
   async getTurn(sessionId: string, turnId: string): Promise<Turn> {

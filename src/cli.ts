@@ -5,7 +5,7 @@ import { Command } from "commander";
 import { join } from "node:path";
 import { createApp, closeApp, type GatewayApp } from "./app.js";
 import { dumpConfig } from "./settings.js";
-import { listSources, listSessions, searchOnce, decideOnce, getRelated, traverseArtifacts, listInvalidations, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, recordFeedback, getSession, getTurn, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "./commands.js";
+import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, recordFeedback, getSession, getTurn, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "./commands.js";
 import { addRemote, removeRemote, loadRemotes } from "./remotes.js";
 import { callerProject } from "./adapters/repo.js";
 import { readServeInfo, probeServer, remoteCall, connectHost, HttpError } from "./remote.js";
@@ -223,6 +223,34 @@ program
   .action(async (cmdOpts) => {
     const path = `/topology${qs({ harness: cmdOpts.harness, sessionId: cmdOpts.session })}`;
     print((await fetchRemote("GET", path)) ?? (await withLocal((app) => showTopology(app, { harness: cmdOpts.harness, sessionId: cmdOpts.session }))), false);
+  });
+
+program
+  .command("actions")
+  .description("Which sessions edited a file or ran a command (exact, from agents' tool calls)")
+  .option("--file <path>", "a path or its tail, e.g. src/api/client.ts or client.ts")
+  .option("--command <text>", "part of a command line, e.g. db:migrate or 'git pull'")
+  .option("--project <project>")
+  .option("--all-projects", "search every project (default: this directory's project, when it has history)")
+  .option("--since <iso>", "only actions at or after this time")
+  .option("--max-sessions <n>", "", "10")
+  .action(async (cmdOpts) => {
+    const scope = projectArgs(cmdOpts);
+    const path = `/actions${qs({ file: cmdOpts.file, command: cmdOpts.command, since: cmdOpts.since, ...scope, maxSessions: String(cmdOpts.maxSessions ?? 10) })}`;
+    const res = ((await fetchRemote("GET", path)) ??
+      (await withLocal((app) =>
+        findActions(app, { file: cmdOpts.file, command: cmdOpts.command, since: cmdOpts.since, ...scope, maxSessions: Number(cmdOpts.maxSessions ?? 10) }),
+      ))) as Awaited<ReturnType<typeof findActions>>;
+    if (program.opts().json) {
+      console.log(JSON.stringify(res, null, 2));
+      return;
+    }
+    for (const s of res.sessions) {
+      console.log(`${s.harness} / session ${s.sessionId.slice(0, 8)} (last ${s.last})`);
+      for (const a of s.actions) console.log(`    ${a.ts}  ${a.kind.padEnd(7)} ${a.target.split("\n")[0].slice(0, 120)}`);
+    }
+    printScope(res.projectScope);
+    if (res.sessions.length === 0) console.log("No matching actions.");
   });
 
 program

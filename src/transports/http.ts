@@ -7,7 +7,7 @@ import { timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import type { GatewayApp } from "../app.js";
 import type { Harness } from "../core/models.js";
-import { listSources, listSessions, searchOnce, decideOnce, getRelated, traverseArtifacts, listInvalidations, recordInvalidation, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, cancelSubscription, recordFeedback, getSession, getTurn, getContext, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "../commands.js";
+import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, recordInvalidation, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, cancelSubscription, recordFeedback, getSession, getTurn, getContext, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "../commands.js";
 import { writeServeInfo, clearServeInfo } from "../remote.js";
 import { handleGitCommitEvent, type GitCommitEvent } from "../git/hooks.js";
 
@@ -132,6 +132,23 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
         },
         chain,
       );
+    } catch (e) {
+      const { code, message } = toStatus(e);
+      return reply.code(code).send({ error: message });
+    }
+  });
+
+  fastify.get("/actions", async (req, reply) => {
+    const q = req.query as Record<string, string | undefined>;
+    try {
+      return await findActions(app, {
+        file: q.file,
+        command: q.command,
+        since: q.since,
+        project: q.project,
+        defaultProject: q.defaultProject,
+        maxSessions: q.maxSessions ? Number(q.maxSessions) : undefined,
+      });
     } catch (e) {
       const { code, message } = toStatus(e);
       return reply.code(code).send({ error: message });

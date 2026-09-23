@@ -146,7 +146,33 @@ results were scoped and widen them. `preferProject` is a softer mode (also
 search the rest, boost the project); it currently loses to the filter because
 the Jev reranker does not know the caller's project.
 
-## Decisions
+## What agents did: the action index
+
+Search ranks what agents *said*. "Has another agent already changed
+`client.ts`?" or "who ran the migration?" have exact answers in the tool calls
+instead, so those live in a separate index: every file an agent edited and every
+command it ran, with the session, the time, and the turn to open for context.
+
+```bash
+npx tsx src/cli.ts actions --file client.ts          # which sessions edited it (path tail matches)
+npx tsx src/cli.ts actions --command "db:migrate"    # which sessions ran it
+```
+
+MCP `context.find_actions`, HTTP `GET /actions?file=&command=`. Scoped like
+search (the caller's project by default, `"*"` / `--all-projects` for every
+project), newest first, no model involved.
+
+Read from Claude Code (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash`)
+and Codex (`apply_patch`, shell and `exec_command` calls, and commands and
+patches inside Codex Desktop's code-mode `exec` scripts). On a 98-session real
+corpus it held 14k actions, lookups took 4-18 ms, and its edits agreed with an
+independent parser on all 61 editing sessions (mean Jaccard 0.93).
+
+Tool calls are kept **out of the search ranking** on purpose. Indexed as their
+own turns they crowded the rerank pool: on real history the Jev pipeline fell
+from 0.613 to 0.555 NDCG@5 (Claude calls, 7 runs) and hybrid from 0.574 to 0.548
+(Codex shell calls). They still show in result context windows.
+
 
 Why-questions go to `decide` (`context.decide`, `GET /decide`), not search:
 
@@ -281,7 +307,7 @@ opencode (`~/.config/opencode/opencode.json`):
 ```
 
 Claude Code: `claude mcp add context-gateway -- node --import tsx /path/to/ACG/src/cli.ts mcp`.
-Tools: `context.search`, `context.decide`, `context.get_session`, `context.get_turn`,
+Tools: `context.search`, `context.decide`, `context.find_actions`, `context.get_session`, `context.get_turn`,
 `context.get_context`, `context.get_topology`, `context.explore_lineage`,
 `context.get_related`, `context.traverse_artifacts`, `context.get_invalidations`,
 `context.get_acl_rules`, `context.search_live`, `context.subscribe`,
@@ -416,7 +442,9 @@ tests/              37 suites (235 tests) + 3 Swift XCTest tests
 - Single user. Loopback by default; serving the network is opt-in and requires `GATEWAY_TOKEN`.
 - No local models. Without `VOYAGE_API_KEY` search is lexical-only; without `TYPESAFE_API_KEY` there is no Jev reranking and `decide` returns heuristic candidates.
 - Summaries are extractive (first lines), never LLM-generated.
-- Changing adapter ID schemes or normalization requires `sync --rebuild` (incremental sync keys on file mtime/size and can't see ID changes).
+- The action index reads Codex tool calls from their turns, which are capped at 4,000 characters, so a very long patch can lose its later file headers.
+- The action index counts edits made through edit tools (`Edit`, `Write`, `apply_patch`). A file changed by a shell command (`sed -i`, a script, `cat >`) appears only as that command.
+- Incremental sync keys on file mtime/size, so it cannot see a parser change on its own. Adapter output changes bump `PARSE_VERSION` (`src/adapters/types.ts`), and the next `sync` rebuilds the lexical index automatically. Vectors are kept: turns whose text changed keep their old embedding until you delete the vector store and `backfill` again.
 - One `TantivyIndex` writer per index dir per process — the CLI delegates writes to a live `serve`; readers are unaffected.
 - The Cursor adapter follows the documented 2026 format but has never been verified against a real Cursor history.
 - `init` detects Claude Code and Codex histories only; the other adapters read their default locations or need their path configured.

@@ -177,6 +177,12 @@ export class SearchService {
     return { map, cached: false };
   }
 
+  /** Ids of the known sessions that belong to `project` (core/project.ts). */
+  async projectSessionIds(project: string): Promise<string[]> {
+    const { map } = await this.sessionMap();
+    return [...map.values()].filter((s) => inProject(s, project)).map((s) => s.id);
+  }
+
   /** Does any known session belong to `project` (matched as in core/project.ts)? */
   async hasProject(project: string): Promise<boolean> {
     const { map } = await this.sessionMap();
