@@ -9,7 +9,7 @@ import { existsSync, watch, type FSWatcher } from "node:fs";
 import { watchTargets, type WatchTarget } from "./adapters/locations.js";
 import type { GatewayApp } from "./app.js";
 import { syncAllDetailed } from "./indexing/sync.js";
-import { notifyNewTurns } from "./commands.js";
+import { notifyNewTurns, recordActions } from "./commands.js";
 import { embedSessionTurns, resolveEmbeddingEngine } from "./indexing/embed-sync.js";
 
 /** What to follow for this app: its own settings.json decides saved locations. */
@@ -45,9 +45,13 @@ export function watchSources(app: GatewayApp, opts: WatchOptions = {}): FSWatche
     syncing = true;
     try {
       // Under the app write lock: a rebuild or POST /sync can't interleave with it.
-      const { result: res, indexed } = await app.indexLock.run(() =>
-        syncAllDetailed(app.adapters, app.index, app.cursors, { detectNew: app.subscriptions.all().length > 0 }),
-      );
+      const { result: res, indexed } = await app.indexLock.run(async () => {
+        const out = await syncAllDetailed(app.adapters, app.index, app.cursors, { detectNew: app.subscriptions.all().length > 0 });
+        // Without this the action index (and outcome records) went stale under
+        // `serve --watch`: only the CLI sync paths refreshed it.
+        await recordActions(app, out.indexed);
+        return out;
+      });
       await notifyNewTurns(app, indexed.flatMap((s) => s.newTurns ?? [])).catch((e) => opts.onError?.(e));
       if (res.sessionsIndexed > 0) app.search.invalidateSessions();
       let embedded: number | undefined;

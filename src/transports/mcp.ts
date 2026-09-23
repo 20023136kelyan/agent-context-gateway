@@ -8,7 +8,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import type { GatewayApp } from "../app.js";
 import { callerProject } from "../adapters/repo.js";
-import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, listAclRules, searchLive, getLineage, createSubscription, listSubscriptions, recordFeedback, getSession, getTurn, getContext, sessionOutcome, showTopology } from "../commands.js";
+import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, listAclRules, searchLive, getLineage, createSubscription, listSubscriptions, recordFeedback, getSession, getTurn, getContext, sessionOutcome, browseSessions, showTopology } from "../commands.js";
 
 const Harness = z.enum(["claude-code", "codex", "cursor", "zep", "git", "trajectory", "opencode"]);
 
@@ -83,6 +83,19 @@ export function buildMcpServer(app: GatewayApp, cwd: string = process.cwd()): Mc
     "Direct session retrieval (authoritative source data)",
     { harness: Harness, sessionId: z.string() },
     async (args) => text(await getSession(app, args.harness, args.sessionId)),
+  );
+
+  server.tool(
+    "context.browse_sessions",
+    "Shortlist earlier sessions for a query, each with its task list (every request in it and how that task went: verified / failing / unverified / no-edits) and where the query matched. Use it to decide which sessions are worth opening, then read them with context.get_context or context.session_outcome. Scoped like search.",
+    {
+      query: z.string(),
+      project: projectArg,
+      maxSessions: z.number().min(1).max(20).optional(),
+      maxTasks: z.number().min(1).max(50).optional(),
+      asOf: z.string().optional(),
+    },
+    async (args) => text(await browseSessions(app, args.query, { ...args, defaultProject, rerank: rerankDefaultOn(app.reranker) })),
   );
 
   server.tool(

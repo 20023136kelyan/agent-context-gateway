@@ -7,7 +7,7 @@ import { timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import type { GatewayApp } from "../app.js";
 import type { Harness } from "../core/models.js";
-import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, recordInvalidation, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, cancelSubscription, recordFeedback, getSession, getTurn, getContext, sessionOutcome, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "../commands.js";
+import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, recordInvalidation, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, cancelSubscription, recordFeedback, getSession, getTurn, getContext, sessionOutcome, browseSessions, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "../commands.js";
 import { writeServeInfo, clearServeInfo } from "../remote.js";
 import { handleGitCommitEvent, type GitCommitEvent } from "../git/hooks.js";
 
@@ -132,6 +132,23 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
         },
         chain,
       );
+    } catch (e) {
+      const { code, message } = toStatus(e);
+      return reply.code(code).send({ error: message });
+    }
+  });
+
+  fastify.get("/browse", async (req, reply) => {
+    const q = req.query as Record<string, string | undefined>;
+    try {
+      return await browseSessions(app, q.q ?? "", {
+        project: q.project,
+        defaultProject: q.defaultProject,
+        asOf: q.asOf,
+        maxSessions: q.maxSessions ? Number(q.maxSessions) : undefined,
+        maxTasks: q.maxTasks ? Number(q.maxTasks) : undefined,
+        rerank: rerankDefaultOn(app.reranker),
+      });
     } catch (e) {
       const { code, message } = toStatus(e);
       return reply.code(code).send({ error: message });

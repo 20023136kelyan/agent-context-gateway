@@ -58,10 +58,11 @@ export async function ensureSynced(app: GatewayApp) {
 }
 
 /**
- * Refresh the action index for the sessions a sync just re-read. Called
- * inside the index lock by every sync path, so it tracks the search index.
+ * Refresh the action index for the sessions a sync just
+ * re-read. Called inside the index lock by every sync path, the watcher's
+ * included, so it tracks the search index.
  */
-async function recordActions(app: GatewayApp, sessions: { adapter: ContextAdapter; session: Session }[]): Promise<void> {
+export async function recordActions(app: GatewayApp, sessions: { adapter: ContextAdapter; session: Session }[]): Promise<void> {
   for (const { adapter, session } of sessions) {
     if (!adapter.listActions) continue;
     try {
@@ -256,6 +257,78 @@ async function attachOutcomes(app: GatewayApp, results: PackagedResult[], asOf?:
     const seq = r.context.find((t) => t.id === r.provenance.turnId)?.seq;
     if (o) r.outcome = summarizeOutcome(o, seq);
   }
+}
+
+export interface SessionPreview {
+  harness: string;
+  sessionId: string;
+  project: string;
+  startedAt: string;
+  endedAt: string | null;
+  /** Where the search matched, best first: open with get_context. */
+  matches: { turnId: string; score: number; excerpt: string }[];
+  /** How the session ended overall. */
+  status: string;
+  tasksTotal: number;
+  /** Its tasks (request + how each went), the matched ones and their neighbours first. */
+  tasks: { index: number; request: string; status: string; edits: number; matched: boolean }[];
+}
+
+/**
+ * Candidate sessions for a query, each with its task list and outcomes, so
+ * the calling agent can choose what to open instead of trusting one ranking.
+ * LongMemEval-V2 (arXiv 2605.12493): a coding agent shortlisting from
+ * trajectory-level metadata and previews reached 72.5% against 48.5% for
+ * plain retrieval. The agent calling this is that agent.
+ */
+export async function browseSessions(
+  app: GatewayApp,
+  query: string,
+  requested: SearchOptions & ScopeOptions & { maxSessions?: number; maxTasks?: number } = {},
+): Promise<{ projectScope: ProjectScopeInfo; sessions: SessionPreview[] }> {
+  const { maxSessions: ms, maxTasks: mt, ...rest } = requested;
+  const maxSessions = Math.max(1, Math.min(ms ?? 8, 20));
+  const maxTasks = Math.max(1, Math.min(mt ?? 12, 50));
+  const res = await searchOnce(app, query, { ...rest, maxResults: Math.max(maxSessions * 2, 10), outcomes: false });
+  const bySession = new Map<string, { harness: string; sessionId: string; hits: typeof res.results }>();
+  for (const r of res.results) {
+    if (r.via) continue;
+    const key = `${r.provenance.harness}:${r.provenance.sessionId}`;
+    const e = bySession.get(key) ?? { harness: r.provenance.harness, sessionId: r.provenance.sessionId, hits: [] };
+    e.hits.push(r);
+    bySession.set(key, e);
+  }
+  const sessions: SessionPreview[] = [];
+  for (const { harness, sessionId, hits } of [...bySession.values()].slice(0, maxSessions)) {
+    const adapter = app.adapters.find((a) => a.harness === harness);
+    if (!adapter) continue;
+    const session = (await adapter.listSessions().catch(() => [] as Session[])).find((s) => s.id === sessionId);
+    const o = await outcomeOf(app, adapter, session ?? { harness: harness as Session["harness"], id: sessionId }, requested.asOf);
+    const hitSeqs = hits.map((h) => h.context.find((t) => t.id === h.provenance.turnId)?.seq).filter((x): x is number => x !== undefined);
+    const inTask = (i: number) => {
+      const t = o.tasks[i]!;
+      return hitSeqs.some((q) => q >= t.fromSeq && (t.toSeq === null || q < t.toSeq));
+    };
+    // Matched tasks first, then their neighbours, then the rest in order.
+    const matched = o.tasks.map((_, i) => i).filter(inTask);
+    const near = new Set(matched.flatMap((i) => [i - 1, i + 1]).filter((i) => i >= 0 && i < o.tasks.length && !matched.includes(i)));
+    const order = [...matched, ...near, ...o.tasks.map((_, i) => i).filter((i) => !matched.includes(i) && !near.has(i))].slice(0, maxTasks).sort((a, b) => a - b);
+    sessions.push({
+      harness,
+      sessionId,
+      project: o.project,
+      startedAt: o.startedAt,
+      endedAt: o.endedAt,
+      matches: hits.map((h) => ({ turnId: h.provenance.turnId, score: Number(h.score.toFixed(4)), excerpt: h.summary.replace(/\s+/g, " ").slice(0, 200) })),
+      status: o.status,
+      tasksTotal: o.tasks.length,
+      tasks: order.map((i) => {
+        const t = o.tasks[i]!;
+        return { index: i + 1, request: (t.request?.text ?? "(work before any request)").slice(0, 160), status: t.status, edits: t.edits.count, matched: matched.includes(i) };
+      }),
+    });
+  }
+  return { projectScope: res.projectScope, sessions };
 }
 
 /**

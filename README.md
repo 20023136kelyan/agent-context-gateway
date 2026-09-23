@@ -336,6 +336,22 @@ A hand audit of 20 sampled tasks found every record consistent with the
 evidence it cites. That audit is what led to per-task records, to "short
 messages only" for reactions, and to the two qualifiers above.
 
+### Browsing before reading
+
+A search returns passages; an agent deciding which earlier session to open
+needs the shape of each one. `browse` returns a shortlist of sessions, each
+with its task list (every request and how that task went), the tasks the
+query matched marked, and those tasks and their neighbours listed first:
+
+```bash
+acg browse "billing page shows the wrong plan"
+# codex 01a06e01  2026-09-04  verified  (7 tasks)
+#   *   3. [verified] the plan badge still says free after upgrading…
+#       4. [unverified] also fix the drawer flicker when switching accounts
+```
+
+MCP `context.browse_sessions`, HTTP `GET /browse?q=…`. Scoped like search.
+
 ## Proactive context (opt-in)
 
 Instead of waiting for an agent to search, a Claude Code `UserPromptSubmit`
@@ -361,8 +377,8 @@ the action index. Without a Jev key it never injects search results. It gives
 up silently after 8 s and always exits 0, so it can never block a prompt.
 
 Measured on opening prompts from real history (`npm run eval:proactive`):
-at 0.7, about 6 in 10 injections are relevant, and it finds the right earlier
-session for 26-43% of prompts. On prompts whose project has no related history
+at 0.7, about 2 in 3 injections are relevant (0.67 on 219 real sessions), and
+it finds the right earlier session for 26-44% of prompts. On prompts whose project has no related history
 it speaks up about a third of the time; read by eye, some of those were
 relevant anyway. Useful, not sharp: which is why it is opt-in, and why the
 injected text tells the agent to ignore it when it does not help.
@@ -558,6 +574,56 @@ npm run sweep -- sweeps/example.json
   process, and writes quality *and* third-party cost per row to
   `sweeps/results.sqlite` (git-ignored).
 
+### Tuning on real history
+
+The defaults were first tuned on the fixture corpus. `scripts/sweep-real.ts`
+re-checks them on mined real-history pairs: one process per cell, strict
+(≥2 shared files) and broad (≥1) sets scored in one run, each cell compared
+per query with the baseline (mean delta, and how many queries got better or
+worse).
+
+```bash
+npx tsx scripts/sweep-real.ts --real <root> --mode hybrid --cell "span55:GATEWAY_SIM_SPAN=0.55" --cell "k60:GATEWAY_RRF_K=60"
+```
+
+Measured on 219 sessions (47 Claude Code, 172 Codex), NDCG@5 against the
+mined labels:
+
+| change | broad | strict | kept? |
+|---|---:|---:|---|
+| query facets (below), hybrid | +0.017 (+7/−1) | +0.021 (+6/−1) | **yes, on by default** |
+| query facets, Jev reranker | +0.012 (+8/−2) | +0.021 (+5/−0) | yes |
+| `voyage-code-4` instead of `voyage-4` | +0.032 (+29/−11) | +0.003 (+15/−10) | not yet: twice the price |
+| similarity floor, span, vector gate | ≤ +0.02 on one set, lost on the other | | no change |
+| RRF k 5 / 20 / 60 (default 10) | +0.002 / −0.010 / −0.023 | +0.001 / −0.003 / −0.022 | no change |
+| recency weight 0 (default 0.10) | −0.012 | −0.016 | no change |
+| half-life, entity weight | flat | flat | no change |
+| embedding chunks of 3200 chars (default 1600) | +0.006 | −0.004 | no change |
+| rerank pool 15 / 50 (default 30) | slightly worse | slightly worse | no change |
+| per-task keys on each turn | | −0.014 | removed |
+
+The fixture-tuned constants held. The gain came from reading the query
+better, not from moving a constant.
+
+**Query facets** (`src/search/facets.ts`): a prompt of 20 words or more is
+also searched as the files it names, the error lines it pastes, its
+identifiers and its opening sentence. Each facet is its own ranked list,
+fused by best rank with the whole prompt's, so a pasted stack trace is not
+drowned by the paragraph around it. Nothing is generated; `GATEWAY_FACETS=off`
+turns it off. For the proactive hook it raised precision from 0.65 to 0.67,
+found the right session for 44% of prompts instead of 39%, and cut false
+alarms from 21% to 16%.
+
+**Judged relevance.** Mined labels count a session as relevant only when it
+edited the same files, which misses a session that explains the same bug.
+Three scripts grade what the compared settings actually returned instead:
+`judge-pool.ts` pools every setting's top 5 per query and describes each
+session from its outcome record as of the query's time, `judge-pairs.ts`
+grades each pair 0/1/2 with Claude run headless (`claude -p`, no tools, no
+MCP, no saved transcript; grades are cached), and `score-judged.ts` reports
+graded NDCG@5, P@1 and useful-in-top-5 beside the mined score. The judge is
+for evaluation only; the gateway never calls it.
+
 `npx tsx scripts/bench.ts [--sync]` times the hot paths against the real local
 histories (read-only).
 
@@ -610,7 +676,7 @@ src/embeddings/     provider.ts (engine registry + query-vector cache), voyage.t
 src/indexing/       tantivy-index.ts, sqlite-index.ts, vectors.ts (LanceDB), vectors-sqlite.ts (sqlite-vec),
                     vector-backend.ts, sync.ts, embed-sync.ts, store.ts (cursors)
 src/search/         query.ts, rank.ts (RRF), rewriter.ts (CAsT), reranker.ts (selection + contract),
-                    rerank-voyage.ts, route.ts (experimental retrieval router, eval-only), search.ts
+                    rerank-voyage.ts, route.ts (experimental retrieval router, eval-only), facets.ts, search.ts
 src/judgments/      jev.ts (TypeSafe client), rerank-jev.ts, judge-jev.ts
 src/decisions/      cues.ts, locales/, extract.ts (heuristic recall), select.ts (judge selection)
 src/topology/       store.ts (links, auto routing), lineage.ts (lineage tree explorer)
@@ -635,7 +701,8 @@ src/actions/        action index (store.ts)
 src/remote.ts       port file, probe, loop-guard federation client
 src/remotes.ts      remotes.json (0600) + read-only fan-out
 src/watch.ts        fs watcher for serve --watch
-scripts/            run-eval.ts, sweep.ts, sweep-cell.ts, bench.ts, build-swe-gym.py, fetch-native-binding.py
+scripts/            run-eval.ts, sweep.ts, sweep-cell.ts, sweep-real.ts, mine-pairs.ts, judge-pool.ts, judge-pairs.ts,
+                    score-judged.ts, eval-outcomes.ts, eval-proactive.ts, bench.ts, build-swe-gym.py, fetch-native-binding.py
 sweeps/             sweep manifests (results.sqlite is git-ignored)
 experiments/        parked custom-embedder training, paid-hosting note
 launchd/            com.context-gateway.serve.plist
@@ -659,7 +726,7 @@ tests/              37 suites (235 tests) + 3 Swift XCTest tests
 - `init` detects Claude Code and Codex histories only; the other adapters read their default locations or need their path configured.
 - The Git adapter lists HEAD's last 50 commits for every branch session, so branch sessions other than the checked-out one repeat HEAD's log.
 - `deriveFromTurns` (automatic supersession detection) is library-only: nothing runs it during sync, so invalidations come from `POST /temporal/invalidate`.
-- Almost every tuned constant was measured on the synthetic fixture corpus; BEIR checks the retrieval side, but the embedding chunk size has not been re-tuned since the switch from BGE-small to Voyage.
+- The ranking constants were tuned on the fixture corpus and re-checked on 219 real sessions (see [Tuning on real history](#tuning-on-real-history)); a larger or different history may still want other values.
 - Parsed turns are cached per adapter (256 sessions / 200M chars, ~222 MB for the measured corpus).
 - Zep sessions served by the REST API are re-indexed at most every 5 minutes (the API exposes no change stamp).
 

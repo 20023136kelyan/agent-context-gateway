@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { createApp, closeApp, type GatewayApp } from "./app.js";
 import { dumpConfig, defaultStateDir } from "./settings.js";
-import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, recordFeedback, getSession, getTurn, sessionOutcome, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "./commands.js";
+import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, recordFeedback, getSession, getTurn, sessionOutcome, browseSessions, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "./commands.js";
 import { addRemote, removeRemote, loadRemotes } from "./remotes.js";
 import { callerProject } from "./adapters/repo.js";
 import { loadUserEnv } from "./env.js";
@@ -151,6 +151,25 @@ program
   .description("Show session metadata")
   .action(async (harness: string, sessionId: string) => {
     print((await fetchRemote("GET", `/sessions/${harness}/${sessionId}`)) ?? (await withLocal((app) => getSession(app, harness, sessionId))), false);
+  });
+
+program
+  .command("browse <query>")
+  .description("Shortlist earlier sessions for a query: each one's tasks, how they went, and where it matched")
+  .option("--project <name>", "project to search (default: this directory's)")
+  .option("--all-projects", "search every project")
+  .option("--max-sessions <n>", "", (v) => Number(v))
+  .action(async (query: string, cmdOpts) => {
+    const res = await withLocal((app) =>
+      browseSessions(app, query, { ...projectArgs(cmdOpts), maxSessions: cmdOpts.maxSessions, rerank: rerankDefaultOn(app.reranker) }),
+    );
+    if (program.opts().json) return print(res, true);
+    for (const s of res.sessions) {
+      console.log(`${s.harness} ${s.sessionId.slice(0, 8)}  ${s.startedAt.slice(0, 10)}  ${s.status}  (${s.tasksTotal} task${s.tasksTotal === 1 ? "" : "s"})`);
+      for (const t of s.tasks) console.log(`  ${t.matched ? "*" : " "} ${String(t.index).padStart(3)}. [${t.status}] ${t.request}`);
+    }
+    printScope(res.projectScope);
+    if (res.sessions.length === 0) console.log("No sessions.");
   });
 
 program

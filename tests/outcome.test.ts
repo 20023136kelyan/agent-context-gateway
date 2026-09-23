@@ -14,7 +14,7 @@ import type { Action } from "../src/actions/store.js";
 import { ActionStore } from "../src/actions/store.js";
 import { buildOutcome, userUtterance, isCheckCommand, summarizeOutcome } from "../src/outcomes/outcome.js";
 import { createApp, closeApp, type GatewayApp } from "../src/app.js";
-import { syncNow, searchOnce, sessionOutcome } from "../src/commands.js";
+import { syncNow, searchOnce, sessionOutcome, browseSessions } from "../src/commands.js";
 
 const S = { harness: "claude-code" as const, id: "s1", projectId: "app" };
 let seq = 0;
@@ -294,6 +294,15 @@ describe("end to end: native history -> outcome -> search result", () => {
     expect(byId.s1).toMatchObject({ status: "verified", problem: expect.stringContaining("reconnect loop") });
     const off = await searchOnce(app, "websocket reconnect 401", { project: "*", semantic: false, rerank: false, outcomes: false });
     expect(off.results.every((r) => r.outcome === undefined)).toBe(true);
+  });
+
+  it("browse: candidate sessions with their tasks, the matched one marked", async () => {
+    const res = await browseSessions(app, "websocket reconnect 401", { project: "*", semantic: false, rerank: false });
+    const s1 = res.sessions.find((x) => x.sessionId === "s1")!;
+    expect(s1).toMatchObject({ harness: "claude-code", status: "verified", tasksTotal: 1 });
+    expect(s1.tasks).toEqual([expect.objectContaining({ index: 1, status: "verified", matched: true })]);
+    expect(s1.tasks[0]!.request).toContain("reconnect loop spins forever");
+    expect(s1.matches[0]!.turnId).toMatch(/^claude-code:s1:/);
   });
 
   it("unknown sessions are not_found", async () => {

@@ -16,6 +16,7 @@ import { embedQueryResolved, embedMeter } from "../embeddings/provider.js";
 import { parseTurnId } from "../core/id.js";
 import { inProject } from "../core/project.js";
 import { normalizeQuery, type NormalizedQuery } from "./query.js";
+import { facetsEnabled, queryFacets } from "./facets.js";
 import { finalScore, rrfBaseScore } from "./rank.js";
 import { extractArtifacts } from "../adapters/text.js";
 import { rewriteConversationalQuery, type RewrittenQuery } from "./rewriter.js";
@@ -314,6 +315,14 @@ export class SearchService {
       }
       if (preferIds && preferIds.length > 0) {
         pushRanked(this.index.search(nq.indexQuery, { ...baseFilters, sessionIds: preferIds, sessionId: opts.sessionId, limit }));
+      }
+      // A long prompt is also searched as its parts (facets.ts), each its own
+      // ranked list: a hit keeps its best rank across them.
+      if (facetsEnabled()) {
+        for (const facet of queryFacets(rawQuery)) {
+          const fq = normalizeQuery(facet.text).indexQuery;
+          if (fq && fq !== nq.indexQuery) pushRanked(this.index.search(fq, { ...baseFilters, sessionId: opts.sessionId, limit: Math.floor(limit / 2) }));
+        }
       }
     }
 
