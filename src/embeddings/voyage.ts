@@ -15,7 +15,7 @@
  */
 import { scrubText } from "../security/scrub.js";
 
-const ENDPOINT = process.env.VOYAGE_ENDPOINT ?? "https://api.voyageai.com/v1/embeddings";
+import { vendorAvailable, vendorTarget } from "../vendors.js";
 const TIMEOUT_MS = Number(process.env.VOYAGE_TIMEOUT_MS ?? 30_000);
 
 /**
@@ -61,7 +61,7 @@ export const VOYAGE_CODE: VoyageConfig = {
 };
 
 export function voyageAvailable(): boolean {
-  return Boolean(process.env.VOYAGE_API_KEY);
+  return vendorAvailable("voyage-embeddings");
 }
 
 /**
@@ -86,7 +86,7 @@ export const voyageMeter = {
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
 async function call(cfg: VoyageConfig, input: string[], inputType: "query" | "document"): Promise<number[][]> {
-  const key = process.env.VOYAGE_API_KEY;
+  const { url: ENDPOINT, key } = vendorTarget("voyage-embeddings");
   if (!key) throw new Error("voyage-no-api-key");
   if (input.length === 0) return [];
   // Scrubbed here as the last line of defence; callers that chunk scrub first.

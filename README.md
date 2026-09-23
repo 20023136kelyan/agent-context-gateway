@@ -95,6 +95,7 @@ opts in to one vendor, for the uses below:
 | Query + candidate decision passages | Jev | every `decide` | `GATEWAY_JUDGE=heuristic` |
 | Each non-trivial prompt you type | Voyage and Jev | only with the opt-in proactive hook | don't install it (`init` without `--proactive`) |
 | Aggregate counts (never text, ids or paths) | the URL in `GATEWAY_TELEMETRY_URL` | only after `acg telemetry on` | `acg telemetry off`; there is no default endpoint |
+| The Voyage and Jev calls above, for vendors you hold no key for | the key proxy in `ACG_PROXY_URL` | only when `ACG_PROXY_KEY` is set | unset them, or set your own vendor keys |
 
 Everything sent to Voyage or Jev is **scrubbed first** (`src/security/scrub.ts`):
 API keys and tokens, private keys, JWTs, auth headers, passwords in URLs, named
@@ -106,6 +107,44 @@ unusual secrets can get through.
 Two destinations you configure yourself receive content **unscrubbed**:
 subscription webhooks (the matching turns, to your URL), and gateways you
 federate with (results, to holders of your `GATEWAY_TOKEN`).
+
+## Using a key proxy instead of your own keys
+
+If you would rather not hold Voyage and TypeSafe keys, point the gateway at a
+key proxy and use the key its operator gave you:
+
+```bash
+ACG_PROXY_URL=https://proxy.example.com
+ACG_PROXY_KEY=acgp_...
+```
+
+(in `~/.context-gateway/.env`, or exported). Per vendor, your own key still
+wins: the proxy only carries calls for vendors you have no key for. Your
+histories and index stay on your machine; only the calls listed under
+[Privacy](#privacy-what-leaves-your-machine) go through the proxy, scrubbed on
+your side and again on the proxy. There is no default proxy URL.
+
+### Running one (operators)
+
+```bash
+acg proxy user-add eve@example.com --plan free   # prints her key, once
+acg proxy serve --port 8787                      # on this machine's VOYAGE_API_KEY / TYPESAFE_API_KEY
+acg proxy users                                  # plans and this month's metered usage
+acg proxy key-revoke acgp_2-f1JLI                # by the prefix shown at creation
+```
+
+Each call is checked in order: a live key (stored only as a SHA-256 hash), a
+model with a known price (others are refused, so a client cannot spend your key
+on pricier models), this month's allowance, and a per-minute rate limit
+(`ACG_PROXY_RPM`, default 600). The proxy scrubs payloads again, forwards on
+your key, and meters the vendor's own token count at list price. Request and
+response bodies are never logged: one line per call holds the user id, route,
+status, tokens and latency.
+
+Allowances are placeholders until pricing is decided: `$0.60`/month free and
+`$20`/month paid (`ACG_PROXY_FREE_USD`, `ACG_PROXY_PAID_USD`). A reranked search
+measured `$0.00059` (1 embedding + 30 Jev judgments), so the free allowance is
+about 1,000 searches. Billing is not built: plans are set by the operator.
 
 ## Network access and auth
 

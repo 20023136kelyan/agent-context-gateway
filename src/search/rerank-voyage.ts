@@ -18,8 +18,7 @@ import {
 } from "./reranker.js";
 import { scrubText } from "../security/scrub.js";
 
-const ENDPOINT = process.env.VOYAGE_ENDPOINT ?? "https://api.voyageai.com/v1/embeddings";
-const RERANK_ENDPOINT = ENDPOINT.replace(/\/embeddings\/?$/, "") + "/rerank";
+import { vendorTarget } from "../vendors.js";
 const TIMEOUT_MS = Number(process.env.VOYAGE_TIMEOUT_MS ?? 30_000);
 
 export const VOYAGE_RERANK_PRICES_PER_M: Record<string, number> = {
@@ -66,7 +65,7 @@ export class VoyageReranker {
 
   async rerank(query: string, candidates: RerankCandidate[], topK = 15): Promise<RerankResult[]> {
     if (candidates.length === 0) return [];
-    const key = process.env.VOYAGE_API_KEY;
+    const { url: RERANK_ENDPOINT, key } = vendorTarget("voyage-rerank");
     if (!key) return passthrough(candidates.slice(0, topK));
     const pool = candidates.slice(0, topK);
     const model = this.model ?? voyageRerankModel();

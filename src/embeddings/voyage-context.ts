@@ -17,8 +17,7 @@ import type { VoyageConfig } from "./voyage.js";
 import { voyageMeter } from "./voyage.js";
 import { scrubText } from "../security/scrub.js";
 
-const ENDPOINT = process.env.VOYAGE_ENDPOINT ?? "https://api.voyageai.com/v1/embeddings";
-const CONTEXT_ENDPOINT = ENDPOINT.replace(/\/embeddings\/?$/, "") + "/contextualizedembeddings";
+import { vendorAvailable, vendorTarget } from "../vendors.js";
 const TIMEOUT_MS = Number(process.env.VOYAGE_TIMEOUT_MS ?? 60_000);
 
 export const VOYAGE_CONTEXT: VoyageConfig = {
@@ -27,7 +26,7 @@ export const VOYAGE_CONTEXT: VoyageConfig = {
 };
 
 export function voyageContextAvailable(): boolean {
-  return Boolean(process.env.VOYAGE_API_KEY);
+  return vendorAvailable("voyage-context");
 }
 
 type WireEmbedding = { object?: string; embedding?: number[] };
@@ -42,7 +41,7 @@ function extractVector(node: unknown, dim: number, model: string): number[] {
 
 /** Documents: groups of chunk-lists; returns per-group per-chunk vectors. */
 export async function embedDocumentGroups(cfg: VoyageConfig, groups: string[][]): Promise<number[][][]> {
-  const key = process.env.VOYAGE_API_KEY;
+  const { url: CONTEXT_ENDPOINT, key } = vendorTarget("voyage-context");
   if (!key) throw new Error("voyage-no-api-key");
   if (groups.length === 0) return [];
   const ac = new AbortController();
@@ -80,7 +79,7 @@ export async function embedDocumentGroups(cfg: VoyageConfig, groups: string[][])
 
 /** Queries embed flat (context-agnostic per Voyage docs). */
 export async function embedQueryText(cfg: VoyageConfig, query: string): Promise<number[]> {
-  const key = process.env.VOYAGE_API_KEY;
+  const { url: CONTEXT_ENDPOINT, key } = vendorTarget("voyage-context");
   if (!key) throw new Error("voyage-no-api-key");
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);

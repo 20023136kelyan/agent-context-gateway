@@ -19,17 +19,13 @@
  */
 import { scrubDeep } from "../security/scrub.js";
 
-const ENDPOINT = process.env.JEV_ENDPOINT ?? "https://api.typesafe.ai/v1/systemone";
+import { vendorAvailable, vendorTarget } from "../vendors.js";
 const TIMEOUT_MS = Number(process.env.JEV_TIMEOUT_MS ?? 30_000);
 const MODEL = process.env.JEV_MODEL ?? "jev-latest";
 
-/** TYPESAFE_API_KEY is the documented name; JEV_API_KEY is accepted as an alias. */
-function apiKey(): string | undefined {
-  return process.env.TYPESAFE_API_KEY || process.env.JEV_API_KEY || undefined;
-}
-
 export function jevAvailable(): boolean {
-  return Boolean(apiKey());
+  // TYPESAFE_API_KEY (or its alias JEV_API_KEY), or a key proxy: src/vendors.ts.
+  return vendorAvailable("jev");
 }
 
 /** Yes/no question. The answer is the probability of "yes", in [0, 1]. */
@@ -89,7 +85,7 @@ interface WireResponse {
 }
 
 async function post(state: unknown, questions: Record<string, WireQuestion>): Promise<WireResponse> {
-  const key = apiKey();
+  const { url: ENDPOINT, key } = vendorTarget("jev");
   if (!key) throw new Error("jev-no-api-key");
 
   const ac = new AbortController();

@@ -5,7 +5,7 @@ import { Command } from "commander";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApp, closeApp, type GatewayApp } from "./app.js";
-import { dumpConfig } from "./settings.js";
+import { dumpConfig, defaultStateDir } from "./settings.js";
 import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, recordFeedback, getSession, getTurn, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "./commands.js";
 import { addRemote, removeRemote, loadRemotes } from "./remotes.js";
 import { callerProject } from "./adapters/repo.js";
@@ -682,6 +682,93 @@ program
   .action(async () => {
     const { aggregateUsage, defaultUsagePath } = await import("./observability/usage.js");
     print(aggregateUsage(defaultUsagePath()), false);
+  });
+
+const proxy = program.command("proxy").description("Key proxy (operators): vendor calls on your keys, per-user keys, metering, quotas");
+const proxyDb = (db?: string) => db ?? process.env.ACG_PROXY_DB ?? join(defaultStateDir(), "proxy.sqlite");
+
+proxy
+  .command("serve")
+  .description("Serve /v1/voyage/* and /v1/jev on this machine's VOYAGE_API_KEY and TYPESAFE_API_KEY")
+  .option("--port <port>", "", "8787")
+  .option("--host <host>", "", "127.0.0.1")
+  .option("--db <path>", "accounts and usage (default <state dir>/proxy.sqlite)")
+  .action(async (o) => {
+    const { ProxyStore } = await import("./proxy/store.js");
+    const { buildProxyServer } = await import("./proxy/server.js");
+    const voyageKey = process.env.VOYAGE_API_KEY?.trim() || undefined;
+    const jevKey = (process.env.TYPESAFE_API_KEY || process.env.JEV_API_KEY)?.trim() || undefined;
+    if (!voyageKey && !jevKey) {
+      console.error("no VOYAGE_API_KEY or TYPESAFE_API_KEY: the proxy would have nothing to offer");
+      process.exitCode = 1;
+      return;
+    }
+    const app = buildProxyServer({ store: new ProxyStore(proxyDb(o.db)), voyageKey, jevKey });
+    await app.listen({ port: Number(o.port), host: o.host });
+    console.error(`proxy on http://${o.host}:${o.port} (voyage: ${voyageKey ? "yes" : "no"}, jev: ${jevKey ? "yes" : "no"})`);
+  });
+
+proxy
+  .command("user-add <email>")
+  .description("Create a user and print their first key (shown once)")
+  .option("--plan <plan>", "free | paid", "free")
+  .option("--db <path>")
+  .action(async (email: string, o) => {
+    const { ProxyStore } = await import("./proxy/store.js");
+    const store = new ProxyStore(proxyDb(o.db));
+    const plan = o.plan === "paid" ? "paid" : "free";
+    const user = store.createUser(email, plan);
+    const { key } = store.issueKey(user.id);
+    store.close();
+    print({ user: user.id, email: user.email, plan, key, note: "the key is shown only now; give it to the user as ACG_PROXY_KEY" }, false);
+  });
+
+proxy
+  .command("key-add <user>")
+  .description("Issue another key for a user (id or email)")
+  .option("--db <path>")
+  .action(async (who: string, o) => {
+    const { ProxyStore } = await import("./proxy/store.js");
+    const store = new ProxyStore(proxyDb(o.db));
+    const user = store.findUser(who);
+    if (!user) {
+      store.close();
+      console.error(`no such user: ${who}`);
+      process.exitCode = 1;
+      return;
+    }
+    const { key } = store.issueKey(user.id);
+    store.close();
+    print({ user: user.id, key, note: "shown only now" }, false);
+  });
+
+proxy
+  .command("key-revoke <prefix>")
+  .description("Revoke a key by the 12-character prefix shown at creation")
+  .option("--db <path>")
+  .action(async (prefix: string, o) => {
+    const { ProxyStore } = await import("./proxy/store.js");
+    const store = new ProxyStore(proxyDb(o.db));
+    const n = store.revokeKey(prefix);
+    store.close();
+    print({ revoked: n }, false);
+  });
+
+proxy
+  .command("users")
+  .description("Users, plans, and this month's metered usage")
+  .option("--db <path>")
+  .action(async (o) => {
+    const { ProxyStore } = await import("./proxy/store.js");
+    const { defaultLimits } = await import("./proxy/server.js");
+    const store = new ProxyStore(proxyDb(o.db));
+    const limits = defaultLimits();
+    const rows = store.listUsers().map((u) => {
+      const m = store.monthUsage(u.id);
+      return { email: u.email, plan: u.plan, month: m.month, requests: m.requests, usedUsd: m.microUsd / 1e6, limitUsd: limits[u.plan] / 1e6 };
+    });
+    store.close();
+    print(rows, false);
   });
 
 program
