@@ -301,10 +301,12 @@ function main(): void {
     ...(claudeDir ? claudeSessions(claudeDir) : []),
     ...(codexDir ? codexSessions(codexDir) : []),
   ];
-  const { golden, continuationsSkipped } = minePairs(sessions, { minShared, includeContinuations });
+  const { golden, negatives, continuationsSkipped } = minePairs(sessions, { minShared, includeContinuations });
 
   mkdirSync(out, { recursive: true });
   writeFileSync(join(out, "golden-pairs.json"), JSON.stringify(golden, null, 2));
+  writeFileSync(join(out, "golden-negatives.json"), JSON.stringify(negatives, null, 2));
+  console.error(`negatives (no earlier session shares an edited file): ${negatives.length}`);
   report(sessions, golden, continuationsSkipped, minShared, join(out, "golden-pairs.json"));
 }
 
@@ -331,10 +333,15 @@ export interface MinedQuery {
 export function minePairs(
   all: SessionFacts[],
   opts: { minShared?: number; includeContinuations?: boolean } = {},
-): { golden: MinedQuery[]; continuationsSkipped: number } {
+): { golden: MinedQuery[]; negatives: MinedQuery[]; continuationsSkipped: number } {
   const minShared = opts.minShared ?? 2;
   const sessions = [...all].sort((a, b) => a.start.localeCompare(b.start));
   const golden: MinedQuery[] = [];
+  // Opening requests with earlier history in their project but no earlier
+  // session sharing even one edited file: where proactive context should stay
+  // quiet. File overlap is an imperfect label, so these bound false alarms
+  // from above rather than measure them exactly.
+  const negatives: MinedQuery[] = [];
   let continuationsSkipped = 0;
   for (const b of sessions) {
     if (!b.query) continue;
@@ -352,7 +359,25 @@ export function minePairs(
       const shared = [...filesA].filter((f) => filesB.has(f));
       if (shared.length >= minShared) targets.push({ id: a.id, harness: a.harness, shared });
     }
-    if (targets.length === 0) continue;
+    if (targets.length === 0) {
+      const earlier = sessions.filter((a) => a !== b && a.project === b.project && a.start < b.start);
+      const anyOverlap = earlier.some((a) =>
+        a.edits.some((e) => e.ts < b.start && specific(e.file) && filesB.has(e.file)),
+      );
+      if (earlier.length > 0 && !anyOverlap) {
+        negatives.push({
+          id: `neg-${negatives.length + 1}`,
+          domain: "code",
+          query: b.query,
+          description: `${b.harness} session in ${b.project}; ${earlier.length} earlier session(s), none sharing an edited file`,
+          relevantSessionIds: [],
+          asOf: new Date(Date.parse(b.start) - 1).toISOString(),
+          project: b.project,
+          mined: { querySession: b.id, queryHarness: b.harness, project: b.project, targets: [], crossHarness: false, namesSharedFile: false },
+        });
+      }
+      continue;
+    }
     targets.sort((x, y) => y.shared.length - x.shared.length);
     const allShared = [...new Set(targets.flatMap((t) => t.shared))];
     const q = b.query.toLowerCase();
@@ -376,7 +401,7 @@ export function minePairs(
     });
   }
 
-  return { golden, continuationsSkipped };
+  return { golden, negatives, continuationsSkipped };
 }
 
 /** Shape only: counts, never query text. */

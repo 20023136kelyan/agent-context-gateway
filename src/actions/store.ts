@@ -44,6 +44,8 @@ export interface ActionQuery {
   sessionIds?: string[];
   /** ISO timestamp: only actions at or after it. */
   since?: string;
+  /** ISO timestamp: only actions at or before it (point-in-time, like search's asOf). */
+  until?: string;
   limit?: number;
 }
 
@@ -224,6 +226,7 @@ export class ActionStore {
       all.push({ sql: `session_id IN (${q.sessionIds.map(() => "?").join(",")})`, args: q.sessionIds });
     }
     if (q.since) all.push({ sql: "ts >= ?", args: [iso(q.since)] });
+    if (q.until) all.push({ sql: "ts <= ?", args: [iso(q.until)] });
     const where = all.length ? `WHERE ${all.map((c) => `(${c.sql})`).join(" AND ")}` : "";
     const limit = Math.max(1, Math.min(q.limit ?? 200, 2000));
     const rows = this.db

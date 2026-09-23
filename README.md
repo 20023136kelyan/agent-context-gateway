@@ -173,6 +173,41 @@ own turns they crowded the rerank pool: on real history the Jev pipeline fell
 from 0.613 to 0.555 NDCG@5 (Claude calls, 7 runs) and hybrid from 0.574 to 0.548
 (Codex shell calls). They still show in result context windows.
 
+## Proactive context (opt-in)
+
+Instead of waiting for an agent to search, a Claude Code `UserPromptSubmit`
+hook can put related earlier work in front of it as the prompt is sent:
+
+```text
+Related work from earlier agent sessions in this project (Agent Context Gateway).
+Open one with context.get_context(harness, sessionId, turnId) if it is useful; ignore it otherwise.
+- codex session 01a06e01 (2026-09-04) edited backend/silwall/risk.py (2 matching edits) [turn …]
+- claude-code session 6ce460c8 (2026-09-22) "Scrub secrets from everything sent to Voyage and Jev" [turn …]
+```
+
+```bash
+npx tsx src/cli.ts init --proactive     # installs the hook next to the SessionEnd sync hook
+```
+
+For each prompt it skips slash commands and acknowledgements, retrieves a few
+earlier sessions **from the caller's project** (never its own session), and
+asks Jev one yes/no question per candidate: would this help with the request?
+Only candidates at or above 0.7 are injected, at most three, never the same
+session twice in one conversation. Files the prompt names add exact facts from
+the action index. Without a Jev key it never injects search results. It gives
+up silently after 8 s and always exits 0, so it can never block a prompt.
+
+Measured on opening prompts from real history (`npm run eval:proactive`):
+at 0.7, about 6 in 10 injections are relevant, and it finds the right earlier
+session for 26-43% of prompts. On prompts whose project has no related history
+it speaks up about a third of the time; read by eye, some of those were
+relevant anyway. Useful, not sharp: which is why it is opt-in, and why the
+injected text tells the agent to ignore it when it does not help.
+
+**Privacy:** every non-trivial prompt is sent, scrubbed, to Voyage (embedding)
+and Jev (the gate). Median cost is about a second per prompt, with a slow tail.
+
+## Decisions
 
 Why-questions go to `decide` (`context.decide`, `GET /decide`), not search:
 
@@ -442,6 +477,7 @@ tests/              37 suites (235 tests) + 3 Swift XCTest tests
 - Single user. Loopback by default; serving the network is opt-in and requires `GATEWAY_TOKEN`.
 - No local models. Without `VOYAGE_API_KEY` search is lexical-only; without `TYPESAFE_API_KEY` there is no Jev reranking and `decide` returns heuristic candidates.
 - Summaries are extractive (first lines), never LLM-generated.
+- The `SessionEnd` hook installed by earlier versions of `init` used `node --import tsx`, which resolves tsx from the hook's working directory, so it only worked inside this repo. Re-run `init` (or `init --proactive`): it repairs the entry in place to go through `gateway.sh`.
 - The action index reads Codex tool calls from their turns, which are capped at 4,000 characters, so a very long patch can lose its later file headers.
 - The action index counts edits made through edit tools (`Edit`, `Write`, `apply_patch`). A file changed by a shell command (`sed -i`, a script, `cat >`) appears only as that command.
 - Incremental sync keys on file mtime/size, so it cannot see a parser change on its own. Adapter output changes bump `PARSE_VERSION` (`src/adapters/types.ts`), and the next `sync` rebuilds the lexical index automatically. Vectors are kept: turns whose text changed keep their old embedding until you delete the vector store and `backfill` again.

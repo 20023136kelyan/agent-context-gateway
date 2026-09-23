@@ -71,15 +71,23 @@ export interface HookInstall {
 }
 
 /**
- * Merge a SessionEnd hook into ~/.claude/settings.json without disturbing
- * anything already there. Idempotent: re-running finds its own marker and
- * stops. A timestamped backup precedes every write.
+ * Merge the gateway's hooks into ~/.claude/settings.json without disturbing
+ * anything already there. Idempotent: entries are found by their marker and
+ * brought up to date in place, never duplicated. A timestamped backup
+ * precedes every write.
+ *
+ * Commands go through gateway.sh, which loads .env and resolves tsx from the
+ * gateway. The previous `node --import tsx cli.ts` form resolved tsx from the
+ * hook's working directory, the user's project, so it failed in every project
+ * but this repo, and it never loaded the API keys.
  */
 export const HOOK_MARKER = "context-gateway-sync-session";
+export const PROACTIVE_MARKER = "context-gateway-proactive";
 
 export function installClaudeHook(
   settingsPath = join(homedir(), ".claude", "settings.json"),
-  cliPath: string,
+  gatewayDir: string,
+  opts: { proactive?: boolean } = {},
 ): HookInstall {
   let settings: Record<string, unknown> = {};
   try {
@@ -88,23 +96,39 @@ export function installClaudeHook(
   } catch {
     settings = {};
   }
-  const hooks = (settings.hooks ?? {}) as Record<string, unknown>;
-  const sessionEnd = (hooks.SessionEnd ?? []) as unknown[];
-  const serialized = JSON.stringify(sessionEnd);
-  if (serialized.includes(HOOK_MARKER)) return { installed: false, backupPath: null };
-
-  const entry = {
-    hooks: [
-      {
-        type: "command",
-        command: `SID=$(jq -r .session_id); node --import tsx "${cliPath}" sync-session claude-code "$SID" # ${HOOK_MARKER}`,
-      },
-    ],
-  };
-  const next = {
-    ...settings,
-    hooks: { ...hooks, SessionEnd: [...sessionEnd, entry] },
-  };
+  const gateway = `"${join(gatewayDir, "gateway.sh")}"`;
+  const wanted: { event: string; marker: string; entry: Record<string, unknown> }[] = [
+    {
+      event: "SessionEnd",
+      marker: HOOK_MARKER,
+      entry: { hooks: [{ type: "command", command: `SID=$(jq -r .session_id); ${gateway} sync-session claude-code "$SID" # ${HOOK_MARKER}` }] },
+    },
+  ];
+  if (opts.proactive) {
+    wanted.push({
+      event: "UserPromptSubmit",
+      marker: PROACTIVE_MARKER,
+      // Runs before every prompt: the command gives up silently past its budget,
+      // well inside Claude Code's own timeout.
+      entry: { hooks: [{ type: "command", command: `${gateway} hook-prompt --budget-ms 8000 # ${PROACTIVE_MARKER}`, timeout: 15 }] },
+    });
+  }
+  const hooks = { ...((settings.hooks ?? {}) as Record<string, unknown[]>) };
+  let changed = false;
+  for (const w of wanted) {
+    const list = [...((hooks[w.event] ?? []) as unknown[])];
+    const at = list.findIndex((e) => JSON.stringify(e).includes(w.marker));
+    if (at < 0) {
+      list.push(w.entry);
+      changed = true;
+    } else if (JSON.stringify(list[at]) !== JSON.stringify(w.entry)) {
+      list[at] = w.entry; // an older command form: bring it up to date
+      changed = true;
+    }
+    hooks[w.event] = list;
+  }
+  if (!changed) return { installed: false, backupPath: null };
+  const next = { ...settings, hooks };
   if (existsSync(settingsPath)) {
     const backupPath = `${settingsPath}.pre-gateway-${Date.now()}`;
     copyFileSync(settingsPath, backupPath);

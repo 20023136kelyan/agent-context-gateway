@@ -14,7 +14,8 @@
     "sweep": "node --env-file-if-exists=.env --import tsx scripts/sweep.ts",
     "lint": "eslint src --ext .ts",
     "sync": "node --env-file-if-exists=.env --import tsx src/cli.ts sync",
-    "setup:native": "python3 scripts/fetch-native-binding.py"
+    "setup:native": "python3 scripts/fetch-native-binding.py",
+    "eval:proactive": "node --env-file-if-exists=.env --import tsx scripts/eval-proactive.ts"
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.38.0",

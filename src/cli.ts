@@ -163,6 +163,42 @@ program
   });
 
 program
+  .command("hook-prompt")
+  .description("Claude Code UserPromptSubmit hook: inject related earlier work (reads the hook JSON on stdin)")
+  .option("--budget-ms <n>", "give up silently after this long", "8000")
+  .option("--threshold <p>", "minimum Jev probability to inject a search result")
+  .action(async (cmdOpts) => {
+    // Runs before every prompt. Exit code 2 would BLOCK the user's prompt, so
+    // every path exits 0, and anything unexpected means injecting nothing.
+    const budget = Number(cmdOpts.budgetMs) || 8000;
+    const timer = setTimeout(() => process.exit(0), budget);
+    try {
+      const raw = await new Promise<string>((resolve) => {
+        let buf = "";
+        process.stdin.setEncoding("utf8");
+        process.stdin.on("data", (c) => (buf += c));
+        process.stdin.on("end", () => resolve(buf));
+      });
+      const hook = JSON.parse(raw) as { prompt?: string; cwd?: string; session_id?: string };
+      if (!hook.prompt) return;
+      const { proactiveContext } = await import("./proactive.js");
+      const res = await withLocal((app) =>
+        proactiveContext(app, { prompt: hook.prompt!, cwd: hook.cwd, sessionId: hook.session_id }, {
+          threshold: cmdOpts.threshold ? Number(cmdOpts.threshold) : undefined,
+        }),
+      );
+      if (res.text) {
+        console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: res.text } }));
+      }
+    } catch {
+      // Silent: a failed lookup must never cost the user their prompt.
+    } finally {
+      clearTimeout(timer);
+      process.exitCode = 0;
+    }
+  });
+
+program
   .command("sync-session <harness> <sessionId>")
   .description("Sync one session now (for SessionEnd hooks: fast, no full scan)")
   .option("--embed", "also embed the session's new turns")
@@ -524,6 +560,7 @@ program
   .description("First-run onboarding: detect histories, set keys, sync, backfill, hooks, verify")
   .option("--yes", "accept defaults, prompt only for missing API keys")
   .option("--no-hooks", "skip the Claude SessionEnd hook install")
+  .option("--proactive", "also install the UserPromptSubmit hook that injects related earlier work (sends each prompt to Voyage/Jev)")
   .option("--no-backfill", "skip vector backfill (lexical index only)")
   .option("--no-verify", "skip the end-to-end smoke search")
   .action(async (cmdOpts) => {
@@ -590,8 +627,7 @@ program
 
     // 5. SessionEnd hook.
     if (cmdOpts.hooks) {
-      const cliPath = join(process.cwd(), "src", "cli.ts");
-      const hook = installClaudeHook(undefined, cliPath);
+      const hook = installClaudeHook(undefined, process.cwd(), { proactive: Boolean(cmdOpts.proactive) });
       done(`hook: ${hook.installed ? `installed${hook.backupPath ? ` (backup ${hook.backupPath})` : ""}` : "already present"}`);
     } else {
       done("hook: skipped");

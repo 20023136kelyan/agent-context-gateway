@@ -592,14 +592,14 @@ export interface ActionFinding {
  */
 export async function findActions(
   app: GatewayApp,
-  q: { file?: string; command?: string; since?: string; maxSessions?: number } & Pick<SearchOptions, "project"> & ScopeOptions,
+  q: { file?: string; command?: string; since?: string; until?: string; maxSessions?: number } & Pick<SearchOptions, "project"> & ScopeOptions,
 ): Promise<{ projectScope: ProjectScopeInfo; sessions: ActionFinding[] }> {
   if (!q.file?.trim() && !q.command?.trim()) throw new Error("bad_request: pass a file or a command");
   if (q.since && Number.isNaN(Date.parse(q.since))) throw new Error(`bad_request: invalid since "${q.since}" (want an ISO timestamp)`);
   await ensureSynced(app);
   const projectScope = await resolveProject(app, q);
   const sessionIds = projectScope.project ? await app.search.projectSessionIds(projectScope.project) : undefined;
-  const rows = app.actions.find({ file: q.file, command: q.command, since: q.since, sessionIds, limit: 2000 });
+  const rows = app.actions.find({ file: q.file, command: q.command, since: q.since, until: q.until, sessionIds, limit: 2000 });
   const bySession = new Map<string, ActionFinding>();
   for (const r of rows) {
     const key = `${r.harness}:${r.sessionId}`;
