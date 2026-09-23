@@ -12,10 +12,13 @@ import { detectHistories, keyStatus, appendEnvKeys, installClaudeHook, HOOK_MARK
 describe("setup", () => {
   it("detects histories under a fake HOME", () => {
     const root = mkdtempSync(join(tmpdir(), "acg-setup-"));
-    const found = detectHistories({ ...process.env, HOME: root });
+    const found = detectHistories({ HOME: root }, "linux");
     expect(found.map((f) => [f.kind, f.present])).toEqual([
       ["claude-code", false],
       ["codex", false],
+      ["opencode", false],
+      ["cursor", false],
+      ["trajectory", false],
     ]);
   });
 

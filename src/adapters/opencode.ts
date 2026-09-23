@@ -10,7 +10,6 @@
  * Like every adapter: file errors yield empty results, never throws, so a
  * locked or absent database degrades to "no sessions" instead of an outage.
  */
-import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Harness, Session, Turn, TurnRole } from "../core/models.js";
 import { turnId as makeTurnId } from "../core/id.js";
@@ -21,6 +20,7 @@ const HARNESS: Harness = "opencode";
 // Lazy: node:sqlite is experimental (warning noise) and only needed here.
 // createRequire (not bare require, which does not exist under tsx ESM).
 import { createRequire } from "node:module";
+import { opencodeDbPath } from "./locations.js";
 const require = createRequire(import.meta.url);
 type DatabaseSyncType = typeof import("node:sqlite")["DatabaseSync"];
 function loadDatabaseSync(): DatabaseSyncType {
@@ -29,14 +29,12 @@ function loadDatabaseSync(): DatabaseSyncType {
 }
 
 function defaultDbPath(): string {
-  if (process.env.GATEWAY_OPENCODE_DB) return process.env.GATEWAY_OPENCODE_DB;
   // Tests must never read the developer's real session store: an opencode.db
   // on the test machine would leak live sessions (which quote whatever the
   // developer last ran, including golden queries) into every assertion about
   // counts and rankings. Point at nothing; explicit paths still work.
-  if (process.env.VITEST) return join("no-such-dir", "no-opencode.db");
-  const dataHome = process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share");
-  return join(dataHome, "opencode", "opencode.db");
+  if (process.env.VITEST && !process.env.GATEWAY_OPENCODE_DB) return join("no-such-dir", "no-opencode.db");
+  return opencodeDbPath();
 }
 
 const msToIso = (ms: unknown, fallback: string): string => {

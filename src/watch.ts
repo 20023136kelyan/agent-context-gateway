@@ -1,22 +1,23 @@
 /**
  * Filesystem watcher — keeps the disposable indexes seconds behind native
- * histories without manual `sync`. Watches the native roots recursively
- * (macOS FSEvents), debounces bursts (agents append rapidly), then runs the
+ * histories without manual `sync`. Watches every harness's native location
+ * (adapters/locations.ts: JSONL folders recursively, SQLite stores through
+ * their database and -wal files), debounces bursts (agents append rapidly), then runs the
  * normal incremental sync path (cursors make no-op runs cheap).
  */
-import { watch, type FSWatcher } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { existsSync, watch, type FSWatcher } from "node:fs";
+import { watchTargets, type WatchTarget } from "./adapters/locations.js";
 import type { GatewayApp } from "./app.js";
 import { syncAllDetailed } from "./indexing/sync.js";
 import { notifyNewTurns } from "./commands.js";
 import { embedSessionTurns, resolveEmbeddingEngine } from "./indexing/embed-sync.js";
 
-export function defaultWatchDirs(): string[] {
-  return [join(homedir(), ".claude", "projects"), join(homedir(), ".codex", "sessions")];
+export function defaultWatchTargets(): WatchTarget[] {
+  return watchTargets();
 }
 
 export interface WatchOptions {
+  /** JSONL folders to follow instead of the defaults (tests, custom roots). */
   dirs?: string[];
   /** Quiet period before a sync fires (ms). Default 2000. */
   debounceMs?: number;
@@ -27,7 +28,9 @@ export interface WatchOptions {
 }
 
 export function watchSources(app: GatewayApp, opts: WatchOptions = {}): FSWatcher[] {
-  const dirs = opts.dirs ?? defaultWatchDirs();
+  const targets: Pick<WatchTarget, "dir" | "recursive" | "matches">[] = opts.dirs
+    ? opts.dirs.map((dir) => ({ dir, recursive: true, matches: (f: string) => f.endsWith(".jsonl") }))
+    : defaultWatchTargets();
   const debounceMs = opts.debounceMs ?? 2000;
   let timer: NodeJS.Timeout | null = null;
   let syncing = false;
@@ -84,10 +87,12 @@ export function watchSources(app: GatewayApp, opts: WatchOptions = {}): FSWatche
   };
 
   const watchers: FSWatcher[] = [];
-  for (const dir of dirs) {
+  for (const { dir, recursive, matches } of targets) {
+    // A harness that is not installed has no folder: nothing to follow, not an error.
+    if (!opts.dirs && !existsSync(dir)) continue;
     try {
-      const w = watch(dir, { recursive: true }, (event, filename) => {
-        if (typeof filename === "string" && !filename.endsWith(".jsonl")) return;
+      const w = watch(dir, { recursive }, (event, filename) => {
+        if (typeof filename === "string" && !matches(filename)) return;
         schedule();
       });
       w.on("error", (e) => opts.onError?.(e));

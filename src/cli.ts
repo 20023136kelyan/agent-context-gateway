@@ -590,7 +590,14 @@ program
     const found = sources.filter((s) => s.present);
     print({ histories: sources }, false);
     if (found.length === 0) {
-      console.error("No agent histories found — sync would index nothing. Point a harness at this machine first.");
+      console.error(
+        [
+          "No agent histories found, so sync would index nothing. Looked in:",
+          ...sources.map((s) => `  ${s.kind.padEnd(12)} ${s.path}`),
+          "Use one of these agents here first, or point at its history if it lives elsewhere:",
+          "  CLAUDE_CONFIG_DIR, CODEX_HOME, XDG_DATA_HOME (OpenCode), GATEWAY_OPENCODE_DB, GATEWAY_TRAJECTORY_DIR",
+        ].join("\n"),
+      );
       process.exitCode = 1;
       return;
     }
@@ -648,8 +655,12 @@ program
     // 6. Verify: sources answer.
     if (cmdOpts.verify) {
       const check = await withLocal(async (app) => ({
-        sources: (await listSources(app)).length,
-        sessions: (await listSessions(app, {})).length,
+        // Per harness, so a history that was found but yielded nothing shows up.
+        sessions: Object.fromEntries(
+          (await listSources(app))
+            .filter((s) => found.some((f) => f.kind === s.harness))
+            .map((s) => [s.harness, s.sessions]),
+        ),
         models: (await import("./components.js")).lockedStack(),
       }));
       done(`verify: ${JSON.stringify(check)}`);

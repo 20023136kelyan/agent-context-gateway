@@ -15,18 +15,18 @@ import { readFile, stat, readdir, open } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { LruCache } from "../core/lru.js";
 import { join, basename } from "node:path";
-import { homedir } from "node:os";
 import type { Harness, Session, Turn, TurnRole } from "../core/models.js";
 import { turnId as makeTurnId } from "../core/id.js";
 import { actionsOfCall, type Action } from "../actions/store.js";
 import type { ContextAdapter, FileCursor } from "./types.js";
 import { truncate, extractFileRefs, codexContentToText, TURN_CACHE_SESSIONS, TURN_CACHE_CHARS, turnChars } from "./text.js";
 import { repoRoot } from "./repo.js";
+import { codexSessionsDir } from "./locations.js";
 
 const HARNESS: Harness = "codex";
 
 function defaultBaseDir(): string {
-  return join(homedir(), ".codex", "sessions");
+  return codexSessionsDir();
 }
 
 export function agentIdForCodex(): string {

@@ -33,7 +33,7 @@ import type { Harness, Session, Turn, TurnRole } from "../core/models.js";
 import { turnId as makeTurnId } from "../core/id.js";
 import type { ContextAdapter, FileCursor } from "./types.js";
 import { truncate, extractFileRefs } from "./text.js";
-import { defaultStateDir } from "../settings.js";
+import { trajectoryDir } from "./locations.js";
 
 /** Dedicated harness slot (see header note); registered across the model. */
 const HARNESS: Harness = "trajectory";
@@ -47,7 +47,7 @@ const OBS_MAX = 2000;
 const HEADER_BYTES = 8192;
 
 export function defaultTrajectoryDir(): string {
-  return process.env.GATEWAY_TRAJECTORY_DIR ?? join(defaultStateDir(), "trajectories");
+  return trajectoryDir();
 }
 
 type Json = Record<string, unknown>;

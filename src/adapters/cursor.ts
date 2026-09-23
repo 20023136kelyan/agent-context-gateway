@@ -3,7 +3,7 @@
  * No Cursor conversations exist on this machine (empty draft only), so this
  * parses the documented 2026 format and degrades to zero sessions otherwise:
  *
- * Global DB: ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb
+ * Global DB: <Cursor User dir>/globalStorage/state.vscdb (per OS, locations.ts)
  *  - ItemTable `composer.composerHeaders` -> {allComposers: [{composerId|id,
  *    name|title, createdAt|timestamp, mode, workspaceIdentifier}]}
  *  - cursorDiskKV `composerData:<id>` -> full composer JSON (fallback headers)
@@ -16,13 +16,13 @@
  */
 import { readdir, stat, readFile } from "node:fs/promises";
 import { join, basename } from "node:path";
-import { homedir } from "node:os";
 import { createRequire } from "node:module";
 import type { Harness, Session, Turn, TurnRole } from "../core/models.js";
 import { turnId as makeTurnId } from "../core/id.js";
 import type { ContextAdapter, FileCursor } from "./types.js";
 import { truncate, extractFileRefs } from "./text.js";
 import { repoRoot } from "./repo.js";
+import { cursorDirs } from "./locations.js";
 
 const HARNESS: Harness = "cursor";
 
@@ -34,10 +34,8 @@ function loadDatabaseSync(): DatabaseSyncType {
   return (require("node:sqlite") as typeof import("node:sqlite")).DatabaseSync;
 }
 
-export function defaultCursorDirs(): { globalDb: string; workspaceRoot: string } {
-  const user = join(homedir(), "Library", "Application Support", "Cursor", "User");
-  return { globalDb: join(user, "globalStorage", "state.vscdb"), workspaceRoot: join(user, "workspaceStorage") };
-}
+/** Per-OS Cursor location (macOS, Linux, Windows): see locations.ts. */
+export const defaultCursorDirs = () => cursorDirs();
 
 interface ComposerHeader {
   composerId?: string;

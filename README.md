@@ -45,6 +45,23 @@ reranking, and decision verdicts stay labelled as heuristic candidates. `init`
 stores keys in `~/.context-gateway/.env` (readable only by you), which `acg`
 loads on every run; variables exported in your shell take precedence.
 
+### Where it looks for histories
+
+`init`, `sync`, `doctor` and `serve --watch` all read the same locations
+(`src/adapters/locations.ts`). Each tool's own setting for moving its data is
+honoured:
+
+| Agent | Default location | Moved by |
+|---|---|---|
+| Claude Code | `~/.claude/projects/` | `CLAUDE_CONFIG_DIR` |
+| Codex | `~/.codex/sessions/` | `CODEX_HOME` |
+| OpenCode | `~/.local/share/opencode/opencode.db` | `XDG_DATA_HOME`, or `GATEWAY_OPENCODE_DB` |
+| Cursor | macOS `~/Library/Application Support/Cursor/User/`, Linux `~/.config/Cursor/User/`, Windows `%APPDATA%\Cursor\User\` | `XDG_CONFIG_HOME` (Linux), `APPDATA` (Windows) |
+| Trajectories | `~/.context-gateway/trajectories/` | `GATEWAY_TRAJECTORY_DIR` |
+
+If none of them exists, `init` lists each place it looked and stops. The
+Cursor adapter has not yet been checked against a real Cursor history.
+
 From a checkout, `./gateway.sh <command>` (or `npm run dev -- <command>`) is the
 same CLI running from source; it also loads the repo's `.env`. Everywhere below,
 `acg` can be replaced by `./gateway.sh`.
@@ -346,7 +363,7 @@ Three layers, fastest first:
    ```bash
    acg sync-session claude-code "$SESSION_ID" --embed
    ```
-   Claude Code (`~/.claude/settings.json`) — hooks receive JSON on stdin,
+   Claude Code (`~/.claude/settings.json`, or under `CLAUDE_CONFIG_DIR`) — hooks receive JSON on stdin,
    so extract `session_id` with `jq`. `init` installs this for you:
    ```json
    { "hooks": { "SessionEnd": [{
@@ -355,7 +372,8 @@ Three layers, fastest first:
    }] } }
    ```
 2. **Watch mode (catch-all)** — `serve --watch [--embed]` re-syncs seconds after any
-   `.jsonl` change, and embeds only the sessions that sync touched.
+   agent writes history (Claude Code, Codex and trajectory files; the OpenCode
+   and Cursor databases), and embeds only the sessions that sync touched.
 3. **Full `sync`** — incremental via cursors; `--rebuild` after adapter/ID changes.
 
 Git commits can feed the artifact graph too:

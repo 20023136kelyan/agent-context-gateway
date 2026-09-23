@@ -7,24 +7,10 @@
  */
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { homedir } from "node:os";
+import { claudeSettingsPath } from "./adapters/locations.js";
 
-export interface HistorySource {
-  kind: "claude-code" | "codex";
-  path: string;
-  present: boolean;
-}
-
-/** Native history locations (same roots the adapters read). */
-export function detectHistories(env: NodeJS.ProcessEnv = process.env): HistorySource[] {
-  const home = env.HOME ?? homedir();
-  const claudeDir = join(home, ".claude", "projects");
-  const codexDir = join(home, ".codex", "sessions");
-  return [
-    { kind: "claude-code", path: claudeDir, present: existsSync(claudeDir) },
-    { kind: "codex", path: codexDir, present: existsSync(codexDir) },
-  ];
-}
+// Detection lives with the adapters, so init reports exactly what sync reads.
+export { detectHistories, type HistorySource } from "./adapters/locations.js";
 
 export function keyStatus(env: NodeJS.ProcessEnv = process.env): Record<string, boolean> {
   return {
@@ -86,7 +72,7 @@ export const HOOK_MARKER = "context-gateway-sync-session";
 export const PROACTIVE_MARKER = "context-gateway-proactive";
 
 export function installClaudeHook(
-  settingsPath = join(homedir(), ".claude", "settings.json"),
+  settingsPath = claudeSettingsPath(),
   /** How a hook reaches the CLI, already quoted: gateway.sh, or node + bin.js. */
   launcher: string,
   opts: { proactive?: boolean } = {},

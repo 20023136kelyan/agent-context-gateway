@@ -1,5 +1,5 @@
 /**
- * Adapter contract — MVP (Claude Code + Codex).
+ * Adapter contract, shared by every harness (where each keeps its history: locations.ts).
  * Adapters parse/normalize only; global index searches.
  * See IMPLEMENTATION_PLAN_V2.md §4 and spec §38.
  */
