@@ -101,3 +101,25 @@ describe("telemetry", () => {
     }
   });
 });
+
+describe("telemetry endpoint", () => {
+  // There is no built-in endpoint: the old default was a domain nobody here
+  // controls, which would have received every opted-in user's report.
+  it("sends nothing, and never calls fetch, when no endpoint is configured", async () => {
+    const saved = process.env.GATEWAY_TELEMETRY_URL;
+    delete process.env.GATEWAY_TELEMETRY_URL;
+    const realFetch = globalThis.fetch;
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    try {
+      expect(await flushReport(buildReport(undefined, {}))).toBe(false);
+      expect(called).toBe(false);
+    } finally {
+      globalThis.fetch = realFetch;
+      if (saved !== undefined) process.env.GATEWAY_TELEMETRY_URL = saved;
+    }
+  });
+});

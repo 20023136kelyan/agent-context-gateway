@@ -689,16 +689,22 @@ program
   .description("Anonymous aggregate telemetry: status | on | off (default off; aggregates only, never queries or content)")
   .action(async (action: string) => {
     const { setTelemetry, defaultStateDir } = await import("./settings.js");
-    const { buildReport, flushReport } = await import("./observability/report.js");
+    const { buildReport, flushReport, telemetryUrl } = await import("./observability/report.js");
     if (action === "status") {
       const { resolveSettings } = await import("./settings.js");
-      print({ telemetry: resolveSettings().telemetry, sends: "aggregates only (counts, buckets, percentiles)" }, false);
+      print({
+        telemetry: resolveSettings().telemetry,
+        endpoint: telemetryUrl() ?? "none configured (set GATEWAY_TELEMETRY_URL): nothing is sent",
+        sends: "aggregates only (counts, buckets, percentiles)",
+      }, false);
       return;
     }
     if (action === "on" || action === "off") {
       setTelemetry(undefined, action === "on");
       print({ telemetry: action === "on" }, false);
-      if (action === "on") {
+      if (action === "on" && !telemetryUrl()) {
+        console.error("no endpoint configured (GATEWAY_TELEMETRY_URL): nothing will be sent until one is set");
+      } else if (action === "on") {
         // Immediate first flush proves the path works while the user watches.
         const ok = await withLocal(async (app) => {
           const report = buildReport(defaultStateDir(), {

@@ -6,13 +6,19 @@
  * this module cannot see usage.jsonl lines, only the aggregate function, by
  * construction (it imports aggregateUsage, not readFileSync-on-rows).
  *
- * Default off everywhere (settings.telemetry). Endpoint override for
- * self-hosters: GATEWAY_TELEMETRY_URL. Fail-silent with a boolean outcome —
- * telemetry must never break serving or installs.
+ * Default off everywhere (settings.telemetry), and there is no built-in
+ * endpoint: reports go only to GATEWAY_TELEMETRY_URL. The default used to be
+ * telemetry.context-gateway.dev, a domain that did not resolve (2026-09-23)
+ * and that nobody here controls: whoever registered it would have received
+ * every opted-in user's report. Fail-silent with a boolean outcome: telemetry
+ * must never break serving or installs.
  */
 import { aggregateUsage, defaultUsagePath } from "./usage.js";
 
-export const DEFAULT_TELEMETRY_URL = "https://telemetry.context-gateway.dev/v1/report";
+/** Where reports go, or null: nothing is sent until an endpoint is configured. */
+export function telemetryUrl(): string | null {
+  return process.env.GATEWAY_TELEMETRY_URL?.trim() || null;
+}
 
 export interface TelemetryReport {
   sentAt: string;
@@ -48,9 +54,10 @@ export function buildReport(
 /** POST the aggregate if (and only if) the caller already checked opt-in. */
 export async function flushReport(
   report: TelemetryReport,
-  url = process.env.GATEWAY_TELEMETRY_URL ?? DEFAULT_TELEMETRY_URL,
+  url: string | null = telemetryUrl(),
   timeoutMs = 10000,
 ): Promise<boolean> {
+  if (!url) return false;
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
   try {

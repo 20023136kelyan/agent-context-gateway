@@ -76,17 +76,36 @@ locked and resolved stack. Pin with `GATEWAY_EMBED_ENGINE`, `GATEWAY_RERANKER` a
 vendors mid-corpus.
 
 **Privacy.** Every model in the stack is remote. Setting a key is the opt-in, and
-it is a deliberate departure from the spec's local-first principle (§73.5):
-Voyage sees the turn text you backfill plus each query; Jev sees each query plus
-candidate excerpts on every reranked search or `decide`.
+it is a deliberate departure from the spec's local-first principle (§73.5). See
+[Privacy: what leaves your machine](#privacy-what-leaves-your-machine) for exactly
+what each key sends, when, and how to turn it off.
 
-Everything bound for either vendor is scrubbed first (`src/security/scrub.ts`):
-API keys and tokens, private keys, JWTs, auth headers, passwords in URLs and
-named credentials, plus emails and non-loopback IPv4 by default
-(`GATEWAY_SCRUB=all|secrets|off`). Text is scrubbed before it is chunked or
-truncated, since a key split in half is unrecognisable. The local index and
-your histories are never altered, so an exact search for a string you pasted
-still works locally.
+## Privacy: what leaves your machine
+
+Your agents' histories stay where they are: the gateway reads them, never
+writes them, and its own index lives in `~/.context-gateway`. With no API keys
+nothing leaves the machine at all (search is keyword-only). Each key you set
+opts in to one vendor, for the uses below:
+
+| What is sent | To whom | When | Turn it off |
+|---|---|---|---|
+| Turn text, in ~1,600-character windows | Voyage (`VOYAGE_API_KEY`) | `backfill`, `sync --embed`, `serve --embed` | don't set the key, or don't embed |
+| Each search query | Voyage | every search with vectors | `semantic: false` / `?semantic=false` |
+| Query + up to 30 candidate excerpts (1,000 chars each) | Jev (`TYPESAFE_API_KEY`) | every search while Jev is the reranker (on by default) | `--no-rerank`, `?rerank=false`, `GATEWAY_RERANKER=none` |
+| Query + candidate decision passages | Jev | every `decide` | `GATEWAY_JUDGE=heuristic` |
+| Each non-trivial prompt you type | Voyage and Jev | only with the opt-in proactive hook | don't install it (`init` without `--proactive`) |
+| Aggregate counts (never text, ids or paths) | the URL in `GATEWAY_TELEMETRY_URL` | only after `acg telemetry on` | `acg telemetry off`; there is no default endpoint |
+
+Everything sent to Voyage or Jev is **scrubbed first** (`src/security/scrub.ts`):
+API keys and tokens, private keys, JWTs, auth headers, passwords in URLs, named
+credentials, and by default emails and non-loopback IPv4 addresses
+(`GATEWAY_SCRUB=all|secrets|off`). Scrubbing happens before text is cut into
+windows, since a key split in two is unrecognisable. It is pattern-based:
+unusual secrets can get through.
+
+Two destinations you configure yourself receive content **unscrubbed**:
+subscription webhooks (the matching turns, to your URL), and gateways you
+federate with (results, to holders of your `GATEWAY_TOKEN`).
 
 ## Network access and auth
 
@@ -491,6 +510,7 @@ tests/              37 suites (235 tests) + 3 Swift XCTest tests
 - Single user. Loopback by default; serving the network is opt-in and requires `GATEWAY_TOKEN`.
 - No local models. Without `VOYAGE_API_KEY` search is lexical-only; without `TYPESAFE_API_KEY` there is no Jev reranking and `decide` returns heuristic candidates.
 - Summaries are extractive (first lines), never LLM-generated.
+- A global install is about 412 MB, mostly LanceDB and the ML libraries it depends on (optional; the gateway falls back to sqlite-vec, and LanceDB cannot load on Intel Macs at all).
 - The `SessionEnd` hook installed by earlier versions of `init` used `node --import tsx`, which resolves tsx from the hook's working directory, so it only worked inside this repo. Re-run `init` (or `init --proactive`): it repairs the entry in place to go through `gateway.sh`.
 - The action index reads Codex tool calls from their turns, which are capped at 4,000 characters, so a very long patch can lose its later file headers.
 - The action index counts edits made through edit tools (`Edit`, `Write`, `apply_patch`). A file changed by a shell command (`sed -i`, a script, `cat >`) appears only as that command.
