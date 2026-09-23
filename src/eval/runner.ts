@@ -13,6 +13,7 @@ import type { SearchOptions } from "../search/search.js";
 import { noopReranker, type Reranker } from "../search/reranker.js";
 import { JevReranker } from "../judgments/rerank-jev.js";
 import { VoyageReranker } from "../search/rerank-voyage.js";
+import { HttpReranker } from "../search/rerank-http.js";
 import { JevDecisionJudge } from "../judgments/judge-jev.js";
 import type { DecisionJudge } from "../decisions/extract.js";
 import { HeuristicJudge } from "../decisions/extract.js";
@@ -123,6 +124,8 @@ export type EvalMode =
   // Voyage reranker bake-off: same hybrid pool, vendor listwise model.
   // Model comes from VOYAGE_RERANK_MODEL per cell (2.5 / lite / 3).
   | "rerank-voyage"
+  // Self-hosted bake-off: same hybrid pool, the model behind GATEWAY_RERANK_URL.
+  | "rerank-http"
   // Judge arms vary only the decision judge, so decisionCitations is
   // attributable to it; retrieval and reranking are held fixed at lexical.
   // judge-heuristic (passthrough) is the extraction-only baseline: what the
@@ -191,6 +194,13 @@ export function armFor(mode: EvalMode): EvalArm {
       reranker: () => new VoyageReranker(),
     };
   }
+  if (mode === "rerank-http") {
+    return {
+      name: mode,
+      search: { semantic: true, rerank: true },
+      reranker: () => new HttpReranker(),
+    };
+  }
   return { name: mode, search: modeOptions(mode), reranker: () => noopReranker };
 }
 
@@ -200,7 +210,7 @@ export function modeOptions(mode: EvalMode): Required<Pick<SearchOptions, "seman
   // Jev/voyage arms are described by armFor, not here.
   const jev = JEV_ARMS[mode];
   if (jev) return { semantic: jev.semantic, rerank: true };
-  if (mode === "rerank-voyage") return { semantic: true, rerank: true };
+  if (mode === "rerank-voyage" || mode === "rerank-http") return { semantic: true, rerank: true };
   if (JUDGE_ARMS[mode]) return { semantic: false, rerank: false };
   return { semantic: true, rerank: false };
 }
@@ -234,7 +244,7 @@ export async function runEval(
   app: GatewayApp,
   queries: GoldenQuery[],
   mode: EvalMode | EvalArm,
-  opts: { asOf?: string; projectScope?: ProjectScope } = {},
+  opts: { asOf?: string; projectScope?: ProjectScope; maxResults?: number } = {},
 ): Promise<EvalRunResult> {
   const queryResults: QueryEvalResult[] = [];
   const arm: EvalArm = typeof mode === "string" ? armFor(mode) : mode;
@@ -255,7 +265,9 @@ export async function runEval(
       : {};
     const res = await searchOnce(app, q.query, {
       harness: q.harness,
-      maxResults: 5,
+      // 5 turns is what an agent is shown. More gives a deeper session ranking
+      // (judged pools); NDCG@5 still reads the first five distinct sessions.
+      maxResults: opts.maxResults ?? 5,
       asOf: q.asOf ?? asOf,
       ...scoped,
       ...modeOpts,
@@ -282,7 +294,7 @@ export async function runEval(
       p1,
       p5,
       latencyMs,
-      topSessionIds: uniqueRankedSessionIds.slice(0, 5),
+      topSessionIds: uniqueRankedSessionIds.slice(0, 10),
       hit,
     });
   }

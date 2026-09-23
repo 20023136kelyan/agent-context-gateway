@@ -49,6 +49,7 @@ export interface RerankerDef {
 export const RERANKER_DEFS = [
   { name: "jev", remote: true, keyEnv: "TYPESAFE_API_KEY", pricePerM: 0.042, mode: "pairwise", locked: true, notes: "only reranker measured above hybrid (BEIR 0.445 -> 0.489); judge duty too" },
   { name: "voyage", remote: true, keyEnv: "VOYAGE_API_KEY", pricePerM: 0.05, mode: "listwise", locked: false, notes: "rerank-2.5; 1 req/pool; pin-only until a bake-off against jev; lite/3 via VOYAGE_RERANK_MODEL" },
+  { name: "self-hosted", remote: true, keyEnv: "GATEWAY_RERANK_URL", pricePerM: null, mode: "listwise", locked: false, notes: "a rerank endpoint you host (vLLM, TEI); GATEWAY_RERANK_MODEL; GPU time, no per-call bill; pin-only" },
   { name: "none", remote: false, pricePerM: null, mode: "local", locked: false, notes: "passthrough" },
 ] as const;
 

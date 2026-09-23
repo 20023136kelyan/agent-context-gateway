@@ -40,11 +40,12 @@ import {
   type EvalRunResult,
   type GoldenQuery,
 } from "../src/eval/runner.js";
+import { httpRerankMeter } from "../src/search/rerank-http.js";
 
 const MODES: EvalMode[] = [
   "lexical", "hybrid", "rrf",
   "lexical-jev", "jev", "lexical-jev-pairwise", "jev-pairwise",
-  "jev-pure", "rerank-voyage",
+  "jev-pure", "rerank-voyage", "rerank-http",
   "judge-heuristic", "judge-jev", "judge-jev-noul",
 ];
 
@@ -103,6 +104,7 @@ async function main() {
   const realRoot = argValue(args, "--real");
   // How each query's recorded project is applied (none = global search).
   const projectScope = (argValue(args, "--project-scope") ?? "none") as "none" | "filter" | "prefer";
+  const maxResults = argValue(args, "--max-results") ? Number(argValue(args, "--max-results")) : undefined;
   if (!["none", "filter", "prefer"].includes(projectScope)) {
     throw new Error(`bad --project-scope "${projectScope}" (want none|filter|prefer)`);
   }
@@ -235,7 +237,14 @@ async function main() {
   const runs: EvalRunResult[] = [];
   try {
     for (const mode of modes) {
-      const result = await runEval(app, queries, mode, { asOf, projectScope });
+      httpRerankMeter.reset();
+      const result = await runEval(app, queries, mode, { asOf, projectScope, maxResults });
+      // The self-hosted reranker's own call times: its share of the latency.
+      if (mode === "rerank-http") {
+        const calls = httpRerankMeter.snapshot();
+        Object.assign(result, { rerankCalls: { ...calls, model: process.env.GATEWAY_RERANK_MODEL ?? null } });
+        console.log(`rerank calls: ${calls.requests} ok, ${calls.failures} failed, p50 ${calls.p50Ms} ms, p95 ${calls.p95Ms} ms`);
+      }
       runs.push(result);
       console.log("\n" + formatMarkdownTable(result) + "\n");
     }

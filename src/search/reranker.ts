@@ -37,6 +37,7 @@
  */
 import { JevReranker } from "../judgments/rerank-jev.js";
 import { VoyageReranker } from "./rerank-voyage.js";
+import { HttpReranker, httpRerankerConfig } from "./rerank-http.js";
 import { jevAvailable } from "../judgments/jev.js";
 import { voyageAvailable } from "../embeddings/voyage.js";
 
@@ -89,12 +90,14 @@ export const noopReranker: Reranker = {
 export function rerankerAvailable(name: RerankerName): boolean {
   if (name === "jev") return jevAvailable();
   if (name === "voyage") return voyageAvailable();
+  if (name === "self-hosted") return httpRerankerConfig() !== null;
   return true; // none is trivially available
 }
 
 export function makeReranker(name: RerankerName): Reranker {
   if (name === "jev") return new JevReranker();
   if (name === "voyage") return new VoyageReranker();
+  if (name === "self-hosted") return new HttpReranker();
   return noopReranker;
 }
 
@@ -120,7 +123,7 @@ export function rerankDefaultOn(name: RerankerName): boolean {
  */
 export function resolveRerankerName(): RerankerName {
   const pinned = process.env.GATEWAY_RERANKER as RerankerName | undefined;
-  if (pinned === "jev" || pinned === "voyage" || pinned === "none") return pinned;
+  if (pinned === "jev" || pinned === "voyage" || pinned === "self-hosted" || pinned === "none") return pinned;
   return ORDER.find((n) => rerankerAvailable(n)) ?? "none";
 }
 
