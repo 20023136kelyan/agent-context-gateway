@@ -82,6 +82,8 @@ export interface PackagedResult {
   /** Bi-temporal invalidation record if this turn was superseded */
   invalidation?: InvalidationRecord;
   isSuperseded?: boolean;
+  /** How the result's session ended (outcomes/outcome.ts); absent for remote results. */
+  outcome?: import("../outcomes/outcome.js").OutcomeSummary;
 }
 
 export interface FederationReport {

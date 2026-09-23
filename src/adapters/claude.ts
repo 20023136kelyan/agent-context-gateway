@@ -270,6 +270,8 @@ export class ClaudeAdapter implements ContextAdapter {
       return [];
     }
     const actions: Action[] = [];
+    // tool_use id -> its actions, so the tool_result that follows can mark them.
+    const byCall = new Map<string, Action[]>();
     let offset = 0;
     let anchor = 0;
     for (const line of raw.split("\n")) {
@@ -283,12 +285,30 @@ export class ClaudeAdapter implements ContextAdapter {
             const ts = o.timestamp ?? turns[anchor].timestamp;
             for (const b of content as Record<string, unknown>[]) {
               if (b?.type === "tool_use" && typeof b.name === "string") {
-                actions.push(...actionsOfCall(b.name, b.input, ts, turns[anchor].id));
+                const calls = actionsOfCall(b.name, b.input, ts, turns[anchor].id);
+                if (typeof b.id === "string" && calls.length) byCall.set(b.id, calls);
+                actions.push(...calls);
               }
             }
           }
         } catch {
           // torn line at the end of a live file
+        }
+      } else if (line.includes('"tool_result"') && byCall.size) {
+        // Claude Code marks a failed call (non-zero exit, rejected edit) with
+        // is_error; an interrupted command did not finish either.
+        try {
+          const o = JSON.parse(line) as ClaudeLine & { toolUseResult?: { interrupted?: boolean } };
+          const content = o.message?.content;
+          if (Array.isArray(content)) {
+            for (const b of content as Record<string, unknown>[]) {
+              if (b?.type !== "tool_result" || typeof b.tool_use_id !== "string") continue;
+              const ok = b.is_error !== true && o.toolUseResult?.interrupted !== true;
+              for (const a of byCall.get(b.tool_use_id) ?? []) a.ok = ok;
+            }
+          }
+        } catch {
+          // torn line
         }
       }
       offset += byteLen;

@@ -8,7 +8,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import type { GatewayApp } from "../app.js";
 import { callerProject } from "../adapters/repo.js";
-import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, listAclRules, searchLive, getLineage, createSubscription, listSubscriptions, recordFeedback, getSession, getTurn, getContext, showTopology } from "../commands.js";
+import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, listAclRules, searchLive, getLineage, createSubscription, listSubscriptions, recordFeedback, getSession, getTurn, getContext, sessionOutcome, showTopology } from "../commands.js";
 
 const Harness = z.enum(["claude-code", "codex", "cursor", "zep", "git", "trajectory", "opencode"]);
 
@@ -83,6 +83,17 @@ export function buildMcpServer(app: GatewayApp, cwd: string = process.cwd()): Mc
     "Direct session retrieval (authoritative source data)",
     { harness: Harness, sessionId: z.string() },
     async (args) => text(await getSession(app, args.harness, args.sessionId)),
+  );
+
+  server.tool(
+    "context.session_outcome",
+    "How an earlier session ended: the problem it took on, files it edited, the tests/builds/lints it ran and whether they passed, whether it committed or reverted, and the user's last reaction. Every field is copied from the history with its turn id, never generated. Status: verified | failing | unverified | no-edits. Search results carry a one-line summary; call this for the full record before reusing a fix.",
+    {
+      harness: Harness,
+      sessionId: z.string(),
+      asOf: z.string().optional().describe("ISO timestamp: read the session as it stood then"),
+    },
+    async (args) => text(await sessionOutcome(app, args.harness, args.sessionId, { asOf: args.asOf })),
   );
 
   server.tool(

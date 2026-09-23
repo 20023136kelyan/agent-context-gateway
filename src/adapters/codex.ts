@@ -17,7 +17,7 @@ import { LruCache } from "../core/lru.js";
 import { join, basename } from "node:path";
 import type { Harness, Session, Turn, TurnRole } from "../core/models.js";
 import { turnId as makeTurnId } from "../core/id.js";
-import { actionsOfCall, type Action } from "../actions/store.js";
+import { actionsOfCall, okFromOutput, type Action } from "../actions/store.js";
 import type { ContextAdapter, FileCursor } from "./types.js";
 import { truncate, extractFileRefs, codexContentToText, TURN_CACHE_SESSIONS, TURN_CACHE_CHARS, turnChars } from "./text.js";
 import { repoRoot } from "./repo.js";
@@ -399,13 +399,26 @@ export class CodexAdapter implements ContextAdapter {
    */
   async listActions(sessionId: string): Promise<Action[]> {
     const turns = await this.listTurns(sessionId).catch(() => [] as Turn[]);
+    // A call's output is a later tool turn with the same call_id.
+    const outputs = new Map<string, string>();
+    for (const t of turns) {
+      const callId = (t.raw as { call_id?: string } | null)?.call_id;
+      if (t.role === "tool" && !t.toolNames && callId) outputs.set(callId, t.content);
+    }
     const actions: Action[] = [];
     for (const t of turns) {
       const name = t.toolNames?.[0];
       if (t.role !== "tool" || !name || !t.content.startsWith(`${name}(`)) continue;
       // content is `name(input)`; input may be cut at the turn cap.
       const input = t.content.slice(name.length + 1).replace(/\)$/, "");
-      actions.push(...actionsOfCall(name, input, t.timestamp, t.id));
+      const calls = actionsOfCall(name, input, t.timestamp, t.id);
+      const callId = (t.raw as { call_id?: string } | null)?.call_id;
+      const output = callId ? outputs.get(callId) : undefined;
+      const ok = output === undefined ? undefined : okFromOutput(output);
+      // One status per call: it belongs to the call's only command, or to
+      // every file of one patch. A script running several commands is left unknown.
+      if (ok !== undefined && (calls.length === 1 || calls.every((c) => c.kind === "edit"))) for (const c of calls) c.ok = ok;
+      actions.push(...calls);
     }
     return actions;
   }

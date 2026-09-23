@@ -14,6 +14,7 @@ import { embedMissing, embedSessionTurns } from "./indexing/embed-sync.js";
 import { embeddingsAvailable } from "./embeddings/provider.js";
 import { loadRemotes, queryRemote } from "./remotes.js";
 import { extractDecisions, type DecisionJudge } from "./decisions/extract.js";
+import { buildOutcome, summarizeOutcome, type OutcomeSession, type SessionOutcome } from "./outcomes/outcome.js";
 import { resolveJudge } from "./decisions/select.js";
 import { isWhyQuery } from "./decisions/cues.js";
 import { normalizeQuery } from "./search/query.js";
@@ -114,6 +115,8 @@ export interface ProjectScopeInfo {
 export interface ScopeOptions {
   /** The project the caller is working in (transports pass it: MCP/CLI from their cwd). */
   defaultProject?: string | null;
+  /** Attach each result's session outcome summary (default true). */
+  outcomes?: boolean;
 }
 
 const TOPOLOGY_SCOPES = new Set(["parent", "children", "siblings", "auto"]);
@@ -145,7 +148,7 @@ export async function searchOnce(app: GatewayApp, query: string, requested: Sear
   if (!query.trim()) throw new Error("bad_request: empty query");
   await ensureSynced(app);
   const projectScope = await resolveProject(app, requested);
-  const { defaultProject: _caller, ...rest } = requested;
+  const { defaultProject: _caller, outcomes: _outcomes, ...rest } = requested;
   const opts: SearchOptions = { ...rest, project: projectScope.project ?? undefined };
   if (!app.vectors && opts.semantic !== false) {
     try {
@@ -156,6 +159,7 @@ export async function searchOnce(app: GatewayApp, query: string, requested: Sear
   }
   const t0 = Date.now();
   const res = await app.search.search(query, opts);
+  if (requested.outcomes !== false) await attachOutcomes(app, res.results, opts.asOf);
   try {
     // Shape-only telemetry (never query text, ids, or content).
     const nq = normalizeQuery(query);
@@ -215,6 +219,43 @@ export async function searchOnce(app: GatewayApp, query: string, requested: Sear
       remotes: reports.map((r) => ({ name: r.name, ok: r.ok, results: r.results.length, error: r.error })),
     },
   };
+}
+
+/**
+ * The outcome record of one session: what it set out to do, what it changed,
+ * how it was checked and how it ended (outcomes/outcome.ts).
+ */
+export async function sessionOutcome(app: GatewayApp, harness: string, sessionId: string, opts: { asOf?: string } = {}): Promise<SessionOutcome> {
+  if (opts.asOf && Number.isNaN(Date.parse(opts.asOf))) throw new Error(`bad_request: invalid asOf "${opts.asOf}" (want an ISO timestamp)`);
+  await ensureSynced(app);
+  const adapter = adapterFor(app, harness);
+  const session = (await adapter.listSessions().catch(() => [] as Session[])).find((s) => s.id === sessionId);
+  if (!session) throw new Error(`not_found: session "${sessionId}"`);
+  return outcomeOf(app, adapter, session, opts.asOf);
+}
+
+async function outcomeOf(app: GatewayApp, adapter: ContextAdapter, session: OutcomeSession, asOf?: string): Promise<SessionOutcome> {
+  const turns = await adapter.listTurns(session.id).catch(() => [] as Turn[]);
+  const actions = app.actions.find({ sessionIds: [session.id], limit: 2000 }).filter((a) => a.harness === session.harness);
+  return buildOutcome(session, turns, actions, { asOf });
+}
+
+/** Each local result gets its session's outcome summary (one record per session). */
+async function attachOutcomes(app: GatewayApp, results: PackagedResult[], asOf?: string): Promise<void> {
+  const bySession = new Map<string, Promise<SessionOutcome | null>>();
+  for (const r of results) {
+    if (r.via) continue;
+    const { harness, sessionId } = r.provenance;
+    const key = `${harness}:${sessionId}`;
+    if (!bySession.has(key)) {
+      const adapter = app.adapters.find((a) => a.harness === harness);
+      bySession.set(key, adapter ? outcomeOf(app, adapter, { harness, id: sessionId }, asOf).catch(() => null) : Promise.resolve(null));
+    }
+    const o = await bySession.get(key)!;
+    // Summarized by the task the hit falls in, found by the hit turn's position.
+    const seq = r.context.find((t) => t.id === r.provenance.turnId)?.seq;
+    if (o) r.outcome = summarizeOutcome(o, seq);
+  }
 }
 
 /**
@@ -604,7 +645,7 @@ export async function findActions(
   for (const r of rows) {
     const key = `${r.harness}:${r.sessionId}`;
     const entry = bySession.get(key) ?? { harness: r.harness, sessionId: r.sessionId, last: r.ts, actions: [] };
-    if (entry.actions.length < 20) entry.actions.push({ kind: r.kind, target: r.target, ts: r.ts, turnId: r.turnId });
+    if (entry.actions.length < 20) entry.actions.push({ kind: r.kind, target: r.target, ts: r.ts, turnId: r.turnId, ...(r.ok === undefined ? {} : { ok: r.ok }) });
     bySession.set(key, entry);
   }
   const maxSessions = Math.max(1, Math.min(q.maxSessions ?? 10, 50));

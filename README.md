@@ -275,6 +275,67 @@ own turns they crowded the rerank pool: on real history the Jev pipeline fell
 from 0.613 to 0.555 NDCG@5 (Claude calls, 7 runs) and hybrid from 0.574 to 0.548
 (Codex shell calls). They still show in result context windows.
 
+## How sessions ended: outcome records
+
+A search hit shows the discussion, not whether the fix held. Each session
+also has an outcome record, copied from its history and never generated,
+where every field cites its turn:
+
+- **problem**: the first real request (text the tools inject, such as setup
+  context, skill bodies and "continue", is skipped), plus later follow-ups
+- **edits**: files changed; rejected edits don't count
+- **checks**: tests, builds, type-checks and linters, with whether each passed
+- **committed / reverted** after the last edit
+- **the user's last reaction** after the last edit, when it has a clear tone
+- **the agent's final message**
+
+The status is mechanical and states its reason: `verified` (the last check
+after the last edit passed), `failing` (it failed), `unverified` (no check
+with a recorded result after the last edit) or `no-edits`. What the user said
+is reported beside the status, never folded into it.
+
+A long session is several **tasks**, one per real request (with the work up to
+the next request), and each task gets the same record. A search hit is
+summarized by the task it falls in (`task: "28/53"`). Two qualifiers keep the
+status honest:
+
+- `alreadyFailing`: the check had already failed before the task's first
+  edit, so the failure predates the task (a type error in a file it never
+  touched)
+- `shellWrites`: `no-edits` counts edit tools only, so shell commands that may
+  have written files (`sed -i`, `tee`, a redirect into a file) are counted
+
+```bash
+acg outcome codex 019a1c…          # the full record (--as-of <iso> for a point in time)
+```
+
+MCP `context.session_outcome`, HTTP `GET /sessions/:harness/:id/outcome`.
+Search results carry a one-line summary (`outcome` in JSON; `--json` shows
+it, and the text output prints it under each hit), and the proactive hook
+says how each suggested session ended. Pass `outcomes: false` to leave it off.
+
+Pass/fail comes from the history itself: Claude Code marks failed tool calls
+with `is_error`, and Codex prints the exit status in command output (newer
+versions only). Where neither records it, the check shows as unknown.
+
+Measured on 219 real sessions (47 Claude Code, 172 Codex; `npm run
+eval:outcomes -- --real <root>`, no API key):
+
+| | |
+|---|---|
+| sessions with a request found | 85% |
+| sessions with more than one task | 67% (up to 151 tasks) |
+| tasks: verified / failing / unverified / no-edits | 22% / 1% / 27% / 50% |
+| sessions with a check whose result is recorded | 43% Claude Code, 23% Codex |
+| failing tasks already failing before their edits | 6 of 13 |
+| no-edits tasks with shell commands that may write files | 23% |
+| building one record (turns already loaded) | 12 ms p50, 22 ms p95 |
+| added to a search with outcomes on | +7 ms p50, +33 ms p95 (lexical) |
+
+A hand audit of 20 sampled tasks found every record consistent with the
+evidence it cites. That audit is what led to per-task records, to "short
+messages only" for reactions, and to the two qualifiers above.
+
 ## Proactive context (opt-in)
 
 Instead of waiting for an agent to search, a Claude Code `UserPromptSubmit`

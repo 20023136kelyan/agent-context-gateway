@@ -26,6 +26,12 @@ export interface Action {
   ts: string;
   /** The turn to open for context (the call itself, or the turn it follows). */
   turnId: string;
+  /**
+   * Whether it worked, when the history says: a command's exit status, an
+   * edit that applied or was rejected. Absent when nothing recorded it
+   * (older Codex output, a call cut off by the session ending).
+   */
+  ok?: boolean;
 }
 
 export interface StoredAction extends Action {
@@ -145,6 +151,22 @@ export function actionsOfCall(name: string, input: unknown, ts: string, turnId: 
   return out;
 }
 
+/**
+ * What a tool's output says about success, when it says anything: a
+ * command's exit status ("Process exited with code 1", "Exit code: 0",
+ * `"exit_code": 2`) or apply_patch's verdict. Undefined when it is silent.
+ */
+export function okFromOutput(output: string): boolean | undefined {
+  const m =
+    /Process exited with code (-?\d+)/.exec(output) ??
+    /\bExit code:? (-?\d+)/i.exec(output) ??
+    /\\?"exit_code\\?"\s*:\s*(-?\d+)/.exec(output);
+  if (m) return Number(m[1]) === 0;
+  if (/^Success\. Updated the following files/m.test(output)) return true;
+  if (/apply_patch verification failed|Failed to apply patch|patch rejected/i.test(output)) return false;
+  return undefined;
+}
+
 export class ActionStore {
   private handle: InstanceType<DatabaseSyncType> | null = null;
 
@@ -168,6 +190,10 @@ export class ActionStore {
       rel TEXT NOT NULL,
       turn_id TEXT NOT NULL
     )`);
+    // Added with outcome records; stores made before it gain the column empty
+    // and fill it as sessions re-sync (PARSE_VERSION 3 re-syncs them all).
+    const cols = db.prepare("PRAGMA table_info(actions)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "ok")) db.exec("ALTER TABLE actions ADD COLUMN ok INTEGER");
     db.exec("CREATE INDEX IF NOT EXISTS idx_actions_session ON actions(harness, session_id)");
     db.exec("CREATE INDEX IF NOT EXISTS idx_actions_kind_ts ON actions(kind, ts)");
     return db;
@@ -179,11 +205,11 @@ export class ActionStore {
     try {
       this.db.prepare("DELETE FROM actions WHERE harness = ? AND session_id = ?").run(harness, sessionId);
       const insert = this.db.prepare(
-        "INSERT INTO actions (harness, session_id, ts, kind, target, rel, turn_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO actions (harness, session_id, ts, kind, target, rel, turn_id, ok) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       );
       for (const a of actions) {
         const rel = a.kind === "edit" ? relativeTarget(a.target, workspace) : a.target;
-        insert.run(harness, sessionId, iso(a.ts), a.kind, a.target, rel, a.turnId);
+        insert.run(harness, sessionId, iso(a.ts), a.kind, a.target, rel, a.turnId, a.ok === undefined ? null : a.ok ? 1 : 0);
       }
       this.db.exec("COMMIT");
     } catch (e) {
@@ -230,12 +256,13 @@ export class ActionStore {
     const where = all.length ? `WHERE ${all.map((c) => `(${c.sql})`).join(" AND ")}` : "";
     const limit = Math.max(1, Math.min(q.limit ?? 200, 2000));
     const rows = this.db
-      .prepare(`SELECT harness, session_id, ts, kind, target, rel, turn_id FROM actions ${where} ORDER BY ts DESC LIMIT ?`)
+      .prepare(`SELECT harness, session_id, ts, kind, target, rel, turn_id, ok FROM actions ${where} ORDER BY ts DESC, rowid DESC LIMIT ?`)
       .all(...all.flatMap((c) => c.args), limit) as {
-      harness: Harness; session_id: string; ts: string; kind: ActionKind; target: string; rel: string; turn_id: string;
+      harness: Harness; session_id: string; ts: string; kind: ActionKind; target: string; rel: string; turn_id: string; ok: number | null;
     }[];
     return rows.map((r) => ({
       harness: r.harness, sessionId: r.session_id, ts: r.ts, kind: r.kind, target: r.target, rel: r.rel, turnId: r.turn_id,
+      ...(r.ok === null ? {} : { ok: r.ok === 1 }),
     }));
   }
 

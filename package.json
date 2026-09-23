@@ -43,7 +43,8 @@
     "sync": "node --env-file-if-exists=.env --import tsx src/cli.ts sync",
     "setup:native": "python3 scripts/fetch-native-binding.py",
     "eval:proactive": "node --env-file-if-exists=.env --import tsx scripts/eval-proactive.ts",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "eval:outcomes": "tsx scripts/eval-outcomes.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { GatewayApp } from "./app.js";
 import { searchOnce, findActions } from "./commands.js";
+import { outcomeTag } from "./outcomes/outcome.js";
 import { callerProject } from "./adapters/repo.js";
 import { extractFileRefs } from "./adapters/text.js";
 import { normalizeQuery } from "./search/query.js";
@@ -208,7 +209,9 @@ export async function proactiveContext(
       if (p === null || p < threshold || items.some((i) => i.sessionId === r.provenance.sessionId)) continue;
       items.push({
         via: "search", harness: r.provenance.harness, sessionId: r.provenance.sessionId, turnId: r.provenance.turnId,
-        timestamp: r.provenance.timestamp, line: `"${oneLine(r.summary, 160)}"`, p,
+        timestamp: r.provenance.timestamp,
+        // How that session ended, so the agent knows whether the earlier fix held.
+        line: `"${oneLine(r.summary, 160)}"${r.outcome ? ` (ended ${outcomeTag(r.outcome)})` : ""}`, p,
       });
     }
   }

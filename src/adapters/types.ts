@@ -17,8 +17,10 @@ import type { Action } from "../actions/store.js";
  *   2  Codex: subagents keep their own thread id instead of their parent's;
  *      function_call turns carry their arguments (were `shell("")`) and are
  *      context-only (Turn.searchable = false)
+ *   3  actions carry whether they worked (Action.ok: exit status, rejected
+ *      edits), which outcome records read
  */
-export const PARSE_VERSION = 2;
+export const PARSE_VERSION = 3;
 
 export interface AdapterCapabilities {
   sessions: true;

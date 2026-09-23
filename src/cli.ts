@@ -7,10 +7,11 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { createApp, closeApp, type GatewayApp } from "./app.js";
 import { dumpConfig, defaultStateDir } from "./settings.js";
-import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, recordFeedback, getSession, getTurn, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "./commands.js";
+import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, recordFeedback, getSession, getTurn, sessionOutcome, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "./commands.js";
 import { addRemote, removeRemote, loadRemotes } from "./remotes.js";
 import { callerProject } from "./adapters/repo.js";
 import { loadUserEnv } from "./env.js";
+import { outcomeTag } from "./outcomes/outcome.js";
 
 // Installed runs load this in bin.ts first; a checkout (tsx) loads it here.
 loadUserEnv();
@@ -139,6 +140,7 @@ program
         console.log(`[${i + 1}] (${r.score.toFixed(3)}) ${r.provenance.harness} / session ${r.provenance.sessionId.slice(0, 8)} / turn ${r.provenance.turnId.split(":").pop()}`);
         console.log(`    ${r.summary.split("\n").join("\n    ")}`);
         console.log(`    turns ${r.context.length} | ${r.provenance.timestamp}`);
+        if (r.outcome) console.log(`    outcome: ${outcomeTag(r.outcome)}: ${r.outcome.statusBecause}`);
       }
       printScope(res.projectScope);
       if (res.results.length === 0) console.log("No results.");
@@ -149,6 +151,19 @@ program
   .description("Show session metadata")
   .action(async (harness: string, sessionId: string) => {
     print((await fetchRemote("GET", `/sessions/${harness}/${sessionId}`)) ?? (await withLocal((app) => getSession(app, harness, sessionId))), false);
+  });
+
+program
+  .command("outcome <harness> <sessionId>")
+  .description("How a session ended: problem, edits, checks run and whether they passed, commit/revert, the user's last reaction (cited)")
+  .option("--as-of <iso>", "read the session as it stood at this time")
+  .action(async (harness: string, sessionId: string, cmdOpts) => {
+    const q = cmdOpts.asOf ? `?asOf=${encodeURIComponent(cmdOpts.asOf)}` : "";
+    print(
+      (await fetchRemote("GET", `/sessions/${harness}/${sessionId}/outcome${q}`)) ??
+        (await withLocal((app) => sessionOutcome(app, harness, sessionId, { asOf: cmdOpts.asOf }))),
+      false,
+    );
   });
 
 program

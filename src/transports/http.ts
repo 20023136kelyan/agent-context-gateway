@@ -7,7 +7,7 @@ import { timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import type { GatewayApp } from "../app.js";
 import type { Harness } from "../core/models.js";
-import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, recordInvalidation, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, cancelSubscription, recordFeedback, getSession, getTurn, getContext, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "../commands.js";
+import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, recordInvalidation, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, cancelSubscription, recordFeedback, getSession, getTurn, getContext, sessionOutcome, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "../commands.js";
 import { writeServeInfo, clearServeInfo } from "../remote.js";
 import { handleGitCommitEvent, type GitCommitEvent } from "../git/hooks.js";
 
@@ -197,6 +197,17 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
   fastify.get("/sessions/:harness/:id", async (req, reply) => {    const p = req.params as { harness: string; id: string };
     try {
       return await getSession(app, p.harness, p.id);
+    } catch (e) {
+      const { code, message } = toStatus(e);
+      return reply.code(code).send({ error: message });
+    }
+  });
+
+  fastify.get("/sessions/:harness/:id/outcome", async (req, reply) => {
+    const p = req.params as { harness: string; id: string };
+    const q = req.query as { asOf?: string };
+    try {
+      return await sessionOutcome(app, p.harness, p.id, { asOf: q.asOf });
     } catch (e) {
       const { code, message } = toStatus(e);
       return reply.code(code).send({ error: message });
