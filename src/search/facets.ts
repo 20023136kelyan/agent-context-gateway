@@ -20,10 +20,10 @@
  * (search.ts), so a facet's top hit competes with the prompt's top hit rather
  * than trailing every one of its hits.
  *
- * On by default (roadmap 11c). On the real-history eval it lifted NDCG@5
- * by about +0.02 with hybrid search and with the Jev reranker, and raised the
- * proactive hook's precision (0.651 -> 0.674) while cutting its false alarms
- * (0.211 -> 0.158). It costs no measurable latency. GATEWAY_FACETS=off turns it off.
+ * On by default (roadmap 11c). Against mined labels it lifted NDCG@5 by about
+ * +0.02 and the proactive hook's precision (0.651 -> 0.674, false alarms
+ * 0.211 -> 0.158); two LLM judges found no difference either way (README,
+ * "Judged relevance"). It costs no measurable latency. GATEWAY_FACETS=off turns it off.
  */
 import { extractFileRefs } from "../adapters/text.js";
 

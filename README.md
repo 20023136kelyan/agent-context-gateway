@@ -591,9 +591,9 @@ mined labels:
 
 | change | broad | strict | kept? |
 |---|---:|---:|---|
-| query facets (below), hybrid | +0.017 (+7/−1) | +0.021 (+6/−1) | **yes, on by default** |
+| query facets (below), hybrid | +0.017 (+7/−1) | +0.021 (+6/−1) | on by default; judged: no gain (below) |
 | query facets, Jev reranker | +0.012 (+8/−2) | +0.021 (+5/−0) | yes |
-| `voyage-code-4` instead of `voyage-4` | +0.032 (+29/−11) | +0.003 (+15/−10) | not yet: twice the price |
+| `voyage-code-4` instead of `voyage-4` | +0.032 (+29/−11) | +0.003 (+15/−10) | no: judged no gain, twice the price |
 | similarity floor, span, vector gate | ≤ +0.02 on one set, lost on the other | | no change |
 | RRF k 5 / 20 / 60 (default 10) | +0.002 / −0.010 / −0.023 | +0.001 / −0.003 / −0.022 | no change |
 | recency weight 0 (default 0.10) | −0.012 | −0.016 | no change |
@@ -602,8 +602,8 @@ mined labels:
 | rerank pool 15 / 50 (default 30) | slightly worse | slightly worse | no change |
 | per-task keys on each turn | | −0.014 | removed |
 
-The fixture-tuned constants held. The gain came from reading the query
-better, not from moving a constant.
+The fixture-tuned constants held. The one mined gain, from reading the
+query better (facets), was not confirmed by judged relevance (below).
 
 **Query facets** (`src/search/facets.ts`): a prompt of 20 words or more is
 also searched as the files it names, the error lines it pastes, its
@@ -618,11 +618,29 @@ alarms from 21% to 16%.
 edited the same files, which misses a session that explains the same bug.
 Three scripts grade what the compared settings actually returned instead:
 `judge-pool.ts` pools every setting's top 5 per query and describes each
-session from its outcome record as of the query's time, `judge-pairs.ts`
-grades each pair 0/1/2 with Claude run headless (`claude -p`, no tools, no
-MCP, no saved transcript; grades are cached), and `score-judged.ts` reports
-graded NDCG@5, P@1 and useful-in-top-5 beside the mined score. The judge is
-for evaluation only; the gateway never calls it.
+session from its outcome record as of the query's time (every request, in
+order), `judge-pairs.ts` grades each pair 0/1/2 with Claude run headless
+(`claude -p`, no tools, no MCP, no saved transcript; grades are cached per
+card), and `score-judged.ts` reports graded NDCG@5, P@1 and useful-in-top-5
+beside the mined score. The judge is for evaluation only; the gateway never
+calls it.
+
+Two judges (Haiku 4.5 and Sonnet 5) graded the same 451 pairs from 140
+queries. They gave the same grade 72% of the time (κ 0.57, weighted 0.67)
+and almost never opposite ones. Against plain hybrid, on the mean of both:
+
+| setting | mined NDCG@5 Δ | judged NDCG@5 Δ (95% CI) | top result better / worse |
+|---|---:|---:|---|
+| query facets | +0.019 | −0.003 (−0.017, +0.014) | 2 / 6 (both judges) |
+| Jev reranker | −0.006 | −0.001 (−0.030, +0.029) | Haiku 9 / 25 (p = 0.009), Sonnet 10 / 16 |
+| Jev + facets | +0.010 | +0.008 (−0.023, +0.040) | Haiku 12 / 24, Sonnet 12 / 15 |
+| `voyage-code-4` | +0.020 | −0.008 (−0.031, +0.015) | Haiku 7 / 17, Sonnet 13 / 15 |
+
+No setting differs from plain hybrid by more than the noise. The mined
+gains of about +0.02 did not survive judging, so a mined difference of that
+size is not evidence of a better search on its own. The pool is shallow
+(3.2 sessions per query, because the settings mostly agree), which limits
+how small a difference this can see.
 
 `npx tsx scripts/bench.ts [--sync]` times the hot paths against the real local
 histories (read-only).
