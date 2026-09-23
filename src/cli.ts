@@ -7,6 +7,7 @@ import { createApp, closeApp, type GatewayApp } from "./app.js";
 import { dumpConfig } from "./settings.js";
 import { listSources, listSessions, searchOnce, decideOnce, getRelated, traverseArtifacts, listInvalidations, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, recordFeedback, getSession, getTurn, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "./commands.js";
 import { addRemote, removeRemote, loadRemotes } from "./remotes.js";
+import { callerProject } from "./adapters/repo.js";
 import { readServeInfo, probeServer, remoteCall, connectHost, HttpError } from "./remote.js";
 
 const program = new Command();
@@ -96,6 +97,7 @@ program
   .option("--repo <root>", "git repo root filter")
   .option("--harness <harness>")
   .option("--max-results <n>", "", "5")
+  .option("--all-projects", "search every project (default: this directory's project, when it has history)")
   .option("--scope <scope>", "project|parent|children|siblings|auto")
   .option("--as-session <id>", "caller session for parent/children/siblings scopes")
   .option("--as-principal <id>", "caller identity for resource-level ACL enforcement")
@@ -103,11 +105,12 @@ program
   .option("--include-superseded", "Include superseded historical knowledge without demotion")
   .option("--no-rerank", "Skip precision reranking (default depends on the selected reranker: on for Jev, off otherwise)")
   .action(async (query: string, cmdOpts) => {
-    const path = `/search${qs({ q: query, project: cmdOpts.project, repo: cmdOpts.repo, harness: cmdOpts.harness, maxResults: String(cmdOpts.maxResults ?? 5), scope: cmdOpts.scope, callerSessionId: cmdOpts.asSession, principal: cmdOpts.asPrincipal, asOf: cmdOpts.asOf, includeSuperseded: cmdOpts.includeSuperseded ? "true" : undefined, rerank: cmdOpts.rerank === false ? "false" : undefined })}`;
+    const scope = projectArgs(cmdOpts);
+    const path = `/search${qs({ q: query, ...scope, repo: cmdOpts.repo, harness: cmdOpts.harness, maxResults: String(cmdOpts.maxResults ?? 5), scope: cmdOpts.scope, callerSessionId: cmdOpts.asSession, principal: cmdOpts.asPrincipal, asOf: cmdOpts.asOf, includeSuperseded: cmdOpts.includeSuperseded ? "true" : undefined, rerank: cmdOpts.rerank === false ? "false" : undefined })}`;
     const res = ((await fetchRemote("GET", path)) ??
       (await withLocal((app) =>
         searchOnce(app, query, {
-          project: cmdOpts.project,
+          ...scope,
           repo: cmdOpts.repo,
           harness: cmdOpts.harness,
           maxResults: Number(cmdOpts.maxResults ?? 5),
@@ -130,6 +133,7 @@ program
         console.log(`    ${r.summary.split("\n").join("\n    ")}`);
         console.log(`    turns ${r.context.length} | ${r.provenance.timestamp}`);
       }
+      printScope(res.projectScope);
       if (res.results.length === 0) console.log("No results.");
   });
 
@@ -225,15 +229,17 @@ program
   .command("decide <query>")
   .description("Extract decisions + rationale + alternatives (why-questions)")
   .option("--project <project>")
+  .option("--all-projects", "search every project (default: this directory's project, when it has history)")
   .option("--repo <root>")
   .option("--harness <harness>")
   .option("--max-decisions <n>", "", "3")
   .action(async (query: string, cmdOpts) => {
-    const path = `/decide${qs({ q: query, project: cmdOpts.project, repo: cmdOpts.repo, harness: cmdOpts.harness, maxDecisions: String(cmdOpts.maxDecisions ?? 3) })}`;
+    const scope = projectArgs(cmdOpts);
+    const path = `/decide${qs({ q: query, ...scope, repo: cmdOpts.repo, harness: cmdOpts.harness, maxDecisions: String(cmdOpts.maxDecisions ?? 3) })}`;
     const res = ((await fetchRemote("GET", path)) ??
       (await withLocal((app) =>
         decideOnce(app, query, {
-          project: cmdOpts.project,
+          ...scope,
           repo: cmdOpts.repo,
           harness: cmdOpts.harness,
           maxDecisions: Number(cmdOpts.maxDecisions ?? 3),
@@ -243,6 +249,7 @@ program
       console.log(JSON.stringify(res, null, 2));
       return;
     }
+    printScope(res.projectScope);
     for (const [i, d] of res.decisions.entries()) {
       console.log(`[${i + 1}] (${d.method}, conf ${d.confidence.toFixed(2)}) ${d.session.harness} / ${d.session.sessionId.slice(0, 8)}`);
       console.log(`    concluded: ${d.conclusion.content.split("\n")[0].slice(0, 160)}`);
@@ -646,6 +653,19 @@ program
 /** Attach availability to a component row without fighting literal types.
  *  Keyed components report key presence; keyless ones (`none`, `heuristic`)
  *  report the live probe, or true when there is nothing to probe. */
+/**
+ * --all-projects widens to every project; otherwise an explicit --project, or
+ * (resolved by the gateway) this directory's project when it has history.
+ */
+function projectArgs(cmdOpts: { project?: string; allProjects?: boolean }) {
+  return { project: cmdOpts.allProjects ? "*" : cmdOpts.project, defaultProject: callerProject() ?? undefined };
+}
+
+/** One line saying which project a search ran in, and how to widen it. */
+function printScope(scope?: { project: string | null; source: string }) {
+  if (scope?.source === "caller") console.log(`(project: ${scope.project}, from this directory; --all-projects to search everywhere)`);
+}
+
 function withKey(row: Record<string, unknown>, available: Record<string, boolean>): Record<string, unknown> {
   const keyEnv = typeof row.keyEnv === "string" ? row.keyEnv : null;
   const name = typeof row.name === "string" ? row.name : "";

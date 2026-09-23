@@ -7,6 +7,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import type { GatewayApp } from "../app.js";
+import { callerProject } from "../adapters/repo.js";
 import { listSources, listSessions, searchOnce, decideOnce, getRelated, traverseArtifacts, listInvalidations, listAclRules, searchLive, getLineage, createSubscription, listSubscriptions, recordFeedback, getSession, getTurn, getContext, showTopology } from "../commands.js";
 
 const Harness = z.enum(["claude-code", "codex", "cursor", "zep", "git", "trajectory", "opencode"]);
@@ -15,8 +16,18 @@ function text(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
 }
 
-export function buildMcpServer(app: GatewayApp): McpServer {
+export function buildMcpServer(app: GatewayApp, cwd: string = process.cwd()): McpServer {
   const server = new McpServer({ name: "agent-context-gateway", version: "0.1.0" });
+  // Harnesses start stdio MCP servers in the agent's working directory, so the
+  // server's cwd names the project the agent is in: the default search scope.
+  const defaultProject = callerProject(cwd);
+  const projectArg = z
+    .string()
+    .optional()
+    .describe(
+      `Project to search. Default: ${defaultProject ? `this agent's project ("${defaultProject}")` : "all projects"}` +
+        ` when it has history. "*" searches every project. Matches across harnesses by folder name.`,
+    );
 
   server.tool("context.list_sources", "List queryable agent-history sources", {}, async () => text(await listSources(app)));
 
@@ -32,7 +43,7 @@ export function buildMcpServer(app: GatewayApp): McpServer {
     "Semantic/lexical search over other agents' native work histories. Returns compact context with provenance.",
     {
       query: z.string().describe("Natural-language question, e.g. 'What did Codex decide about collaboration?'"),
-      project: z.string().optional(),
+      project: projectArg,
       repo: z.string().optional().describe("Git repo root for precise project scoping"),
       harness: Harness.optional(),
       sessionId: z.string().optional(),
@@ -51,7 +62,7 @@ export function buildMcpServer(app: GatewayApp): McpServer {
       maxTokens: z.number().min(100).max(20000).optional(),
     },
     async (args) =>
-      text(await searchOnce(app, args.query, { ...args, rerank: args.rerank ?? rerankDefaultOn(app.reranker) })),
+      text(await searchOnce(app, args.query, { ...args, defaultProject, rerank: args.rerank ?? rerankDefaultOn(app.reranker) })),
   );
 
   server.tool(
@@ -80,12 +91,12 @@ export function buildMcpServer(app: GatewayApp): McpServer {
     "Why-questions: extract decisions + rationale + alternatives with confidence and source turns. Use for why/reason/decision/choice questions; use context.search for discussion retrieval.",
     {
       query: z.string().describe("Why-question, e.g. 'Why did we reject Monaco?'"),
-      project: z.string().optional(),
+      project: projectArg,
       repo: z.string().optional(),
       harness: Harness.optional(),
       maxDecisions: z.number().min(1).max(10).optional(),
     },
-    async (args) => text(await decideOnce(app, args.query, args)),
+    async (args) => text(await decideOnce(app, args.query, { ...args, defaultProject })),
   );
 
   server.tool(

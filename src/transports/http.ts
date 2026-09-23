@@ -106,6 +106,9 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
         q.q,
         {
           project: q.project,
+          // A daemon cannot see its caller's directory: clients that know
+          // their project (the CLI does) pass it, and "*" searches everything.
+          defaultProject: q.defaultProject,
           repo: q.repo,
           harness: q.harness as Harness | undefined,
           sessionId: q.sessionId,
@@ -141,6 +144,7 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
     try {
       return await decideOnce(app, q.q, {
         project: q.project,
+        defaultProject: q.defaultProject,
         repo: q.repo,
         harness: q.harness as Harness | undefined,
         maxDecisions: q.maxDecisions ? Number(q.maxDecisions) : undefined,

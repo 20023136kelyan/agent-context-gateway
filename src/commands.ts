@@ -3,6 +3,7 @@
  * Nothing here touches stdout/sockets; returns plain data + throws Errors
  * with `not_found` / `bad_request` messages that transports map to codes.
  */
+import { inProject } from "./core/project.js";
 import { rerankDefaultOn } from "./search/reranker.js";
 import { stat } from "node:fs/promises";
 import { syncAll, syncAllDetailed, rebuildAll, enrichTurns, isRemoteSource } from "./indexing/sync.js";
@@ -67,7 +68,7 @@ export async function listSessions(app: GatewayApp, filter: { harness?: string; 
     if (filter.harness && a.harness !== filter.harness) continue;
     const sessions = await a.listSessions().catch(() => []);
     for (const s of sessions) {
-      if (filter.project && s.projectId !== filter.project) continue;
+      if (filter.project && !inProject(s, filter.project)) continue;
       if (filter.repo && s.repo !== filter.repo) continue;
       out.push(s);
     }
@@ -75,9 +76,50 @@ export async function listSessions(app: GatewayApp, filter: { harness?: string; 
   return out;
 }
 
-export async function searchOnce(app: GatewayApp, query: string, opts: SearchOptions = {}, chain: string[] = []) {
+/** How a search's project scope was chosen; echoed in every search response. */
+export interface ProjectScopeInfo {
+  project: string | null;
+  /** explicit = the caller named it; caller = the caller's own project; all = every project. */
+  source: "explicit" | "caller" | "all";
+}
+
+/** Caller-supplied scoping, on top of SearchOptions. */
+export interface ScopeOptions {
+  /** The project the caller is working in (transports pass it: MCP/CLI from their cwd). */
+  defaultProject?: string | null;
+}
+
+const TOPOLOGY_SCOPES = new Set(["parent", "children", "siblings", "auto"]);
+
+/**
+ * Resolve the project a search runs in. An explicit `project` wins, and "*"
+ * means every project. Otherwise search the caller's own project — measured
+ * on real agent history, scoping took Jev-reranked NDCG@5 from 0.447 to 0.781
+ * (14 queries; 0.324 -> 0.616 on 27), since an in-project ask ("is the app
+ * finished?") is unanswerable across every project at once. The default only
+ * applies when history exists for that project, so a first session in a new
+ * one still finds something, and never to topology scopes, whose linked
+ * sessions may span projects.
+ */
+export async function resolveProject(
+  app: GatewayApp,
+  opts: Pick<SearchOptions, "project" | "scope"> & ScopeOptions,
+): Promise<ProjectScopeInfo> {
+  if (opts.project === "*") return { project: null, source: "all" };
+  if (opts.project) return { project: opts.project, source: "explicit" };
+  if (opts.scope && TOPOLOGY_SCOPES.has(opts.scope)) return { project: null, source: "all" };
+  if (opts.defaultProject && (await app.search.hasProject(opts.defaultProject))) {
+    return { project: opts.defaultProject, source: "caller" };
+  }
+  return { project: null, source: "all" };
+}
+
+export async function searchOnce(app: GatewayApp, query: string, requested: SearchOptions & ScopeOptions = {}, chain: string[] = []) {
   if (!query.trim()) throw new Error("bad_request: empty query");
   await ensureSynced(app);
+  const projectScope = await resolveProject(app, requested);
+  const { defaultProject: _caller, ...rest } = requested;
+  const opts: SearchOptions = { ...rest, project: projectScope.project ?? undefined };
   if (!app.vectors && opts.semantic !== false) {
     try {
       await initVectors(app);
@@ -122,7 +164,7 @@ export async function searchOnce(app: GatewayApp, query: string, opts: SearchOpt
   // Loop guard: skip remotes already in the chain (A->B->A); 2-hop max.
   const allRemotes = ["parent", "children", "siblings"].includes(res.scope) ? [] : loadRemotes();
   const remotes = chain.length >= 2 ? [] : allRemotes.filter((r) => !chain.includes(r.name));
-  if (remotes.length === 0) return res;
+  if (remotes.length === 0) return { ...res, projectScope };
   const maxResults = opts.maxResults ?? 5;
   const reports = await Promise.all(
     remotes.map((r) =>
@@ -140,6 +182,7 @@ export async function searchOnce(app: GatewayApp, query: string, opts: SearchOpt
   merged.sort((a, b) => b.score - a.score);
   return {
     ...res,
+    projectScope,
     results: merged.slice(0, maxResults),
     federation: {
       remotes: reports.map((r) => ({ name: r.name, ok: r.ok, results: r.results.length, error: r.error })),
@@ -155,10 +198,14 @@ export async function searchOnce(app: GatewayApp, query: string, opts: SearchOpt
 export async function decideOnce(
   app: GatewayApp,
   query: string,
-  opts: SearchOptions & { maxDecisions?: number; judge?: DecisionJudge } = {},
+  requested: SearchOptions & ScopeOptions & { maxDecisions?: number; judge?: DecisionJudge } = {},
 ) {
   if (!query.trim()) throw new Error("bad_request: empty query");
   await ensureSynced(app);
+  // Same project rule as search: decide can only weigh what retrieval finds.
+  const projectScope = await resolveProject(app, requested);
+  const { defaultProject: _caller, ...rest } = requested;
+  const opts = { ...rest, project: projectScope.project ?? undefined };
   if (!app.vectors && opts.semantic !== false) {
     try {
       await initVectors(app);
@@ -251,6 +298,7 @@ export async function decideOnce(
   return {
     query,
     whyRouted: isWhyQuery(query),
+    projectScope,
     decisions: decisions.slice(0, opts.maxDecisions ?? 3),
     searchedAt: new Date().toISOString(),
   };

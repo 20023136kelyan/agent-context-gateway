@@ -315,6 +315,8 @@ export interface MinedQuery {
   description: string;
   relevantSessionIds: string[];
   asOf: string;
+  /** Normalised project key (same rule as src/core/project.ts). */
+  project: string;
   mined: {
     querySession: string;
     queryHarness: Harness;
@@ -361,6 +363,7 @@ export function minePairs(
       description: `${b.harness} session in ${b.project}; ${targets.length} earlier session(s) edited files it goes on to edit`,
       relevantSessionIds: targets.map((t) => t.id),
       asOf: new Date(Date.parse(b.start) - 1).toISOString(),
+      project: b.project,
       mined: {
         querySession: b.id,
         queryHarness: b.harness,

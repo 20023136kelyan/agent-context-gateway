@@ -194,6 +194,11 @@ describe("minePairs", () => {
     }
   });
 
+  it("records the project each query was asked from", () => {
+    expect(byQuerySession("sess-b")!.project).toBe("app");
+    expect(byQuerySession("codex-c")!.project).toBe("app");
+  });
+
   it("evaluates end to end: each query sees only history from before it began", async () => {
     const state = join(root, "state");
     const saved = process.env.CONTEXT_GATEWAY_STATE;
@@ -220,6 +225,39 @@ describe("minePairs", () => {
         expect(r.topSessionIds).not.toContain(q.mined.querySession);
       }
       expect(run.queryResults.find((r) => r.id === byQuerySession("sess-b")!.id)!.mrr5).toBeGreaterThan(0);
+
+      // Project scope matches across harnesses: "app" is a Claude slug on one
+      // machine and a Codex cwd on another, and "other" shares its file paths.
+      const { searchOnce } = await import("../src/commands.js");
+      const scoped = await searchOnce(app, "rate limiting api client", { project: "app", semantic: false, maxResults: 10 });
+      const scopedSessions = new Set(scoped.results.map((r) => r.provenance.sessionId));
+      expect(scopedSessions.has("sess-other")).toBe(false);
+      expect(scopedSessions.has("sess-a")).toBe(true);
+      const global = await searchOnce(app, "rate limiting api client", { semantic: false, maxResults: 10 });
+      expect(new Set(global.results.map((r) => r.provenance.sessionId)).has("sess-other")).toBe(true);
+      const byCodexName = await searchOnce(app, "token bucket", { project: "APP", semantic: false, maxResults: 10 });
+      expect(byCodexName.results.map((r) => r.provenance.sessionId)).toContain("codex-c");
+      const nowhere = await searchOnce(app, "rate limiting", { project: "no-such-project", semantic: false });
+      expect(nowhere.results).toEqual([]);
+
+      // Soft scope keeps other projects reachable, but in-project hits are boosted.
+      const preferred = await searchOnce(app, "rate limiting api client", { preferProject: "app", semantic: false, maxResults: 10 });
+      const order = preferred.results.map((r) => r.provenance.sessionId);
+      expect(order).toContain("sess-other");
+      expect(order.indexOf("sess-a")).toBeLessThan(order.indexOf("sess-other"));
+
+      // The caller's project is the default scope, echoed back; '*' widens it.
+      const byDefault = await searchOnce(app, "rate limiting api client", { defaultProject: "app", semantic: false, maxResults: 10 });
+      expect(byDefault.projectScope).toEqual({ project: "app", source: "caller" });
+      expect(byDefault.results.map((r) => r.provenance.sessionId)).not.toContain("sess-other");
+      const widened = await searchOnce(app, "rate limiting api client", { project: "*", defaultProject: "app", semantic: false, maxResults: 10 });
+      expect(widened.projectScope.source).toBe("all");
+      expect(widened.results.map((r) => r.provenance.sessionId)).toContain("sess-other");
+
+      const filtered = await runEval(app, golden, "lexical", { projectScope: "filter" });
+      for (const r of filtered.queryResults) {
+        expect(r.topSessionIds.every((id) => id !== "sess-other")).toBe(true);
+      }
     } finally {
       closeApp(app);
       if (saved === undefined) delete process.env.CONTEXT_GATEWAY_STATE;

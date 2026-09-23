@@ -106,6 +106,46 @@ requests are accepted from any Host. `--announce` (mDNS `_context-gateway._tcp`)
 requires a non-loopback bind, since a loopback-only gateway is unreachable anyway.
 Remotes added with `remotes-add --token` send their token on every federated query.
 
+## Project scope
+
+By default a search runs in **the project the agent is working in**, across
+every harness. Measured on real agent history (friends' Claude Code and Codex
+sessions; "does search find the earlier session that already did this work?"),
+scoping is the largest single gain in the pipeline:
+
+| NDCG@5 | Keyword | Hybrid | Hybrid + Jev |
+|---|---:|---:|---:|
+| All projects (previous default), 14 queries | 0.225 | 0.327 | 0.447 |
+| Caller's project, 14 queries | 0.723 | 0.726 | **0.781** |
+| All projects, 27 queries | 0.196 | 0.259 | 0.324 |
+| Caller's project, 27 queries | 0.569 | 0.574 | **0.616** |
+
+An in-project request ("is the app finished?") is unanswerable across every
+project at once. The labels are same-project by construction, so these numbers
+cannot show what scoping costs a cross-project ask; use `"*"` for those.
+
+- **Which project:** the name of the git repo around the MCP server's or CLI's
+  working directory (harnesses start stdio MCP servers in the agent's
+  directory), or the directory's own name outside a repo. Nothing in the home
+  directory or at `/`.
+- **Across harnesses and machines:** matched by folder name, ignoring case and
+  punctuation, so a repo that is `-Users-alice-dev-app` to Claude Code, `app`
+  to Codex and `App 2` on another machine counts once as long as the names
+  agree. An exact `projectId` still matches.
+- **Widening:** `project: "*"` (MCP, HTTP) or `--all-projects` (CLI) searches
+  everything. An explicit `project` always wins.
+- **No history yet:** if the caller's project has no sessions, search falls back
+  to all projects rather than returning nothing.
+- **Not applied** to topology scopes (`parent`, `children`, `siblings`, `auto`),
+  whose linked sessions may span projects, or to HTTP callers that do not send
+  `defaultProject` (a shared daemon cannot see its caller's directory).
+
+Every search and decide response carries `projectScope`
+(`{project, source: "explicit" | "caller" | "all"}`), so an agent can see how its
+results were scoped and widen them. `preferProject` is a softer mode (also
+search the rest, boost the project); it currently loses to the filter because
+the Jev reranker does not know the caller's project.
+
 ## Decisions
 
 Why-questions go to `decide` (`context.decide`, `GET /decide`), not search:
@@ -273,6 +313,12 @@ npm run sweep -- sweeps/example.json
   68 golden queries in `tests/eval/golden-fixture.json`), SWE-Gym-style
   trajectories, and BEIR datasets (`src/eval/beir.ts`) — corpora nobody here
   wrote, to check that constants tuned on the fixture hold up.
+- **Real history.** `scripts/mine-pairs.ts` mines "did an earlier agent already
+  do this?" pairs from raw Claude Code and Codex histories: a session's opening
+  request is the query, and earlier same-project sessions that edited the same
+  files are the answers, each query seeing only history from before it began.
+  `npm run eval -- --real <root> [--project-scope none|filter|prefer]` measures
+  them. Keep `<root>` outside the repo: it holds real requests.
 - **Arms.** `--mode` takes a comma-separated list and runs every arm in one
   process against one index, since BM25 statistics drift between processes.
   Arms: `lexical`, `hybrid` (`rrf`), `lexical-jev`, `jev`, `lexical-jev-pairwise`,

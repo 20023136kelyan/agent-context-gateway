@@ -35,7 +35,15 @@ export interface GoldenQuery {
    * only find what existed then — never its own session or later ones.
    */
   asOf?: string;
+  /** The project the query was asked from, for --project-scope runs. */
+  project?: string;
 }
+
+/**
+ * How a query's `project` is applied: not at all (global search, today's
+ * default), as a hard filter, or as a soft preference (SearchOptions).
+ */
+export type ProjectScope = "none" | "filter" | "prefer";
 
 export interface QueryEvalResult {
   id: string;
@@ -226,7 +234,7 @@ export async function runEval(
   app: GatewayApp,
   queries: GoldenQuery[],
   mode: EvalMode | EvalArm,
-  opts: { asOf?: string } = {},
+  opts: { asOf?: string; projectScope?: ProjectScope } = {},
 ): Promise<EvalRunResult> {
   const queryResults: QueryEvalResult[] = [];
   const arm: EvalArm = typeof mode === "string" ? armFor(mode) : mode;
@@ -242,10 +250,14 @@ export async function runEval(
   for (const [idx, q] of queries.entries()) {
     const t0 = Date.now();
     process.stderr.write(`[eval ${idx + 1}/${queries.length}] ${q.id}: ${q.query.slice(0, 35)}... `);
+    const scoped = q.project && opts.projectScope === "filter" ? { project: q.project }
+      : q.project && opts.projectScope === "prefer" ? { preferProject: q.project }
+      : {};
     const res = await searchOnce(app, q.query, {
       harness: q.harness,
       maxResults: 5,
       asOf: q.asOf ?? asOf,
+      ...scoped,
       ...modeOpts,
     });
     const latencyMs = Date.now() - t0;

@@ -42,7 +42,7 @@ export interface VectorBackend {
     vector: number[],
     engine: EmbeddingEngine,
     limit?: number,
-    filter?: { harness?: string; projectId?: string; sessionId?: string; maxTimestampMs?: number },
+    filter?: { harness?: string; projectId?: string; sessionId?: string; sessionIds?: string[]; maxTimestampMs?: number },
   ): Promise<VectorHit[]>;
   close(): Promise<void>;
 }
@@ -200,7 +200,7 @@ export class VectorStore implements VectorBackend {
     vector: number[],
     engine: EmbeddingEngine,
     limit = 50,
-    filter?: { harness?: string; projectId?: string; sessionId?: string; maxTimestampMs?: number },
+    filter?: { harness?: string; projectId?: string; sessionId?: string; sessionIds?: string[]; maxTimestampMs?: number },
   ): Promise<VectorHit[]> {
     // Keyed by engine, never by vector.length: the query vector must be compared
     // against the table the SAME engine wrote, not merely one of equal width.
@@ -213,6 +213,10 @@ export class VectorStore implements VectorBackend {
     if (filter?.harness) preds.push(`harness = ${esc(filter.harness)}`);
     if (filter?.projectId) preds.push(`projectId = ${esc(filter.projectId)}`);
     if (filter?.sessionId) preds.push(`sessionId = ${esc(filter.sessionId)}`);
+    if (filter?.sessionIds) {
+      if (filter.sessionIds.length === 0) return [];
+      preds.push(`sessionId IN (${filter.sessionIds.map(esc).join(", ")})`);
+    }
     // Same bound as the lexical side: KNN returns its top-K from the whole
     // store, so without this a pinned query spends candidate slots on turns it
     // will discard, and the surviving pool shrinks as the corpus grows.

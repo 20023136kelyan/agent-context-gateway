@@ -23,6 +23,13 @@ export interface IndexFilter {
   projectId?: string;
   repo?: string;
   sessionId?: string;
+  /**
+   * Restrict to these sessions. How cross-harness `project` scoping reaches the
+   * backend: projects are matched per session at query time (core/project.ts),
+   * then passed down as ids, so `limit` selects inside the project rather than
+   * spending candidate slots on other projects. An empty array matches nothing.
+   */
+  sessionIds?: string[];
   limit?: number;
   /**
    * Inclusive upper bound (epoch ms) on a turn's timestamp. Applied inside the

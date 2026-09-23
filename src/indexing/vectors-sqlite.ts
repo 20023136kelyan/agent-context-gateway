@@ -179,7 +179,7 @@ export class SqliteVectorStore {
     vector: number[],
     engine: EmbeddingEngine,
     limit = 50,
-    filter?: { harness?: string; projectId?: string; sessionId?: string; maxTimestampMs?: number },
+    filter?: { harness?: string; projectId?: string; sessionId?: string; sessionIds?: string[]; maxTimestampMs?: number },
   ): Promise<VectorHit[]> {
     // Keyed by engine, never by vector.length: a query vector is only
     // comparable against the table the SAME engine wrote.
@@ -191,6 +191,12 @@ export class SqliteVectorStore {
     if (filter?.harness) { preds.push("harness = ?"); args.push(filter.harness); }
     if (filter?.projectId) { preds.push("projectId = ?"); args.push(filter.projectId); }
     if (filter?.sessionId) { preds.push("sessionId = ?"); args.push(filter.sessionId); }
+    if (filter?.sessionIds) {
+      if (filter.sessionIds.length === 0) return [];
+      // vec0 (0.1.9) accepts IN on metadata columns inside the KNN query.
+      preds.push(`sessionId IN (${filter.sessionIds.map(() => "?").join(",")})`);
+      args.push(...filter.sessionIds);
+    }
     // Same bound as the lexical side, and inside the query rather than after
     // it: KNN returns its top-k from the whole table, so a post-filter would
     // spend candidate slots on rows it then discards.

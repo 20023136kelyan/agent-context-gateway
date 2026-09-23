@@ -14,6 +14,7 @@ import type { FeedbackStore } from "../feedback/store.js";
 import { routeAutoScope } from "../topology/store.js";
 import { embedQueryResolved, embedMeter } from "../embeddings/provider.js";
 import { parseTurnId } from "../core/id.js";
+import { inProject } from "../core/project.js";
 import { normalizeQuery, type NormalizedQuery } from "./query.js";
 import { finalScore, rrfBaseScore } from "./rank.js";
 import { extractArtifacts } from "../adapters/text.js";
@@ -23,7 +24,19 @@ import type { TemporalStore, InvalidationRecord } from "../temporal/bi-temporal.
 import type { AclStore } from "../security/acl.js";
 
 export interface SearchOptions {
+  /**
+   * Hard project scope. Matches across harnesses by key (core/project.ts): the
+   * session's repo or working-directory folder name, ignoring case and
+   * punctuation, or its exact projectId.
+   */
   project?: string;
+  /**
+   * Soft project scope: search everything, but also retrieve inside this
+   * project, rank each hit by its better position of the two, and boost
+   * in-project hits. A vague in-project ask ("is the app finished?") finds its
+   * project; a strong hit elsewhere can still win. Ignored when `project` is set.
+   */
+  preferProject?: string;
   /** Git repo root filter (precise project identity, spec §28). */
   repo?: string;
   harness?: Harness;
@@ -164,6 +177,13 @@ export class SearchService {
     return { map, cached: false };
   }
 
+  /** Does any known session belong to `project` (matched as in core/project.ts)? */
+  async hasProject(project: string): Promise<boolean> {
+    const { map } = await this.sessionMap();
+    for (const s of map.values()) if (inProject(s, project)) return true;
+    return false;
+  }
+
   /** Install the reranker used when a request passes `rerank` (app factory, tests). */
   setReranker(reranker: Reranker): void {
     this.reranker = reranker;
@@ -239,9 +259,15 @@ export class SearchService {
     // asOf bounds the candidate pool inside both backends — lexical and vector —
     // instead of filtering afterwards, so `limit` selects from the pinned corpus.
     // The post-filter further down stays as a guard against stale stored docs.
+    // Projects resolve to session ids here, from the session map, because
+    // project names differ by harness (see core/project.ts). Passing ids down
+    // keeps `limit` selecting inside the project.
+    const sessionsIn = (project: string) =>
+      [...sessions.values()].filter((s) => inProject(s, project)).map((s) => s.id);
+    const preferIds = !opts.project && opts.preferProject ? sessionsIn(opts.preferProject) : null;
     const baseFilters = {
       harness: opts.harness,
-      projectId: opts.project,
+      sessionIds: opts.project ? sessionsIn(opts.project) : undefined,
       repo: opts.repo,
       maxTimestampMs: asOf ? Date.parse(asOf) : undefined,
     };
@@ -254,6 +280,13 @@ export class SearchService {
           lexRanks.set(h.turnId, hits.length); // 1-indexed rank
         }
       }
+    };
+    /** A second ranked list (the preferred project's): a hit keeps its better rank. */
+    const pushRanked = (hs: IndexSearchHit[]) => {
+      hs.forEach((h, i) => {
+        if (!hits.some((x) => x.turnId === h.turnId)) hits.push(h);
+        lexRanks.set(h.turnId, Math.min(lexRanks.get(h.turnId) ?? Infinity, i + 1));
+      });
     };
     if (scopeSessions) {
       // Fan out per linked session (usually a handful).
@@ -270,6 +303,9 @@ export class SearchService {
         if (vNq.indexQuery && vNq.indexQuery !== nq.indexQuery) {
           pushHits(this.index.search(vNq.indexQuery, { ...baseFilters, sessionId: opts.sessionId, limit: Math.floor(limit / 2) }));
         }
+      }
+      if (preferIds && preferIds.length > 0) {
+        pushRanked(this.index.search(nq.indexQuery, { ...baseFilters, sessionIds: preferIds, sessionId: opts.sessionId, limit }));
       }
     }
 
@@ -334,17 +370,29 @@ export class SearchService {
             vhits = await this.vectors.nearest(qv, engine, limit, { ...baseFilters, sessionId: opts.sessionId });
           }
         }
+        // The preferred project's own nearest neighbours, as a second ranked
+        // list: a hit keeps its better rank (and best similarity) of the two.
+        let preferred: { turnId: string; similarity: number }[] = [];
+        if (resolved && preferIds && preferIds.length > 0 && !scopeSessions) {
+          preferred = (
+            await this.vectors.nearest(resolved.vector, resolved.engine, limit, {
+              ...baseFilters,
+              sessionIds: preferIds,
+              sessionId: opts.sessionId,
+            })
+          ).filter((h) => h.similarity >= MIN_VECTOR_SIM);
+        }
         // Filter out low-similarity noise
         const qualified = vhits.filter((h) => h.similarity >= MIN_VECTOR_SIM);
-        if (qualified.length > 0) {
+        if (qualified.length > 0 || preferred.length > 0) {
           hasVectors = true;
-          qualified.forEach((h, idx) => {
-            if (!vecRanks.has(h.turnId)) {
-              vecRanks.set(h.turnId, idx + 1); // 1-indexed rank
-              vecSim.set(h.turnId, h.similarity);
-            }
-            if (!hits.some((x) => x.turnId === h.turnId)) hits.push({ turnId: h.turnId, score: 0 });
-          });
+          for (const list of [qualified, preferred]) {
+            list.forEach((h, idx) => {
+              vecRanks.set(h.turnId, Math.min(vecRanks.get(h.turnId) ?? Infinity, idx + 1)); // 1-indexed rank
+              vecSim.set(h.turnId, Math.max(vecSim.get(h.turnId) ?? 0, h.similarity));
+              if (!hits.some((x) => x.turnId === h.turnId)) hits.push({ turnId: h.turnId, score: 0 });
+            });
+          }
         }
       } catch {
         // embedding backend down — lexical results stand alone
@@ -375,7 +423,7 @@ export class SearchService {
       if (opts.harness && parsed.harness !== opts.harness) continue;
       const session = sessions.get(`${parsed.harness}:${parsed.sessionId}`);
       if (!session) continue;
-      if (opts.project && session.projectId !== opts.project) continue;
+      if (opts.project && !inProject(session, opts.project)) continue;
       if (opts.repo && session.repo !== opts.repo) continue;
       // Resource-level ACL enforcement: zero unauthorized candidate leakage (IEEE 2025)
       if (this.acl && !this.acl.canAccess(opts.callerPrincipal, session)) continue;
@@ -401,7 +449,9 @@ export class SearchService {
         const rrf = rrfBaseScore(lexRank, vecRank, vecSim.get(hit.turnId));
         score = finalScore(
           rrf,
-          opts.project ? session.projectId === opts.project : true,
+          // Hard scope: everything left is in the project. Soft: only in-project
+          // hits earn the boost. Neither: every hit gets it, so it cancels out.
+          opts.project ? true : opts.preferProject ? inProject(session, opts.preferProject) : true,
           stored.timestamp,
           nq,
           stored.content,

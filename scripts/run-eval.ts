@@ -101,6 +101,11 @@ async function main() {
   const beirDomain = argValue(args, "--beir-domain") as "code" | "prose" | "paraphrase" | undefined;
   // --real <root>: mined real-history pairs (scripts/mine-pairs.ts).
   const realRoot = argValue(args, "--real");
+  // How each query's recorded project is applied (none = global search).
+  const projectScope = (argValue(args, "--project-scope") ?? "none") as "none" | "filter" | "prefer";
+  if (!["none", "filter", "prefer"].includes(projectScope)) {
+    throw new Error(`bad --project-scope "${projectScope}" (want none|filter|prefer)`);
+  }
   if ([beirDir, useFixture, realRoot].filter(Boolean).length > 1) {
     throw new Error("--fixture, --beir and --real are different corpora; pass one");
   }
@@ -224,13 +229,13 @@ async function main() {
     );
   console.log(
     `Loaded ${queries.length} golden queries${goldenPath ? ` from ${goldenPath}` : ""}. ` +
-      `Arms: ${modes.join(", ")}${asOf ? ` as of ${asOf}` : ""}...`,
+      `Arms: ${modes.join(", ")}${asOf ? ` as of ${asOf}` : ""}, project scope: ${projectScope}...`,
   );
 
   const runs: EvalRunResult[] = [];
   try {
     for (const mode of modes) {
-      const result = await runEval(app, queries, mode, { asOf });
+      const result = await runEval(app, queries, mode, { asOf, projectScope });
       runs.push(result);
       console.log("\n" + formatMarkdownTable(result) + "\n");
     }

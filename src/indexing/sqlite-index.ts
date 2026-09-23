@@ -174,6 +174,11 @@ export class SqliteIndex implements SearchIndex {
       filters.push("d.sessionId=?");
       params.push(opts.sessionId);
     }
+    if (opts?.sessionIds) {
+      if (opts.sessionIds.length === 0) return [];
+      filters.push(`d.sessionId IN (${opts.sessionIds.map(() => "?").join(",")})`);
+      params.push(...opts.sessionIds);
+    }
     // Bounds the corpus before LIMIT, so an asOf query keeps its recall.
     if (opts?.maxTimestampMs !== undefined) {
       filters.push("d.timestampMs<=?");

@@ -249,6 +249,10 @@ export class TantivyIndex implements SearchIndex {
     if (opts?.repo) clauses.push({ occur: Occur.Must, query: Query.termQuery(schema(), "repo", opts.repo) });
     if (opts?.sessionId)
       clauses.push({ occur: Occur.Must, query: Query.termQuery(schema(), "sessionId", opts.sessionId) });
+    if (opts?.sessionIds) {
+      if (opts.sessionIds.length === 0) return [];
+      clauses.push({ occur: Occur.Must, query: Query.termSetQuery(schema(), "sessionId", opts.sessionIds) });
+    }
     if (opts?.maxTimestampMs !== undefined) {
       // Bounds the corpus before `limit` rather than after, so an asOf query
       // does not lose recall to newer turns taking candidate slots.
