@@ -2,16 +2,21 @@
 /** CLI transport — `gateway <command>`. Human/debug interface; agents use MCP/HTTP. */
 import { rerankDefaultOn } from "./search/reranker.js";
 import { Command } from "commander";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createApp, closeApp, type GatewayApp } from "./app.js";
 import { dumpConfig } from "./settings.js";
 import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, recordFeedback, getSession, getTurn, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "./commands.js";
 import { addRemote, removeRemote, loadRemotes } from "./remotes.js";
 import { callerProject } from "./adapters/repo.js";
+import { loadUserEnv } from "./env.js";
+
+// Installed runs load this in bin.ts first; a checkout (tsx) loads it here.
+loadUserEnv();
 import { readServeInfo, probeServer, remoteCall, connectHost, HttpError } from "./remote.js";
 
 const program = new Command();
-program.name("gateway").description("Agent Context Gateway — federated search over native agent histories");
+program.name("acg").description("Agent Context Gateway — federated search over native agent histories");
 program.option("--index-dir <dir>", "index directory (default ~/.context-gateway/index-tantivy)");
 program.option("--backend <name>", "tantivy (default) or sqlite");
 program.option("--state-dir <dir>", "base for derived state (default CONTEXT_GATEWAY_STATE or ~/.context-gateway)");
@@ -590,7 +595,11 @@ program
     done(`histories: ${found.map((s) => s.kind).join(", ")}`);
 
     // 2. Keys (append-only; existing values never shown or overwritten).
-    const envPath = join(process.cwd(), ".env");
+    // One stable home for keys, wherever init runs from: <state dir>/.env,
+    // owner-only, loaded by the CLI itself (src/env.ts).
+    const { userEnvPath, prepareUserEnv } = await import("./env.js");
+    const envPath = userEnvPath();
+    prepareUserEnv(envPath);
     const keys = keyStatus();
     const missing = Object.entries(keys)
       .filter(([, v]) => !v)
@@ -601,6 +610,7 @@ program
       if (v) fresh[k] = v;
     }
     const added = appendEnvKeys(envPath, fresh);
+    prepareUserEnv(envPath);
     // Reload what we just wrote so this process resolves engines correctly.
     for (const k of added) process.env[k] = fresh[k];
 
@@ -627,7 +637,7 @@ program
 
     // 5. SessionEnd hook.
     if (cmdOpts.hooks) {
-      const hook = installClaudeHook(undefined, process.cwd(), { proactive: Boolean(cmdOpts.proactive) });
+      const hook = installClaudeHook(undefined, hookLauncher(), { proactive: Boolean(cmdOpts.proactive) });
       done(`hook: ${hook.installed ? `installed${hook.backupPath ? ` (backup ${hook.backupPath})` : ""}` : "already present"}`);
     } else {
       done("hook: skipped");
@@ -723,6 +733,19 @@ program
  */
 function projectArgs(cmdOpts: { project?: string; allProjects?: boolean }) {
   return { project: cmdOpts.allProjects ? "*" : cmdOpts.project, defaultProject: callerProject() ?? undefined };
+}
+
+/**
+ * The command a hook runs to reach this CLI. From a checkout (running as .ts
+ * under tsx): gateway.sh, which loads the repo .env and resolves tsx itself.
+ * Installed (compiled .js): this Node binary on the package's bin.js, by
+ * absolute path, so hooks work from any project without PATH or nvm.
+ */
+function hookLauncher(): string {
+  const here = fileURLToPath(import.meta.url);
+  if (here.endsWith(".ts")) return `"${join(dirname(dirname(here)), "gateway.sh")}"`;
+  // node:sqlite prints an ExperimentalWarning on every run; keep hook output clean.
+  return `"${process.execPath}" --disable-warning=ExperimentalWarning "${join(dirname(here), "bin.js")}"`;
 }
 
 /** One line saying which project a search ran in, and how to widen it. */

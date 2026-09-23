@@ -76,17 +76,19 @@ export interface HookInstall {
  * brought up to date in place, never duplicated. A timestamped backup
  * precedes every write.
  *
- * Commands go through gateway.sh, which loads .env and resolves tsx from the
- * gateway. The previous `node --import tsx cli.ts` form resolved tsx from the
- * hook's working directory, the user's project, so it failed in every project
- * but this repo, and it never loaded the API keys.
+ * Commands go through a launcher (cli.ts hookLauncher): gateway.sh from a
+ * checkout, or this Node binary on the installed bin.js. The previous
+ * `node --import tsx cli.ts` form resolved tsx from the hook's working
+ * directory, the user's project, so it failed in every project but this repo,
+ * and it never loaded the API keys.
  */
 export const HOOK_MARKER = "context-gateway-sync-session";
 export const PROACTIVE_MARKER = "context-gateway-proactive";
 
 export function installClaudeHook(
   settingsPath = join(homedir(), ".claude", "settings.json"),
-  gatewayDir: string,
+  /** How a hook reaches the CLI, already quoted: gateway.sh, or node + bin.js. */
+  launcher: string,
   opts: { proactive?: boolean } = {},
 ): HookInstall {
   let settings: Record<string, unknown> = {};
@@ -96,7 +98,7 @@ export function installClaudeHook(
   } catch {
     settings = {};
   }
-  const gateway = `"${join(gatewayDir, "gateway.sh")}"`;
+  const gateway = launcher;
   const wanted: { event: string; marker: string; entry: Record<string, unknown> }[] = [
     {
       event: "SessionEnd",

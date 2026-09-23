@@ -14,4 +14,5 @@ GATEWAY_DIR="$(cd "$(dirname "$0")" && pwd)"
 TSX_LOADER="$(cd "$GATEWAY_DIR" && node --input-type=module -e "console.log(import.meta.resolve('tsx'))")"
 # --env-file-if-exists so launchd and hooks pick up .env too; they get none of
 # the interactive shell's environment.
-exec node --env-file-if-exists="$GATEWAY_DIR/.env" --import "$TSX_LOADER" "$GATEWAY_DIR/src/cli.ts" "$@"
+# node:sqlite prints an ExperimentalWarning on every run; keep hook output clean.
+exec node --disable-warning=ExperimentalWarning --env-file-if-exists="$GATEWAY_DIR/.env" --import "$TSX_LOADER" "$GATEWAY_DIR/src/cli.ts" "$@"

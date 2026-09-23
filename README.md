@@ -27,27 +27,33 @@ Fixture corpus: [`FIXTURE_CORPUS_BRIEF.md`](./FIXTURE_CORPUS_BRIEF.md).
 
 ## Quickstart
 
+Requires Node.js 22.13 or later (for `node:sqlite`).
+
 ```bash
-npm install
-cp .env.example .env          # optional: VOYAGE_API_KEY, TYPESAFE_API_KEY
-npx tsx src/cli.ts init       # detects histories, sets keys, syncs, backfills, installs hooks, verifies
-npx tsx src/cli.ts search "What did Codex decide about collaboration?"
-npx tsx src/cli.ts health
-npx tsx src/cli.ts doctor     # histories, keys, index, vectors, models in one report
-npx tsx src/cli.ts models     # locked stack vs what resolves here, availability, prices
-npx tsx src/cli.ts config     # effective tunables (flag > env > settings.json > default)
-npx tsx src/cli.ts stats      # shape-only usage aggregates (never content)
+npm install -g agent-context-gateway
+acg init                      # detects histories, asks for keys, syncs, backfills, installs hooks, verifies
+acg search "What did Codex decide about collaboration?"
+acg actions --file src/api/client.ts
+acg doctor                    # histories, keys, index, vectors, models in one report
+acg models                    # locked stack vs what resolves here, availability, prices
+acg config                    # effective tunables (flag > env > settings.json > default)
+acg stats                     # shape-only usage aggregates (never content)
 ```
 
 No key is required. Without keys the gateway runs lexical-only: no vectors, no
-reranking, and decision verdicts stay labelled as heuristic candidates.
-`npm run dev -- <command>` is the same CLI with `.env` loaded.
+reranking, and decision verdicts stay labelled as heuristic candidates. `init`
+stores keys in `~/.context-gateway/.env` (readable only by you), which `acg`
+loads on every run; variables exported in your shell take precedence.
+
+From a checkout, `./gateway.sh <command>` (or `npm run dev -- <command>`) is the
+same CLI running from source; it also loads the repo's `.env`. Everywhere below,
+`acg` can be replaced by `./gateway.sh`.
 
 HTTP (loopback) and MCP:
 
 ```bash
-npx tsx src/cli.ts serve --port 3000   # http://127.0.0.1:3000/{health,sources,sessions,search,sync}
-npx tsx src/cli.ts mcp                # stdio MCP server: context.search, context.get_turn, …
+acg serve --port 3000   # http://127.0.0.1:3000/{health,sources,sessions,search,sync}
+acg mcp                # stdio MCP server: context.search, context.get_turn, …
 ```
 
 ## The model stack
@@ -98,7 +104,7 @@ which is the local-first case. Two things protect that surface:
 Serving other machines is opt-in and needs a token:
 
 ```bash
-GATEWAY_TOKEN=$(openssl rand -hex 32) npx tsx src/cli.ts serve --host 0.0.0.0 --announce
+GATEWAY_TOKEN=$(openssl rand -hex 32) acg serve --host 0.0.0.0 --announce
 ```
 
 `--host` refuses any non-loopback address without `GATEWAY_TOKEN`; token-bearing
@@ -154,8 +160,8 @@ instead, so those live in a separate index: every file an agent edited and every
 command it ran, with the session, the time, and the turn to open for context.
 
 ```bash
-npx tsx src/cli.ts actions --file client.ts          # which sessions edited it (path tail matches)
-npx tsx src/cli.ts actions --command "db:migrate"    # which sessions ran it
+acg actions --file client.ts          # which sessions edited it (path tail matches)
+acg actions --command "db:migrate"    # which sessions ran it
 ```
 
 MCP `context.find_actions`, HTTP `GET /actions?file=&command=`. Scoped like
@@ -186,7 +192,7 @@ Open one with context.get_context(harness, sessionId, turnId) if it is useful; i
 ```
 
 ```bash
-npx tsx src/cli.ts init --proactive     # installs the hook next to the SessionEnd sync hook
+acg init --proactive     # installs the hook next to the SessionEnd sync hook
 ```
 
 For each prompt it skips slash commands and acknowledgements, retrieves a few
@@ -212,7 +218,7 @@ and Jev (the gate). Median cost is about a second per prompt, with a slow tail.
 Why-questions go to `decide` (`context.decide`, `GET /decide`), not search:
 
 ```bash
-npx tsx src/cli.ts decide "Why did we reject Monaco?"
+acg decide "Why did we reject Monaco?"
 ```
 
 Two-stage architecture:
@@ -243,8 +249,8 @@ engine per run so a session cannot scatter across tables. Tables from the delete
 MLX/Ollama engines are ignored; backfill re-embeds under the live engine.
 
 ```bash
-npx tsx src/cli.ts backfill              # resumable; compacts and indexes ids when done
-npx tsx src/cli.ts search "…" --json     # add ?semantic=false (HTTP) or semantic:false (MCP) for lexical only
+acg backfill              # resumable; compacts and indexes ids when done
+acg search "…" --json     # add ?semantic=false (HTTP) or semantic:false (MCP) for lexical only
 ```
 
 Hybrid ranking fuses Tantivy BM25 and cosine similarity with RRF, plus
@@ -280,14 +286,14 @@ Three layers, fastest first:
 
 1. **Session-end hook (precise)** — sync exactly the session that just ended:
    ```bash
-   npx tsx src/cli.ts sync-session claude-code "$SESSION_ID" --embed
+   acg sync-session claude-code "$SESSION_ID" --embed
    ```
    Claude Code (`~/.claude/settings.json`) — hooks receive JSON on stdin,
    so extract `session_id` with `jq`. `init` installs this for you:
    ```json
    { "hooks": { "SessionEnd": [{
      "hooks": [{ "type": "command",
-       "command": "SID=$(jq -r .session_id); node --import tsx \"/path/to/ACG/src/cli.ts\" sync-session claude-code \"$SID\"" }]
+       "command": "SID=$(jq -r .session_id); acg sync-session claude-code \"$SID\"" }]
    }] } }
    ```
 2. **Watch mode (catch-all)** — `serve --watch [--embed]` re-syncs seconds after any
@@ -297,7 +303,7 @@ Three layers, fastest first:
 Git commits can feed the artifact graph too:
 
 ```bash
-npx tsx src/cli.ts git-hooks install --repo /path/to/repo
+acg git-hooks install --repo /path/to/repo
 ```
 
 The hook posts url-encoded fields (multi-line messages, quotes and backslashes
@@ -312,7 +318,7 @@ launchd (`launchd/com.context-gateway.serve.plist`) and hooks.
 Register interest in a query and get matching *new* turns pushed:
 
 ```bash
-npx tsx src/cli.ts subscribe "narwhal migration" --webhook http://127.0.0.1:9000/notify
+acg subscribe "narwhal migration" --webhook http://127.0.0.1:9000/notify
 ```
 
 Every sync (watcher, `POST /sync`, `sync-session`, git events) checks turns that are
@@ -329,7 +335,7 @@ index; only concurrent *writes* contend):
 
 ```bash
 # MCP Inspector (zero config):
-npx @modelcontextprotocol/inspector node --import tsx src/cli.ts mcp
+npx @modelcontextprotocol/inspector acg mcp
 ```
 
 opencode (`~/.config/opencode/opencode.json`):
@@ -337,11 +343,15 @@ opencode (`~/.config/opencode/opencode.json`):
 ```json
 { "mcp": { "context-gateway": {
   "type": "local",
-  "command": ["node", "--import", "tsx", "/path/to/ACG/src/cli.ts", "mcp"]
+  "command": ["acg", "mcp"]
 } } }
 ```
 
-Claude Code: `claude mcp add context-gateway -- node --import tsx /path/to/ACG/src/cli.ts mcp`.
+Claude Code: `claude mcp add context-gateway -- acg mcp`.
+
+Harnesses start MCP servers in the agent's project directory. From a checkout, use
+`/path/to/ACG/gateway.sh mcp`, not `node --import tsx …/src/cli.ts mcp`: Node
+resolves `--import tsx` from the working directory, where tsx is not installed.
 Tools: `context.search`, `context.decide`, `context.find_actions`, `context.get_session`, `context.get_turn`,
 `context.get_context`, `context.get_topology`, `context.explore_lineage`,
 `context.get_related`, `context.traverse_artifacts`, `context.get_invalidations`,
@@ -460,6 +470,10 @@ src/app.ts          shared singleton factory + write locks
 src/commands.ts     transport-agnostic logic
 src/setup.ts        onboarding primitives behind `init`
 src/cli.ts          auto-delegating CLI
+src/bin.ts          installed entry (`acg`): loads ~/.context-gateway/.env, then the CLI
+src/env.ts          the user's .env in the state dir
+src/proactive.ts    proactive context for the UserPromptSubmit hook
+src/actions/        action index (store.ts)
 src/remote.ts       port file, probe, loop-guard federation client
 src/remotes.ts      remotes.json (0600) + read-only fan-out
 src/watch.ts        fs watcher for serve --watch

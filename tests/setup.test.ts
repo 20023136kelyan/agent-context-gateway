@@ -41,10 +41,10 @@ describe("setup", () => {
     const root = mkdtempSync(join(tmpdir(), "acg-setup-"));
     const p = join(root, "settings.json");
     writeFileSync(p, JSON.stringify({ hooks: { SessionEnd: [] }, other: 1 }));
-    const first = installClaudeHook(p, "/x/gw");
+    const first = installClaudeHook(p, '"/x/gw/gateway.sh"');
     expect(first.installed).toBe(true);
     expect(first.backupPath).toContain("pre-gateway-");
-    const second = installClaudeHook(p, "/x/gw");
+    const second = installClaudeHook(p, '"/x/gw/gateway.sh"');
     expect(second.installed).toBe(false);
     const body = JSON.parse(readFileSync(p, "utf8"));
     expect(body.other).toBe(1);
@@ -53,7 +53,7 @@ describe("setup", () => {
 
   it("runs hooks through gateway.sh, which loads .env and resolves tsx from the gateway", () => {
     const p = join(mkdtempSync(join(tmpdir(), "acg-setup-")), "settings.json");
-    installClaudeHook(p, "/x/gw");
+    installClaudeHook(p, '"/x/gw/gateway.sh"');
     const cmd = JSON.parse(readFileSync(p, "utf8")).hooks.SessionEnd[0].hooks[0].command as string;
     expect(cmd).toContain('"/x/gw/gateway.sh" sync-session claude-code');
     expect(cmd).not.toContain("--import tsx");
@@ -64,7 +64,7 @@ describe("setup", () => {
     const old = { hooks: [{ type: "command", command: `SID=$(jq -r .session_id); node --import tsx "/x/gw/src/cli.ts" sync-session claude-code "$SID" # ${HOOK_MARKER}` }] };
     const mine = { hooks: [{ type: "command", command: "echo my own hook" }] };
     writeFileSync(p, JSON.stringify({ hooks: { SessionEnd: [mine, old] } }));
-    expect(installClaudeHook(p, "/x/gw").installed).toBe(true);
+    expect(installClaudeHook(p, '"/x/gw/gateway.sh"').installed).toBe(true);
     const list = JSON.parse(readFileSync(p, "utf8")).hooks.SessionEnd as { hooks: { command: string }[] }[];
     expect(list).toHaveLength(2);
     expect(list[0]).toEqual(mine);
@@ -73,20 +73,20 @@ describe("setup", () => {
 
   it("adds the proactive prompt hook only when asked, with its own timeout", () => {
     const p = join(mkdtempSync(join(tmpdir(), "acg-setup-")), "settings.json");
-    installClaudeHook(p, "/x/gw");
+    installClaudeHook(p, '"/x/gw/gateway.sh"');
     expect(JSON.parse(readFileSync(p, "utf8")).hooks.UserPromptSubmit).toBeUndefined();
-    installClaudeHook(p, "/x/gw", { proactive: true });
+    installClaudeHook(p, '"/x/gw/gateway.sh"', { proactive: true });
     const entry = JSON.parse(readFileSync(p, "utf8")).hooks.UserPromptSubmit[0].hooks[0];
     expect(entry.command).toContain("hook-prompt");
     expect(entry.command).toContain(PROACTIVE_MARKER);
     expect(entry.timeout).toBe(15);
-    expect(installClaudeHook(p, "/x/gw", { proactive: true }).installed).toBe(false);
+    expect(installClaudeHook(p, '"/x/gw/gateway.sh"', { proactive: true }).installed).toBe(false);
   });
 
   it("creates settings from scratch when missing", () => {
     const root = mkdtempSync(join(tmpdir(), "acg-setup-"));
     const p = join(root, "sub", "settings.json");
-    const r = installClaudeHook(p, "/x/gw");
+    const r = installClaudeHook(p, '"/x/gw/gateway.sh"');
     expect(r.installed).toBe(true);
     expect(r.backupPath).toBeNull();
   });
