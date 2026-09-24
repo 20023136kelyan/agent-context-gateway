@@ -16,7 +16,11 @@ import { embedQueryResolved, embedMeter } from "../embeddings/provider.js";
 import { parseTurnId } from "../core/id.js";
 import { inProject } from "../core/project.js";
 import { normalizeQuery, type NormalizedQuery } from "./query.js";
+import { focusOn, queryTerms } from "./focus.js";
+export { focusOn, queryTerms } from "./focus.js";
 import { queryFacets } from "./facets.js";
+import { rankSessionsByFiles } from "./files.js";
+import type { ActionStore } from "../actions/store.js";
 import { finalScore, rrfBaseScore } from "./rank.js";
 import { extractArtifacts } from "../adapters/text.js";
 import { rewriteConversationalQuery, type RewrittenQuery } from "./rewriter.js";
@@ -53,6 +57,8 @@ export interface SearchOptions {
   rerank?: boolean;
   /** Also search a long prompt's facets (facets.ts). Default: the service's (settings.facets, off). */
   facets?: boolean;
+  /** Also rank sessions by the files they edited (files.ts). Default: the service's (settings.files, off). */
+  files?: boolean;
   /**
    * Pooled-judging mode (Jev-branch experiment): the RRF score still selects
    * the pool, but project/repo/recency boosts and model/upstream blending are
@@ -200,6 +206,18 @@ export class SearchService {
     this.reranker = reranker;
   }
 
+  private actions: ActionStore | null = null;
+  /** The action index, for prompt -> files -> sessions (files.ts). */
+  attachActions(store: ActionStore): void {
+    this.actions = store;
+  }
+
+  private filesDefault = false;
+  /** Whether a request that does not pass `files` also ranks sessions by the files they edited (settings.files). */
+  setFiles(on: boolean): void {
+    this.filesDefault = on;
+  }
+
   private facetsDefault = false;
   /** Whether a request that does not pass `facets` searches a long prompt's facets too (settings.facets). */
   setFacets(on: boolean): void {
@@ -331,6 +349,13 @@ export class SearchService {
           const fq = normalizeQuery(facet.text).indexQuery;
           if (fq && fq !== nq.indexQuery) pushRanked(this.index.search(fq, { ...baseFilters, sessionId: opts.sessionId, limit: Math.floor(limit / 2) }));
         }
+      }
+      // Sessions whose edited files match the prompt's words (files.ts), as
+      // one more ranked list: each contributes the turn that edited its best file.
+      if ((opts.files ?? this.filesDefault) && this.actions) {
+        const ids = opts.sessionId ? [opts.sessionId] : baseFilters.sessionIds;
+        const edits = this.actions.editedFiles({ sessionIds: ids, harness: opts.harness, until: asOf ?? undefined });
+        pushRanked(rankSessionsByFiles(rawQuery, edits, 10).map((m) => ({ turnId: m.turnId, score: 0 })));
       }
     }
 
@@ -662,33 +687,4 @@ export function fitWindow(turns: Turn[], centerId: string, maxTokens: number, te
   return turns.slice(lo, hi + 1);
 }
 
-/** The words of a query that focusOn looks for (index form, longer than 2 chars). */
-export function queryTerms(query: string): string[] {
-  return normalizeQuery(query).indexQuery.toLowerCase().split(" ").filter((t) => t.length > 2);
-}
 
-/** The maxChars stretch of text holding the most query-term occurrences; its start when none occur. */
-export function focusOn(text: string, terms: string[], maxChars: number): string {
-  if (text.length <= maxChars) return text;
-  const lower = text.toLowerCase();
-  const hits: number[] = [];
-  for (const t of terms) {
-    for (let i = lower.indexOf(t); i >= 0 && hits.length < 5000; i = lower.indexOf(t, i + t.length)) hits.push(i);
-  }
-  hits.sort((a, b) => a - b);
-  const span = maxChars - 2; // room for the two ellipses
-  const lead = Math.floor(span / 4); // text leading into the match stays
-  let best = 0;
-  let bestCount = 0;
-  for (let i = 0, k = 0; i < hits.length; i++) {
-    const from = Math.max(0, hits[i]! - lead);
-    if (k < i) k = i;
-    while (k < hits.length && hits[k]! < from + span) k++;
-    if (k - i > bestCount) {
-      bestCount = k - i;
-      best = from;
-    }
-  }
-  const from = Math.min(best, text.length - span);
-  return `${from > 0 ? "…" : ""}${text.slice(from, from + span)}${from + span < text.length ? "…" : ""}`;
-}

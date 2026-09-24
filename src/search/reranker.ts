@@ -41,6 +41,9 @@ import { HttpReranker, httpRerankerConfig } from "./rerank-http.js";
 import { jevAvailable } from "../judgments/jev.js";
 import { voyageAvailable } from "../embeddings/voyage.js";
 
+import { scrubText } from "../security/scrub.js";
+import { focusOn, queryTerms } from "./focus.js";
+
 import type { RerankerName } from "../components.js";
 export type { RerankerName } from "../components.js";
 
@@ -49,6 +52,21 @@ export type { RerankerName } from "../components.js";
  * vendor module owns the interface every reranker implements.
  */
 export const RERANK_CONTENT_CHARS = 1000;
+
+/**
+ * What a reranker reads of a candidate, scrubbed before it is cut (a cut can
+ * split a secret past recognition). GATEWAY_RERANK_INPUT=head reads the
+ * turn's first RERANK_CONTENT_CHARS; focus reads the stretch of that length
+ * holding the most query terms, as result windows do (search/focus.ts).
+ * GATEWAY_RERANK_CHARS changes the length. Read per call, so eval arms can
+ * differ per process.
+ */
+export function rerankText(content: string, query: string): string {
+  const text = scrubText(content);
+  const raw = Number(process.env.GATEWAY_RERANK_CHARS ?? RERANK_CONTENT_CHARS);
+  const chars = Number.isFinite(raw) && raw >= 200 && raw <= 32000 ? Math.floor(raw) : RERANK_CONTENT_CHARS;
+  return process.env.GATEWAY_RERANK_INPUT?.trim().toLowerCase() === "focus" ? focusOn(text, queryTerms(query), chars) : text.slice(0, chars);
+}
 
 /** Blend of model score and upstream retrieval score. */
 export const RERANK_MODEL_WEIGHT = 0.6;

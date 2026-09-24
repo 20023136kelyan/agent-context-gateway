@@ -69,6 +69,9 @@ describe("HTTP", () => {
     const turns = (await server.inject({ method: "GET", url })).json();
     expect(turns.map((t: { id: string }) => t.id)).toContain(turnId);
     expect(turns.reduce((n: number, t: { content: string }) => n + t.content.length, 0)).toBeLessThanOrEqual(400);
+    // Point in time: turns written after asOf stay hidden (the hit itself is kept).
+    const past = (await server.inject({ method: "GET", url: `${url}&asOf=2000-01-01T00:00:00Z` })).json();
+    expect(past.map((t: { id: string }) => t.id)).toEqual([turnId]);
     const full = (await server.inject({ method: "GET", url: "/search?q=collaboration%20workbench" })).json();
     expect(full.results[0].context.length).toBeGreaterThanOrEqual(1);
   });

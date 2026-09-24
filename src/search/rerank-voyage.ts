@@ -11,7 +11,7 @@
  * Degrades to retrieval order with neural:false, like the Jev reranker.
  */
 import {
-  RERANK_CONTENT_CHARS,
+  rerankText,
   RERANK_MODEL_WEIGHT,
   type RerankCandidate,
   type RerankResult,
@@ -78,8 +78,7 @@ export class VoyageReranker {
         body: JSON.stringify({
           model,
           query: scrubText(query),
-          // Scrub before truncating: a cut can split a secret past recognition.
-          documents: pool.map((c) => scrubText(c.content).slice(0, RERANK_CONTENT_CHARS)),
+          documents: pool.map((c) => rerankText(c.content, query)),
           top_k: pool.length,
           truncation: true,
         }),

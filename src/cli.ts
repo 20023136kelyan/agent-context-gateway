@@ -961,13 +961,13 @@ program
   .command("config")
   .description("Show effective tunable values (env > settings.json > defaults), or change one")
   .argument("[op]", "set | unset (omit to show)")
-  .argument("[name]", "reranker | rerank-default | facets | compact")
-  .argument("[value]", "reranker: jev|voyage|self-hosted|none; rerank-default, facets, compact: on|off")
+  .argument("[name]", "reranker | rerank-default | facets | compact | files")
+  .argument("[value]", "reranker: jev|voyage|self-hosted|none; rerank-default, facets, compact, files: on|off")
   .addHelpText(
     "after",
     `
 Saved in settings.json; an environment variable still wins (GATEWAY_RERANKER,
-GATEWAY_RERANK_DEFAULT, GATEWAY_FACETS, GATEWAY_COMPACT). Unset returns a value
+GATEWAY_RERANK_DEFAULT, GATEWAY_FACETS, GATEWAY_COMPACT, GATEWAY_FILES). Unset returns a value
 to its default.
 
   acg config set reranker self-hosted      rerank with the endpoint GATEWAY_RERANK_URL names
@@ -979,7 +979,7 @@ to its default.
   .action(async (op?: string, name?: string, value?: string) => {
     if (!op) return print(dumpConfig(), false);
     const { SETTABLE, setSetting } = await import("./settings.js");
-    const envFor = { reranker: "GATEWAY_RERANKER", "rerank-default": "GATEWAY_RERANK_DEFAULT", facets: "GATEWAY_FACETS", compact: "GATEWAY_COMPACT" } as const;
+    const envFor = { reranker: "GATEWAY_RERANKER", "rerank-default": "GATEWAY_RERANK_DEFAULT", facets: "GATEWAY_FACETS", compact: "GATEWAY_COMPACT", files: "GATEWAY_FILES" } as const;
     try {
       if ((op !== "set" && op !== "unset") || !name || !(name in SETTABLE)) {
         throw new Error(`usage: acg config [set <name> <value> | unset <name>], name one of ${Object.keys(SETTABLE).join(", ")}`);
@@ -989,7 +989,7 @@ to its default.
       setSetting(undefined, key, op === "set" ? value! : null);
       const after = resolveSettings();
       console.log(`${op === "set" ? `${name} = ${value}` : `${name} unset`} (saved in settings.json)`);
-      console.log(`now: reranker ${after.reranker ?? "auto"}, rerank by default ${after.rerankByDefault ?? "auto"}, facets ${after.facets ? "on" : "off"}, compact ${after.compact ? "on" : "off"}`);
+      console.log(`now: reranker ${after.reranker ?? "auto"}, rerank by default ${after.rerankByDefault ?? "auto"}, facets ${after.facets ? "on" : "off"}, compact ${after.compact ? "on" : "off"}, files ${after.files ? "on" : "off"}`);
       if (process.env[envFor[key]]) console.error(`note: ${envFor[key]} is set, and it overrides the saved value until it is unset`);
     } catch (e) {
       console.error(`acg config: ${(e as Error).message}`);

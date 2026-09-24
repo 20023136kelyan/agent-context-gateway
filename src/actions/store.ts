@@ -41,6 +41,16 @@ export interface StoredAction extends Action {
   rel: string;
 }
 
+export interface EditedFile {
+  harness: Harness;
+  sessionId: string;
+  /** Relative to the session's workspace when inside it. */
+  rel: string;
+  /** The latest turn that edited it. */
+  turnId: string;
+  ts: string;
+}
+
 export interface ActionQuery {
   /** A path or its tail: "client.ts" matches "src/api/client.ts". */
   file?: string;
@@ -264,6 +274,27 @@ export class ActionStore {
       harness: r.harness, sessionId: r.session_id, ts: r.ts, kind: r.kind, target: r.target, rel: r.rel, turnId: r.turn_id,
       ...(r.ok === null ? {} : { ok: r.ok === 1 }),
     }));
+  }
+
+  /**
+   * The files each session edited, one row per (session, file), with the
+   * latest turn that edited it. Scoped like find(): sessions, harness, and a
+   * point in time.
+   */
+  editedFiles(q: { sessionIds?: string[]; harness?: string; until?: string } = {}): EditedFile[] {
+    const all: { sql: string; args: string[] }[] = [{ sql: "kind = 'edit'", args: [] }];
+    if (q.sessionIds) {
+      if (q.sessionIds.length === 0) return [];
+      all.push({ sql: `session_id IN (${q.sessionIds.map(() => "?").join(",")})`, args: q.sessionIds });
+    }
+    if (q.harness) all.push({ sql: "harness = ?", args: [q.harness] });
+    if (q.until) all.push({ sql: "ts <= ?", args: [iso(q.until)] });
+    const rows = this.db
+      .prepare(
+        `SELECT harness, session_id, rel, turn_id, max(ts) AS ts FROM actions WHERE ${all.map((c) => `(${c.sql})`).join(" AND ")} GROUP BY harness, session_id, rel`,
+      )
+      .all(...all.flatMap((c) => c.args)) as { harness: Harness; session_id: string; rel: string; turn_id: string; ts: string }[];
+    return rows.map((r) => ({ harness: r.harness, sessionId: r.session_id, rel: r.rel, turnId: r.turn_id, ts: r.ts }));
   }
 
   close(): void {

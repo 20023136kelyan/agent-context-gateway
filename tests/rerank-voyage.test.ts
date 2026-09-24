@@ -52,6 +52,24 @@ describe("VoyageReranker", () => {
     expect(out.every((x) => !x.neural)).toBe(true);
   });
 
+  it("GATEWAY_RERANK_INPUT=focus sends the stretch matching the query, not the start", async () => {
+    const f = vi.fn(async () => ok([]));
+    vi.stubGlobal("fetch", f);
+    const content = "boilerplate setup. ".repeat(200) + "the reconnect backoff doubles with jitter. " + "tail. ".repeat(200);
+    process.env.GATEWAY_RERANK_INPUT = "focus";
+    try {
+      await new VoyageReranker().rerank("reconnect backoff jitter", [{ id: "x", content, score: 0.1 }]);
+    } finally {
+      delete process.env.GATEWAY_RERANK_INPUT;
+    }
+    const doc = JSON.parse((f.mock.calls[0][1] as { body: string }).body).documents[0] as string;
+    expect(doc.length).toBeLessThanOrEqual(RERANK_CONTENT_CHARS);
+    expect(doc).toContain("the reconnect backoff doubles with jitter.");
+    await new VoyageReranker().rerank("reconnect backoff jitter", [{ id: "x", content, score: 0.1 }]);
+    const head = JSON.parse((f.mock.calls[1][1] as { body: string }).body).documents[0] as string;
+    expect(head.startsWith("boilerplate setup.")).toBe(true);
+  });
+
   it("degrades on HTTP failure without metering", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("nope", { status: 429 })));
     const out = await new VoyageReranker().rerank("q", candidates);

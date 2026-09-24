@@ -57,6 +57,8 @@ export interface GatewaySettings {
    * GATEWAY_COMPACT=on|off beats the file.
    */
   readonly compact: boolean;
+  /** Prompt -> files -> sessions (search/files.ts). Default off; GATEWAY_FILES=on|off beats the file. */
+  readonly files: boolean;
   /** Extra Host header values accepted without a token; null = loopback only. */
   readonly allowedHosts: string[] | null;
   /**
@@ -88,6 +90,7 @@ interface SettingsFile {
   rerankByDefault?: boolean;
   facets?: boolean;
   compact?: boolean;
+  files?: boolean;
   allowedHosts?: string[];
   telemetry?: boolean;
   /** `acg paths`: where each harness's history lives, when not the default. */
@@ -180,6 +183,7 @@ export function resolveSettings(opts: SettingsOverrides = {}): GatewaySettings {
     rerankByDefault: onOff(process.env.GATEWAY_RERANK_DEFAULT) ?? file.rerankByDefault ?? null,
     facets: onOff(process.env.GATEWAY_FACETS) ?? file.facets ?? false,
     compact: onOff(process.env.GATEWAY_COMPACT) ?? file.compact ?? false,
+    files: onOff(process.env.GATEWAY_FILES) ?? file.files ?? false,
     allowedHosts,
     telemetry: telemetryEnabled(file.telemetry),
   };
@@ -199,6 +203,7 @@ export const SETTABLE = {
   "rerank-default": { key: "rerankByDefault", parse: (v: string) => onOff(v) ?? undefined, help: "on|off" },
   facets: { key: "facets", parse: (v: string) => onOff(v) ?? undefined, help: "on|off" },
   compact: { key: "compact", parse: (v: string) => onOff(v) ?? undefined, help: "on|off" },
+  files: { key: "files", parse: (v: string) => onOff(v) ?? undefined, help: "on|off" },
 } as const;
 export type SettableName = keyof typeof SETTABLE;
 
@@ -254,6 +259,7 @@ export function dumpConfig(): Record<string, unknown> {
     rerankByDefault: s.rerankByDefault,
     facets: s.facets,
     compact: s.compact,
+    files: s.files,
     judge,
     allowedHosts: s.allowedHosts,
     minVectorSim,

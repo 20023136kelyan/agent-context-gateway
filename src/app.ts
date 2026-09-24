@@ -150,6 +150,8 @@ export function createApp(opts: AppOptions = {}): GatewayApp {
     : resolveReranker();
   search.setReranker(rerankerImpl);
   search.setFacets(settings.facets);
+  search.setFiles(settings.files);
+  search.attachActions(actions);
   const rerankByDefault = rerankDefaultOn(reranker, settings);
   return {
     adapters, index, cursors, search, indexDir, backend, vectors: null, vectorBackend: null, reranker, rerankByDefault, settings, vectorDir, topology, feedback, temporal, acl, subscriptions, actions,

@@ -497,8 +497,9 @@ export async function getContext(
   sessionId: string,
   turnId: string,
   window = 3,
-  opts: { maxTokens?: number; query?: string } = {},
+  opts: { maxTokens?: number; query?: string; asOf?: string } = {},
 ) {
+  if (opts.asOf && Number.isNaN(Date.parse(opts.asOf))) throw new Error(`bad_request: invalid asOf "${opts.asOf}" (want an ISO timestamp)`);
   const a = adapterFor(app, harness);
   const turns = await a.listTurns(sessionId).catch(() => {
     throw new Error(`not_found: session "${sessionId}"`);
@@ -507,7 +508,9 @@ export async function getContext(
   if (idx < 0) throw new Error(`not_found: turn "${turnId}"`);
   // Same budget as a search result's window; the query picks the stretch kept
   // of a turn too long for it.
-  const slice = turns.slice(Math.max(0, idx - window), idx + window + 1);
+  // Point in time, like search: turns written after asOf stay hidden.
+  const until = opts.asOf ? Date.parse(opts.asOf) : Infinity;
+  const slice = turns.slice(Math.max(0, idx - window), idx + window + 1).filter((t) => t.id === turnId || Date.parse(t.timestamp) <= until);
   return fitWindow(slice, turnId, opts.maxTokens ?? 2000, opts.query ? queryTerms(opts.query) : []);
 }
 

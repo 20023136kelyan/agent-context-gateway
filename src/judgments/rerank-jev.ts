@@ -26,13 +26,12 @@
  * 0.009). Fan-out remains available for rate-limited or cost-sensitive callers.
  */
 import {
-  RERANK_CONTENT_CHARS,
+  rerankText,
   RERANK_MODEL_WEIGHT,
   type RerankCandidate,
   type RerankResult,
 } from "../search/reranker.js";
 import { httpJevClient, type JevClient, type NoulQuestion } from "./jev.js";
-import { scrubText } from "../security/scrub.js";
 
 export type JevScoringMode = "fanout" | "pairwise";
 
@@ -147,8 +146,7 @@ export class JevReranker {
     });
     const state = {
       query,
-      // Scrub before truncating: a cut can split a secret past recognition.
-      candidates: pool.map((c) => scrubText(c.content).slice(0, RERANK_CONTENT_CHARS)),
+      candidates: pool.map((c) => rerankText(c.content, query)),
     };
     const { answers } = await this.client.noul(state, questions);
     const scores = new Map<string, number>();
@@ -165,7 +163,7 @@ export class JevReranker {
     const results = await Promise.all(
       pool.map(async (c) => {
         const { answers } = await this.client.noul(
-          { query, candidate: scrubText(c.content).slice(0, RERANK_CONTENT_CHARS) },
+          { query, candidate: rerankText(c.content, query) },
           { answers_query: { instructions: QUESTIONS[criterion].single, criteria: QUESTIONS[criterion].criteria } },
         );
         return [c.id, answers.answers_query] as const;

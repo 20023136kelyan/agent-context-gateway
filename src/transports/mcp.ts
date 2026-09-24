@@ -132,9 +132,10 @@ export function buildMcpServer(app: GatewayApp, cwd: string = process.cwd()): Mc
       window: z.number().min(0).max(10).optional(),
       query: z.string().optional().describe("The search query: a turn too long for the budget is cut to the stretch that matches it"),
       maxTokens: z.number().min(100).max(20000).optional().describe("Token budget (default 2000)"),
+      asOf: z.string().optional().describe("Point in time (ISO timestamp): hide turns written after it"),
     },
     async (args) =>
-      text(await getContext(app, args.harness, args.sessionId, args.turnId, args.window ?? 3, { query: args.query, maxTokens: args.maxTokens })),
+      text(await getContext(app, args.harness, args.sessionId, args.turnId, args.window ?? 3, { query: args.query, maxTokens: args.maxTokens, asOf: args.asOf })),
   );
 
   server.tool(

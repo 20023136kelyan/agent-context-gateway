@@ -236,14 +236,14 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
 
   fastify.get("/sessions/:harness/:id/turns/:turnId", async (req, reply) => {
     const p = req.params as { harness: string; id: string; turnId: string };
-    const q = req.query as { window?: string; query?: string; maxTokens?: string };
+    const q = req.query as { window?: string; query?: string; maxTokens?: string; asOf?: string };
     try {
       if (q.window !== undefined) {
         const w = Number(q.window);
         const window = Number.isInteger(w) && w >= 0 ? Math.min(w, 10) : 3;
         const m = Number(q.maxTokens);
         const maxTokens = q.maxTokens !== undefined && Number.isFinite(m) ? Math.min(Math.max(m, 100), 20000) : undefined;
-        return await getContext(app, p.harness, p.id, decodeURIComponent(p.turnId), window, { query: q.query, maxTokens });
+        return await getContext(app, p.harness, p.id, decodeURIComponent(p.turnId), window, { query: q.query, maxTokens, asOf: q.asOf });
       }
       return await getTurn(app, p.harness, p.id, decodeURIComponent(p.turnId));
     } catch (e) {
