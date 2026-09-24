@@ -710,25 +710,36 @@ history has nothing useful to find.
 
 **What the agent is handed.** The judges above read whole-session cards; an
 agent reads the search results. `run-eval --save-payloads` writes the results
-as sent (plain hybrid, 5 hits, 326 query-session pairs that grade cleanly), and
-Gemini graded each form. Scored against the Claude judges' card grades:
+as sent (plain hybrid, 5 hits, 312 query-session pairs that grade cleanly under
+every form), and Gemini graded each form. Scored against the Claude judges' card
+grades:
 
 | payload | useful sessions still shown as useful | useless ones shown as useful | tokens per session |
 |---|---:|---:|---:|
-| hit windows, budget not enforced (before) | 70% | 15% | 5,700 |
-| hit windows, budget enforced | 70% | 16% | 4,900 |
-| task digest alone | 49% | 2% | 250 |
-| budget enforced + digest (now) | 74% | 14% | 5,500 |
+| hit windows, budget not enforced (0.2.0) | 70% | 13% | 5,800 |
+| hit windows, budget enforced | 70% | 15% | 5,000 |
+| task digest v1 alone | 50% | 3% | 240 |
+| budget enforced + digest v1 (0.2.2) | 74% | 12% | 5,600 |
+| task digest v2 alone | 68% | 4% | 320 |
+| budget enforced + digest v2 (now) | 71% | 10% | 5,400 |
 
 A hit turn longer than the 2,000-token budget used to be sent whole (268 of
 700 hits went over it, up to 9x). It is now cut to the stretch holding the
-query terms, which saves 13% of tokens for the same grades. Adding the digest
-kept 5 useful sessions the windows lost and lost 1 (Claude-judged; Gemini's own
-card grades: 2 and 3), and made fewer useless sessions look useful under both
-judges (2 fewer lures and 1 more; 8 fewer and 3 more). The effect is small, and the digest is cheap, so each
-session's first result carries one. About a quarter of useful sessions still
-do not look useful from what is handed over: that gap, not ranking, is where
-the remaining headroom is.
+query terms, which saves 13% of tokens for the same grades.
+
+Digest v1 listed a session's tasks from the top and stopped at 1,200 chars, so
+in long sessions (60+ tasks) the task that matched was often cut. And the hit
+turn is often the user's request repeating the query, while what the agent
+needs is what was done about it. Digest v2 is built around the matched tasks:
+each is shown in full with its request, status, files and the agent's last
+reply in that task, and the nearest other tasks fill the rest of the budget.
+
+On its own, v2 keeps 68% of useful sessions looking useful (v1: 50%; Gemini's
+own card grades: 75% vs 52%) at a sixteenth of the tokens of the full payload,
+with fewer lures than the full payload. Next to the hit windows it changes
+little: the two full forms trade a few pairs either way (+6/-9 under Claude's
+grades, +8/-7 under Gemini's), which is noise. About a quarter of useful
+sessions still do not look useful from what is handed over.
 
 `npx tsx scripts/bench.ts [--sync]` times the hot paths against the real local
 histories (read-only).

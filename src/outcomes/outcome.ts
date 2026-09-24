@@ -98,6 +98,8 @@ export interface TaskOutcome {
   shellWrites: number;
   /** The user's next message, when short with a clear tone: their verdict on this task. */
   reaction: Reaction | null;
+  /** The agent's last message in the task: usually its own account of what it did. */
+  reply: Cite | null;
 }
 
 const EXCERPT = 300;
@@ -308,14 +310,25 @@ export function buildOutcome(session: OutcomeSession, allTurns: Turn[], allActio
   };
   const before = takeUntil(requests[0] ? Date.parse(requests[0].ts) : Infinity);
   if (requests.length === 0 || before.length) {
-    tasks.push({ request: null, fromSeq: 0, toSeq: requests[0]?.seq ?? null, ...judgeWork(before), reaction: reactionTo(requests[0]) });
+    tasks.push({ request: null, fromSeq: 0, toSeq: requests[0]?.seq ?? null, ...judgeWork(before), reaction: reactionTo(requests[0]), reply: null });
   }
   requests.forEach((r, i) => {
     const next = requests[i + 1];
     const startIdx = k;
     const span = takeUntil(next ? Date.parse(next.ts) : Infinity);
-    tasks.push({ request: r, fromSeq: r.seq, toSeq: next?.seq ?? null, ...judgeWork(span, acts.slice(0, startIdx)), reaction: reactionTo(next) });
+    tasks.push({ request: r, fromSeq: r.seq, toSeq: next?.seq ?? null, ...judgeWork(span, acts.slice(0, startIdx)), reaction: reactionTo(next), reply: null });
   });
+  // Each task's last agent message, in one pass (tasks and turns are both in order).
+  const said = ordered.filter((t) => t.role === "assistant" && t.content.trim());
+  let j = 0;
+  for (const t of tasks) {
+    let last: Turn | undefined;
+    while (j < said.length && (t.toSeq === null || said[j]!.seq < t.toSeq)) {
+      if (said[j]!.seq >= t.fromSeq) last = said[j];
+      j += 1;
+    }
+    t.reply = last ? cite(last) : null;
+  }
 
   const whole = judgeWork(acts);
   const lastWithEdits = [...tasks].reverse().find((t) => t.edits.count > 0);
@@ -382,29 +395,57 @@ export function summarizeOutcome(o: SessionOutcome, seq?: number): OutcomeSummar
 }
 
 /**
- * The whole session in a few lines: every request, how it went and the files
- * it touched, the tasks holding a hit marked. Copied fields only, shortened
- * until it fits maxChars. A search hit's window shows one passage; this shows
- * which work the session did around it.
+ * The session in a few lines, built around the hits: each task holding a hit
+ * in full (its request, how it went, the files, and the agent's last message
+ * in it), then the other requests one line each, nearest a hit first, until
+ * maxChars. Copied fields only. A hit is often the request itself, and what an
+ * agent needs is what was done about it; in a 70-task session a plain list cut
+ * at the budget dropped the hit's task altogether.
  */
 export function taskDigest(o: SessionOutcome, opts: { matchedSeqs?: number[]; maxChars?: number } = {}): string {
-  const maxChars = opts.maxChars ?? 1200;
-  const matched = new Set((opts.matchedSeqs ?? []).map((s) => taskAt(o, s)?.index).filter((i) => i !== undefined));
-  const tasks = o.tasks.map((t, i) => ({ t, i })).filter(({ t }) => t.request);
+  const maxChars = opts.maxChars ?? 1500;
+  const all = o.tasks.map((t, i) => ({ t, i })).filter(({ t }) => t.request);
+  const hitIdx = new Set((opts.matchedSeqs ?? []).map((s) => taskAt(o, s)?.index).filter((i): i is number => i !== undefined));
   const head = `${o.startedAt.slice(0, 10)}, ${o.tasks.length} task(s), ${o.edits.count} edit(s), ended ${o.status}.`;
-  const render = (per: number, withFiles: boolean) =>
-    [
-      head,
-      ...tasks.map(({ t, i }) => {
-        const files = withFiles ? t.edits.files.map((f) => f.split("/").pop()).slice(-3) : [];
-        return `${i + 1}. ${excerpt(t.request!.text, per)} [${t.status}${files.length ? `; ${files.join(", ")}` : ""}]${matched.has(i) ? " <- hit" : ""}`;
-      }),
-    ].join("\n");
-  let text = render(160, true);
-  for (const [per, withFiles] of [[110, true], [80, false], [50, false], [30, false]] as const) {
-    if (text.length <= maxChars) break;
-    text = render(per, withFiles);
+  const tag = (t: TaskOutcome, withFiles: boolean) => {
+    const files = withFiles ? t.edits.files.map((f) => f.split("/").pop()).slice(-3) : [];
+    return `[${t.status}${files.length ? `; ${files.join(", ")}` : ""}]`;
+  };
+  const hits = all.filter(({ i }) => hitIdx.has(i)).slice(0, 3);
+  const full = (req: number, reply: number) =>
+    new Map(
+      hits.map(({ t, i }) => [
+        i,
+        `${i + 1}. ${excerpt(t.request!.text, req)} ${tag(t, true)} <- hit${t.reply ? `\n   agent: ${excerpt(t.reply.text, reply)}` : ""}`,
+      ]),
+    );
+  let lines = full(220, 320);
+  for (const [req, reply] of [[160, 220], [110, 150], [80, 100]] as const) {
+    if ([...lines.values()].join("\n").length <= maxChars * 0.7) break;
+    lines = full(req, reply);
   }
+  let used = head.length + [...lines.values()].reduce((n, l) => n + l.length + 1, 0);
+  // The rest, one line each: nearest a hit first (with no hit, in order).
+  const dist = (i: number) => (hits.length ? Math.min(...hits.map((h) => Math.abs(h.i - i))) : i);
+  const per = all.length > 30 ? 60 : 110;
+  for (const { t, i } of all.filter(({ i }) => !lines.has(i)).sort((a, b) => dist(a.i) - dist(b.i) || a.i - b.i)) {
+    const line = `${i + 1}. ${excerpt(t.request!.text, per)} ${tag(t, per > 60)}`;
+    if (used + line.length + 1 > maxChars - 24) break;
+    lines.set(i, line);
+    used += line.length + 1;
+  }
+  const out = [head];
+  let prev = -1;
+  for (const { i } of all) {
+    if (!lines.has(i)) continue;
+    const skipped = all.filter((x) => x.i > prev && x.i < i).length;
+    if (skipped) out.push(`… ${skipped} more task(s)`);
+    out.push(lines.get(i)!);
+    prev = i;
+  }
+  const after = all.filter((x) => x.i > prev).length;
+  if (after) out.push(`… ${after} more task(s)`);
+  const text = out.join("\n");
   return text.length <= maxChars ? text : `${text.slice(0, maxChars - 1)}…`;
 }
 

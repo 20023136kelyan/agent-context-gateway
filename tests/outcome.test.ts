@@ -194,18 +194,33 @@ describe("tasks: a long session is several requests, each judged on its own", ()
     expect(o.statusBecause).toContain("1 shell command may have written files");
   });
 
-  it("the task digest lists every request, marks the hit's task and fits its budget", () => {
+  it("each task keeps the agent's last message in it", () => {
+    const o = buildOutcome(S, session(), acts);
+    expect(o.tasks.map((t) => t.reply?.text)).toEqual(["Fixed the reconnect wait.", "Added backoff."]);
+  });
+
+  it("the task digest shows the hit's task in full, with what the agent did", () => {
     const ts = session();
     const o = buildOutcome(S, ts, acts);
-    const d = taskDigest(o, { matchedSeqs: [ts[3]!.seq] });
+    const d = taskDigest(o, { matchedSeqs: [ts[2]!.seq] });
+    expect(d).toContain("2. now add retry backoff to the uploader [unverified; upload.ts] <- hit\n   agent: Added backoff.");
     expect(d).toContain("1. fix the flaky websocket test [verified; a.ts]");
-    expect(d).toContain("2. now add retry backoff to the uploader [unverified; upload.ts] <- hit");
-    expect(d.split("\n")[1]).not.toContain("<- hit");
-    const long = buildOutcome(S, Array.from({ length: 40 }, (_, i) => turn("user", `request number ${i} `.repeat(20), T(i))), []);
-    const short = taskDigest(long, { maxChars: 1200 });
-    expect(short.length).toBeLessThanOrEqual(1200);
-    // Shortened per request before anything is cut: the early requests stay listed.
-    expect(short).toContain("1. request number 0");
+    expect(d).not.toContain("Fixed the reconnect wait."); // only hit tasks carry the reply
+  });
+
+  it("in a long session the hit's task is never the one cut", () => {
+    const ts: Turn[] = [];
+    for (let i = 0; i < 70; i++) {
+      ts.push(turn("user", `request number ${i} about the ${i === 55 ? "cloudflare deploy" : "landing page"} `.repeat(4), T(i % 60)));
+      ts.push(turn("assistant", i === 55 ? "Pushed to main and deployed with wrangler pages deploy." : "Done.", T(i % 60)));
+    }
+    const o = buildOutcome(S, ts, []);
+    const d = taskDigest(o, { matchedSeqs: [ts[110]!.seq], maxChars: 1500 });
+    expect(d.length).toBeLessThanOrEqual(1500);
+    expect(d).toMatch(/56\. request number 55 about the cloudflare deploy.* <- hit\n   agent: Pushed to main and deployed/);
+    // Its neighbours are listed, the rest counted, not silently dropped.
+    expect(d).toContain("55. request number 54");
+    expect(d).toMatch(/… \d+ more task\(s\)/);
   });
 
   it("work before any real request is a task without one", () => {
