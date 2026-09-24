@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { createApp, closeApp, type GatewayApp } from "./app.js";
 import { dumpConfig, defaultStateDir, resolveSettings } from "./settings.js";
-import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, recordFeedback, getSession, getTurn, sessionOutcome, browseSessions, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "./commands.js";
+import { listSources, listSessions, searchOnce, compactResults, getContext, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, recordFeedback, getSession, getTurn, sessionOutcome, browseSessions, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "./commands.js";
 import { addRemote, removeRemote, loadRemotes } from "./remotes.js";
 import { callerProject } from "./adapters/repo.js";
 import { loadUserEnv } from "./env.js";
@@ -114,12 +114,14 @@ program
   .option("--no-rerank", "Skip reranking even if it is on by default")
   .option("--facets", "Also search a long prompt's parts (default off; acg config set facets)")
   .option("--no-facets", "Skip facets even if they are on by default")
+  .option("--compact", "Results without turn windows (default off; acg config set compact)")
+  .option("--no-compact", "Full results even if compact is on by default")
   .action(async (query: string, cmdOpts) => {
     const scope = projectArgs(cmdOpts);
-    const path = `/search${qs({ q: query, ...scope, repo: cmdOpts.repo, harness: cmdOpts.harness, maxResults: String(cmdOpts.maxResults ?? 5), scope: cmdOpts.scope, callerSessionId: cmdOpts.asSession, principal: cmdOpts.asPrincipal, asOf: cmdOpts.asOf, includeSuperseded: cmdOpts.includeSuperseded ? "true" : undefined, rerank: cmdOpts.rerank === false ? "false" : undefined })}`;
+    const path = `/search${qs({ q: query, ...scope, repo: cmdOpts.repo, harness: cmdOpts.harness, maxResults: String(cmdOpts.maxResults ?? 5), scope: cmdOpts.scope, callerSessionId: cmdOpts.asSession, principal: cmdOpts.asPrincipal, asOf: cmdOpts.asOf, includeSuperseded: cmdOpts.includeSuperseded ? "true" : undefined, rerank: cmdOpts.rerank === false ? "false" : undefined, facets: cmdOpts.facets === undefined ? undefined : String(cmdOpts.facets), compact: cmdOpts.compact === undefined ? undefined : String(cmdOpts.compact) })}`;
     const res = ((await fetchRemote("GET", path)) ??
-      (await withLocal((app) =>
-        searchOnce(app, query, {
+      (await withLocal(async (app) => {
+        const found = await searchOnce(app, query, {
           ...scope,
           repo: cmdOpts.repo,
           harness: cmdOpts.harness,
@@ -132,8 +134,9 @@ program
           // --rerank / --no-rerank decide; otherwise the gateway's default.
           rerank: cmdOpts.rerank ?? app.rerankByDefault,
           facets: cmdOpts.facets,
-        }),
-      ))) as Awaited<ReturnType<typeof searchOnce>>;
+        });
+        return (cmdOpts.compact ?? app.settings.compact) ? compactResults(found) : found;
+      }))) as ReturnType<typeof compactResults<Awaited<ReturnType<typeof searchOnce>>>>;
       if (program.opts().json) {
         console.log(JSON.stringify(res, null, 2));
         return;
@@ -141,7 +144,8 @@ program
       for (const [i, r] of res.results.entries()) {
         console.log(`[${i + 1}] (${r.score.toFixed(3)}) ${r.provenance.harness} / session ${r.provenance.sessionId.slice(0, 8)} / turn ${r.provenance.turnId.split(":").pop()}`);
         console.log(`    ${r.summary.split("\n").join("\n    ")}`);
-        console.log(`    turns ${r.context.length} | ${r.provenance.timestamp}`);
+        const turns = (r as { context?: unknown[] }).context;
+        console.log(`    ${turns ? `turns ${turns.length}` : "compact"} | ${r.provenance.timestamp}`);
         if (r.outcome) console.log(`    outcome: ${outcomeTag(r.outcome)}: ${r.outcome.statusBecause}`);
       }
       printScope(res.projectScope);
@@ -189,10 +193,22 @@ program
 
 program
   .command("turn <harness> <sessionId> <turnId>")
-  .description("Show a single turn (direct retrieval)")
-  .action(async (harness: string, sessionId: string, turnId: string) => {
-    const path = `/sessions/${harness}/${sessionId}/turns/${encodeURIComponent(turnId)}`;
-    print((await fetchRemote("GET", path)) ?? (await withLocal((app) => getTurn(app, harness, sessionId, turnId))), false);
+  .description("Show a single turn (direct retrieval), or with --window the turns around it")
+  .option("--window <n>", "also show n turns either side, within the token budget", (v) => Number(v))
+  .option("--query <q>", "with --window: the query, to keep the matching stretch of a turn too long for the budget")
+  .option("--max-tokens <n>", "with --window: token budget (default 2000)", (v) => Number(v))
+  .action(async (harness: string, sessionId: string, turnId: string, cmdOpts) => {
+    const window = cmdOpts.window;
+    if (window === undefined) {
+      const path = `/sessions/${harness}/${sessionId}/turns/${encodeURIComponent(turnId)}`;
+      return print((await fetchRemote("GET", path)) ?? (await withLocal((app) => getTurn(app, harness, sessionId, turnId))), false);
+    }
+    const path = `/sessions/${harness}/${sessionId}/turns/${encodeURIComponent(turnId)}${qs({ window: String(window), query: cmdOpts.query, maxTokens: cmdOpts.maxTokens === undefined ? undefined : String(cmdOpts.maxTokens) })}`;
+    print(
+      (await fetchRemote("GET", path)) ??
+        (await withLocal((app) => getContext(app, harness, sessionId, turnId, window, { query: cmdOpts.query, maxTokens: cmdOpts.maxTokens }))),
+      false,
+    );
   });
 
 program
@@ -945,23 +961,25 @@ program
   .command("config")
   .description("Show effective tunable values (env > settings.json > defaults), or change one")
   .argument("[op]", "set | unset (omit to show)")
-  .argument("[name]", "reranker | rerank-default | facets")
-  .argument("[value]", "reranker: jev|voyage|self-hosted|none; rerank-default, facets: on|off")
+  .argument("[name]", "reranker | rerank-default | facets | compact")
+  .argument("[value]", "reranker: jev|voyage|self-hosted|none; rerank-default, facets, compact: on|off")
   .addHelpText(
     "after",
     `
 Saved in settings.json; an environment variable still wins (GATEWAY_RERANKER,
-GATEWAY_RERANK_DEFAULT, GATEWAY_FACETS). Unset returns a value to its default.
+GATEWAY_RERANK_DEFAULT, GATEWAY_FACETS, GATEWAY_COMPACT). Unset returns a value
+to its default.
 
   acg config set reranker self-hosted      rerank with the endpoint GATEWAY_RERANK_URL names
   acg config set rerank-default off        keep a reranker for explicit --rerank only
   acg config set facets on                 also search a long prompt's parts
+  acg config set compact on                results without turn windows; open hits with get_context
   acg config unset reranker`,
   )
   .action(async (op?: string, name?: string, value?: string) => {
     if (!op) return print(dumpConfig(), false);
     const { SETTABLE, setSetting } = await import("./settings.js");
-    const envFor = { reranker: "GATEWAY_RERANKER", "rerank-default": "GATEWAY_RERANK_DEFAULT", facets: "GATEWAY_FACETS" } as const;
+    const envFor = { reranker: "GATEWAY_RERANKER", "rerank-default": "GATEWAY_RERANK_DEFAULT", facets: "GATEWAY_FACETS", compact: "GATEWAY_COMPACT" } as const;
     try {
       if ((op !== "set" && op !== "unset") || !name || !(name in SETTABLE)) {
         throw new Error(`usage: acg config [set <name> <value> | unset <name>], name one of ${Object.keys(SETTABLE).join(", ")}`);
@@ -971,7 +989,7 @@ GATEWAY_RERANK_DEFAULT, GATEWAY_FACETS). Unset returns a value to its default.
       setSetting(undefined, key, op === "set" ? value! : null);
       const after = resolveSettings();
       console.log(`${op === "set" ? `${name} = ${value}` : `${name} unset`} (saved in settings.json)`);
-      console.log(`now: reranker ${after.reranker ?? "auto"}, rerank by default ${after.rerankByDefault ?? "auto"}, facets ${after.facets ? "on" : "off"}`);
+      console.log(`now: reranker ${after.reranker ?? "auto"}, rerank by default ${after.rerankByDefault ?? "auto"}, facets ${after.facets ? "on" : "off"}, compact ${after.compact ? "on" : "off"}`);
       if (process.env[envFor[key]]) console.error(`note: ${envFor[key]} is set, and it overrides the saved value until it is unset`);
     } catch (e) {
       console.error(`acg config: ${(e as Error).message}`);

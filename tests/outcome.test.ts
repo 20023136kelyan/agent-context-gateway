@@ -14,7 +14,7 @@ import type { Action } from "../src/actions/store.js";
 import { ActionStore } from "../src/actions/store.js";
 import { buildOutcome, userUtterance, isCheckCommand, summarizeOutcome, taskDigest } from "../src/outcomes/outcome.js";
 import { createApp, closeApp, type GatewayApp } from "../src/app.js";
-import { syncNow, searchOnce, sessionOutcome, browseSessions } from "../src/commands.js";
+import { syncNow, searchOnce, sessionOutcome, browseSessions, compactResults } from "../src/commands.js";
 
 const S = { harness: "claude-code" as const, id: "s1", projectId: "app" };
 let seq = 0;
@@ -333,6 +333,19 @@ describe("end to end: native history -> outcome -> search result", () => {
     expect(s1.slice(1).every((r) => r.outcome?.digest === undefined)).toBe(true);
     const off = await searchOnce(app, "websocket reconnect 401", { project: "*", semantic: false, rerank: false, outcomes: false });
     expect(off.results.every((r) => r.outcome === undefined)).toBe(true);
+  });
+
+  it("compact results drop the turn windows (and their artifacts), keep summary, outcome and digest", async () => {
+    const full = await searchOnce(app, "websocket reconnect 401", { project: "*", semantic: false, rerank: false });
+    const compact = compactResults(full);
+    expect(compact.results).toHaveLength(full.results.length);
+    for (const [i, r] of compact.results.entries()) {
+      expect(r).not.toHaveProperty("context");
+      const { context: _context, artifacts: _artifacts, ...rest } = full.results[i]!;
+      expect(r).toEqual(rest);
+    }
+    expect(compact.results.find((r) => r.provenance.sessionId === "s1")!.outcome!.digest).toContain("<- hit");
+    expect(JSON.stringify(compact).length).toBeLessThan(JSON.stringify(full).length);
   });
 
   it("browse: candidate sessions with their tasks, the matched one marked", async () => {

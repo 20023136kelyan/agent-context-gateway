@@ -8,7 +8,8 @@ import { CodexAdapter } from "../src/adapters/codex.js";
 import { TantivyIndex } from "../src/indexing/tantivy-index.js";
 import { CursorStore } from "../src/indexing/store.js";
 import { syncAll } from "../src/indexing/sync.js";
-import { SearchService, focusOn } from "../src/search/search.js";
+import type { Turn } from "../src/core/models.js";
+import { SearchService, focusOn, fitWindow } from "../src/search/search.js";
 import { normalizeQuery } from "../src/search/query.js";
 import type { VectorStore } from "../src/indexing/vectors.js";
 import { extractArtifacts, extractCommitShas, extractPrUrls, extractFileRefs } from "../src/adapters/text.js";
@@ -198,6 +199,18 @@ describe("SearchService", () => {
     expect(none.startsWith("setup chatter.")).toBe(true);
     expect(none.endsWith("…")).toBe(true);
     expect(focusOn("short", ["x"], 400)).toBe("short");
+  });
+
+  it("fitWindow keeps the hit turn, then the nearest neighbours that fit", () => {
+    const turn = (i: number, content: string) => ({ id: `t${i}`, seq: i, content }) as unknown as Turn;
+    const turns = [turn(0, "a".repeat(300)), turn(1, "b".repeat(100)), turn(2, "hit"), turn(3, "c".repeat(100)), turn(4, "d".repeat(300))];
+    expect(fitWindow(turns, "t2", 1000)).toBe(turns); // fits whole: untouched
+    expect(fitWindow(turns, "t2", 100).map((t) => t.id)).toEqual(["t1", "t2", "t3"]); // 400 chars
+    const long = [turn(0, "x"), turn(1, "noise ".repeat(200) + "the jitter fix " + "noise ".repeat(200)), turn(2, "y")];
+    const cut = fitWindow(long, "t1", 50, ["jitter"]);
+    expect(cut).toHaveLength(1);
+    expect(cut[0]!.content).toContain("the jitter fix");
+    expect(cut[0]!.content.length).toBeLessThanOrEqual(200);
   });
 
   it("semantic:false never touches the vector store", async () => {

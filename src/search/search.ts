@@ -584,7 +584,7 @@ export class SearchService {
     }
 
     packaged.sort((a, b) => b.score - a.score);
-    const terms = nq.indexQuery.toLowerCase().split(" ").filter((t) => t.length > 2);
+    const terms = queryTerms(rewritten.primaryQuery);
     const trimmed = packaged.slice(0, maxResults).map((p) => this.applyTokenBudget(p, maxTokens, terms));
     return { query: nq, scope: effectiveScope, results: trimmed, searchedAt: now };
   }
@@ -618,45 +618,53 @@ export class SearchService {
     };
   }
 
-  /**
-   * Fit the window into maxTokens*4 chars: the hit turn first, then whole
-   * neighbours, nearest first, while they fit. A hit turn longer than the
-   * budget on its own (a pasted log, a long reply) is cut to the stretch
-   * holding the most query terms; sent whole, 268 of 700 real hits ran past
-   * the budget, some to 9x.
-   */
   private applyTokenBudget(p: PackagedResult, maxTokens: number, terms: string[] = []): PackagedResult {
-    const budget = maxTokens * 4;
-    const total = p.context.reduce((n, t) => n + t.content.length, 0);
-    if (total <= budget) return p;
-    let ci = p.context.findIndex((t) => t.id === p.provenance.turnId);
-    if (ci < 0) ci = Math.floor(p.context.length / 2);
-    const center = p.context[ci]!;
-    if (center.content.length >= budget) {
-      return { ...p, context: [{ ...center, content: focusOn(center.content, terms, budget) }] };
-    }
-    let lo = ci;
-    let hi = ci;
-    let used = center.content.length;
-    // Nearer turns first; a neighbour that does not fit ends that side.
-    let loOpen = lo > 0;
-    let hiOpen = hi < p.context.length - 1;
-    while (loOpen || hiOpen) {
-      const takeLo = loOpen && (!hiOpen || ci - (lo - 1) <= hi + 1 - ci);
-      const next = takeLo ? p.context[lo - 1]! : p.context[hi + 1]!;
-      if (used + next.content.length > budget) {
-        if (takeLo) loOpen = false;
-        else hiOpen = false;
-        continue;
-      }
-      used += next.content.length;
-      if (takeLo) lo -= 1;
-      else hi += 1;
-      loOpen = loOpen && lo > 0;
-      hiOpen = hiOpen && hi < p.context.length - 1;
-    }
-    return { ...p, context: p.context.slice(lo, hi + 1) };
+    const context = fitWindow(p.context, p.provenance.turnId, maxTokens, terms);
+    return context === p.context ? p : { ...p, context };
   }
+}
+
+/**
+ * Fit a turn window into maxTokens*4 chars: the hit turn first, then whole
+ * neighbours, nearest first, while they fit. A hit turn longer than the
+ * budget on its own (a pasted log, a long reply) is cut to the stretch
+ * holding the most query terms; sent whole, 268 of 700 real hits ran past
+ * the budget, some to 9x. Returns `turns` itself when it already fits.
+ */
+export function fitWindow(turns: Turn[], centerId: string, maxTokens: number, terms: string[] = []): Turn[] {
+  const budget = maxTokens * 4;
+  const total = turns.reduce((n, t) => n + t.content.length, 0);
+  if (total <= budget) return turns;
+  let ci = turns.findIndex((t) => t.id === centerId);
+  if (ci < 0) ci = Math.floor(turns.length / 2);
+  const center = turns[ci]!;
+  if (center.content.length >= budget) return [{ ...center, content: focusOn(center.content, terms, budget) }];
+  let lo = ci;
+  let hi = ci;
+  let used = center.content.length;
+  // Nearer turns first; a neighbour that does not fit ends that side.
+  let loOpen = lo > 0;
+  let hiOpen = hi < turns.length - 1;
+  while (loOpen || hiOpen) {
+    const takeLo = loOpen && (!hiOpen || ci - (lo - 1) <= hi + 1 - ci);
+    const next = takeLo ? turns[lo - 1]! : turns[hi + 1]!;
+    if (used + next.content.length > budget) {
+      if (takeLo) loOpen = false;
+      else hiOpen = false;
+      continue;
+    }
+    used += next.content.length;
+    if (takeLo) lo -= 1;
+    else hi += 1;
+    loOpen = loOpen && lo > 0;
+    hiOpen = hiOpen && hi < turns.length - 1;
+  }
+  return turns.slice(lo, hi + 1);
+}
+
+/** The words of a query that focusOn looks for (index form, longer than 2 chars). */
+export function queryTerms(query: string): string[] {
+  return normalizeQuery(query).indexQuery.toLowerCase().split(" ").filter((t) => t.length > 2);
 }
 
 /** The maxChars stretch of text holding the most query-term occurrences; its start when none occur. */

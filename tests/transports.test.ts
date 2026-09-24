@@ -59,6 +59,20 @@ describe("HTTP", () => {
     expect(body.results[0].provenance.sessionId).toBeTruthy();
   });
 
+  it("GET /search?compact=true drops the turn windows; the window route opens one", async () => {
+    const server = buildHttpServer(app);
+    const res = (await server.inject({ method: "GET", url: "/search?q=collaboration%20workbench&compact=true" })).json();
+    expect(res.results.length).toBeGreaterThanOrEqual(1);
+    expect(res.results.every((r: object) => !("context" in r))).toBe(true);
+    const { harness, sessionId, turnId } = res.results[0].provenance;
+    const url = `/sessions/${harness}/${sessionId}/turns/${encodeURIComponent(turnId)}?window=3&query=collaboration&maxTokens=100`;
+    const turns = (await server.inject({ method: "GET", url })).json();
+    expect(turns.map((t: { id: string }) => t.id)).toContain(turnId);
+    expect(turns.reduce((n: number, t: { content: string }) => n + t.content.length, 0)).toBeLessThanOrEqual(400);
+    const full = (await server.inject({ method: "GET", url: "/search?q=collaboration%20workbench" })).json();
+    expect(full.results[0].context.length).toBeGreaterThanOrEqual(1);
+  });
+
   it("GET /search without q is 400; unknown session is 404", async () => {
     const server = buildHttpServer(app);
     expect((await server.inject({ method: "GET", url: "/search" })).statusCode).toBe(400);

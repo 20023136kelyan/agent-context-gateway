@@ -24,6 +24,7 @@ Fixture corpus: [`FIXTURE_CORPUS_BRIEF.md`](./FIXTURE_CORPUS_BRIEF.md).
 - [x] Review fixes (2026-09-16) — correctness, security and performance pass over the whole codebase; see [`REVIEW_FIX_PLAN.md`](./REVIEW_FIX_PLAN.md)
 - [x] 0.2.0 (2026-09-22) — Voyage embeddings, Jev reranker and decision judge, component registry, OpenCode and trajectory adapters, sqlite-vec backend (Intel Macs), fixture/BEIR eval program and sweep harness, `init`/`doctor`/`models`/`stats`/`telemetry`
 - [x] 0.2.2 (2026-09-24) — search scoped to the caller's project, action index (`actions`), session outcome records and task digests, opt-in proactive prompt hook, secret scrubbing before anything leaves the machine, key proxy (`acg proxy`), `acg paths`, self-hosted reranker, `acg config set`; reranking and facets off unless chosen (judged on real history), result token budget enforced
+- [x] Unreleased — task digest v2 (built around the matched tasks, with the agent's reply per task), compact results (`compact`), `get_context` held to the token budget
 - [x] Stack focus (2026-09-23) — local fallbacks deleted: MLX and Ollama embedders, ONNX cross-encoder, neural-entailment and Apple FM judges. They were measured and lost (see [Reranking](#reranking)).
 
 ## Quickstart
@@ -740,6 +741,18 @@ with fewer lures than the full payload. Next to the hit windows it changes
 little: the two full forms trade a few pairs either way (+6/-9 under Claude's
 grades, +8/-7 under Gemini's), which is noise. About a quarter of useful
 sessions still do not look useful from what is handed over.
+
+**Compact results.** Since the digest alone carries most of it, a search can
+leave out the turn windows: each hit keeps its summary, provenance and outcome,
+each session its digest, and the agent opens the hits it wants with
+`context.get_context` (`acg turn … --window 3 --query "…"`), which fits the same
+2,000-token budget and cuts a long turn to the part matching the query. On the
+24 golden queries a compact response is 5.7x smaller than a full one (median
+2,300 tokens against 12,400; 3.7x to 8.3x); opening a hit takes under a
+millisecond on the gateway, so the cost is the agent's extra turn. It is off by
+default. Turn it on with `acg config set compact on` (or `GATEWAY_COMPACT=on`),
+or per request with MCP `compact: true`, `?compact=true` or `acg search
+--compact`. Whether an agent does better with it end to end is not measured yet.
 
 `npx tsx scripts/bench.ts [--sync]` times the hot paths against the real local
 histories (read-only).

@@ -7,7 +7,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import type { GatewayApp } from "../app.js";
 import { callerProject } from "../adapters/repo.js";
-import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, listAclRules, searchLive, getLineage, createSubscription, listSubscriptions, recordFeedback, getSession, getTurn, getContext, sessionOutcome, browseSessions, showTopology } from "../commands.js";
+import { listSources, listSessions, searchOnce, compactResults, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, listAclRules, searchLive, getLineage, createSubscription, listSubscriptions, recordFeedback, getSession, getTurn, getContext, sessionOutcome, browseSessions, showTopology } from "../commands.js";
 
 const Harness = z.enum(["claude-code", "codex", "cursor", "zep", "git", "trajectory", "opencode"]);
 
@@ -57,12 +57,18 @@ export function buildMcpServer(app: GatewayApp, cwd: string = process.cwd()): Mc
         .optional()
         .describe("Rerank top candidates with the installed reranker. Omitted = the server's default (off unless a reranker was chosen). true/false overrides."),
       facets: z.boolean().optional().describe("Also search a long prompt's parts (files, error lines, identifiers). Omitted = the server's default (off)."),
+      compact: z
+        .boolean()
+        .optional()
+        .describe("true = each hit's summary, outcome and its session's task digest, without turn windows (~5x fewer tokens); open the hits you need with context.get_context. Omitted = the server's default (off)."),
       maxResults: z.number().min(1).max(20).optional(),
       maxTurns: z.number().min(1).max(15).optional(),
       maxTokens: z.number().min(100).max(20000).optional(),
     },
-    async (args) =>
-      text(await searchOnce(app, args.query, { ...args, defaultProject, rerank: args.rerank ?? app.rerankByDefault })),
+    async ({ compact, ...args }) => {
+      const res = await searchOnce(app, args.query, { ...args, defaultProject, rerank: args.rerank ?? app.rerankByDefault });
+      return text((compact ?? app.settings.compact) ? compactResults(res) : res);
+    },
   );
 
   server.tool(
@@ -118,9 +124,17 @@ export function buildMcpServer(app: GatewayApp, cwd: string = process.cwd()): Mc
 
   server.tool(
     "context.get_context",
-    "Expanded evidence window around a turn (±3 by default)",
-    { harness: Harness, sessionId: z.string(), turnId: z.string(), window: z.number().min(0).max(10).optional() },
-    async (args) => text(await getContext(app, args.harness, args.sessionId, args.turnId, args.window ?? 3)),
+    "Expanded evidence window around a turn (±3 by default), within a token budget; pass the search query to keep the matching stretch of a long turn",
+    {
+      harness: Harness,
+      sessionId: z.string(),
+      turnId: z.string(),
+      window: z.number().min(0).max(10).optional(),
+      query: z.string().optional().describe("The search query: a turn too long for the budget is cut to the stretch that matches it"),
+      maxTokens: z.number().min(100).max(20000).optional().describe("Token budget (default 2000)"),
+    },
+    async (args) =>
+      text(await getContext(app, args.harness, args.sessionId, args.turnId, args.window ?? 3, { query: args.query, maxTokens: args.maxTokens })),
   );
 
   server.tool(

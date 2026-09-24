@@ -6,7 +6,7 @@ import { timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import type { GatewayApp } from "../app.js";
 import type { Harness } from "../core/models.js";
-import { listSources, listSessions, searchOnce, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, recordInvalidation, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, cancelSubscription, recordFeedback, getSession, getTurn, getContext, sessionOutcome, browseSessions, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "../commands.js";
+import { listSources, listSessions, searchOnce, compactResults, decideOnce, findActions, getRelated, traverseArtifacts, listInvalidations, recordInvalidation, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, cancelSubscription, recordFeedback, getSession, getTurn, getContext, sessionOutcome, browseSessions, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "../commands.js";
 import { writeServeInfo, clearServeInfo } from "../remote.js";
 import { handleGitCommitEvent, type GitCommitEvent } from "../git/hooks.js";
 
@@ -100,7 +100,7 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
       .map((s) => s.trim())
       .filter(Boolean);
     try {
-      return await searchOnce(
+      const res = await searchOnce(
         app,
         q.q,
         {
@@ -131,6 +131,10 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
         },
         chain,
       );
+      // ?compact=true|false decides; otherwise the gateway's default, except for
+      // a federating gateway (a chain), which merges full results.
+      const compact = q.compact === undefined ? chain.length === 0 && app.settings.compact : q.compact !== "false" && q.compact !== "0";
+      return compact ? compactResults(res) : res;
     } catch (e) {
       const { code, message } = toStatus(e);
       return reply.code(code).send({ error: message });
@@ -232,12 +236,14 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
 
   fastify.get("/sessions/:harness/:id/turns/:turnId", async (req, reply) => {
     const p = req.params as { harness: string; id: string; turnId: string };
-    const q = req.query as { window?: string };
+    const q = req.query as { window?: string; query?: string; maxTokens?: string };
     try {
       if (q.window !== undefined) {
         const w = Number(q.window);
         const window = Number.isInteger(w) && w >= 0 ? Math.min(w, 10) : 3;
-        return await getContext(app, p.harness, p.id, decodeURIComponent(p.turnId), window);
+        const m = Number(q.maxTokens);
+        const maxTokens = q.maxTokens !== undefined && Number.isFinite(m) ? Math.min(Math.max(m, 100), 20000) : undefined;
+        return await getContext(app, p.harness, p.id, decodeURIComponent(p.turnId), window, { query: q.query, maxTokens });
       }
       return await getTurn(app, p.harness, p.id, decodeURIComponent(p.turnId));
     } catch (e) {

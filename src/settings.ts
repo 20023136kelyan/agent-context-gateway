@@ -51,6 +51,12 @@ export interface GatewaySettings {
   readonly rerankByDefault: boolean | null;
   /** Query facets (search/facets.ts). Default off; GATEWAY_FACETS=on|off beats the file. */
   readonly facets: boolean;
+  /**
+   * Search results without turn windows (commands.ts compactResults): the
+   * agent opens the hits it needs with context.get_context. Default off;
+   * GATEWAY_COMPACT=on|off beats the file.
+   */
+  readonly compact: boolean;
   /** Extra Host header values accepted without a token; null = loopback only. */
   readonly allowedHosts: string[] | null;
   /**
@@ -81,6 +87,7 @@ interface SettingsFile {
   reranker?: RerankerName;
   rerankByDefault?: boolean;
   facets?: boolean;
+  compact?: boolean;
   allowedHosts?: string[];
   telemetry?: boolean;
   /** `acg paths`: where each harness's history lives, when not the default. */
@@ -172,6 +179,7 @@ export function resolveSettings(opts: SettingsOverrides = {}): GatewaySettings {
     reranker: oneOf<RerankerName>(process.env.GATEWAY_RERANKER, RERANKER_DEFS.map((r): RerankerName => r.name)) ?? file.reranker ?? null,
     rerankByDefault: onOff(process.env.GATEWAY_RERANK_DEFAULT) ?? file.rerankByDefault ?? null,
     facets: onOff(process.env.GATEWAY_FACETS) ?? file.facets ?? false,
+    compact: onOff(process.env.GATEWAY_COMPACT) ?? file.compact ?? false,
     allowedHosts,
     telemetry: telemetryEnabled(file.telemetry),
   };
@@ -190,6 +198,7 @@ export const SETTABLE = {
   reranker: { key: "reranker", parse: (v: string) => (RERANKER_DEFS.some((r) => r.name === v) ? v : undefined), help: RERANKER_DEFS.map((r) => r.name).join("|") },
   "rerank-default": { key: "rerankByDefault", parse: (v: string) => onOff(v) ?? undefined, help: "on|off" },
   facets: { key: "facets", parse: (v: string) => onOff(v) ?? undefined, help: "on|off" },
+  compact: { key: "compact", parse: (v: string) => onOff(v) ?? undefined, help: "on|off" },
 } as const;
 export type SettableName = keyof typeof SETTABLE;
 
@@ -244,6 +253,7 @@ export function dumpConfig(): Record<string, unknown> {
     reranker: s.reranker,
     rerankByDefault: s.rerankByDefault,
     facets: s.facets,
+    compact: s.compact,
     judge,
     allowedHosts: s.allowedHosts,
     minVectorSim,
