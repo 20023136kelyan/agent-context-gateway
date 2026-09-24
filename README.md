@@ -23,6 +23,7 @@ Fixture corpus: [`FIXTURE_CORPUS_BRIEF.md`](./FIXTURE_CORPUS_BRIEF.md).
 - [x] Phase F — Real-time live active-session search (bypassing index), context subscriptions & webhook delivery, full agent lineage explorer
 - [x] Review fixes (2026-09-16) — correctness, security and performance pass over the whole codebase; see [`REVIEW_FIX_PLAN.md`](./REVIEW_FIX_PLAN.md)
 - [x] 0.2.0 (2026-09-22) — Voyage embeddings, Jev reranker and decision judge, component registry, OpenCode and trajectory adapters, sqlite-vec backend (Intel Macs), fixture/BEIR eval program and sweep harness, `init`/`doctor`/`models`/`stats`/`telemetry`
+- [x] 0.2.2 (2026-09-24) — search scoped to the caller's project, action index (`actions`), session outcome records and task digests, opt-in proactive prompt hook, secret scrubbing before anything leaves the machine, key proxy (`acg proxy`), `acg paths`, self-hosted reranker, `acg config set`; reranking and facets off unless chosen (judged on real history), result token budget enforced
 - [x] Stack focus (2026-09-23) — local fallbacks deleted: MLX and Ollama embedders, ONNX cross-encoder, neural-entailment and Apple FM judges. They were measured and lost (see [Reranking](#reranking)).
 
 ## Quickstart

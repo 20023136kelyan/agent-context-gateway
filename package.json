@@ -1,6 +1,6 @@
 {
   "name": "agent-context-gateway",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Search what your coding agents already did: federated retrieval over native Claude Code, Codex, Cursor and OpenCode histories, with provenance.",
   "keywords": [
     "agents",
