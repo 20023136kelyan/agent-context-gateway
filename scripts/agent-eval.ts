@@ -168,11 +168,19 @@ async function episode(g: Golden, mode: string, o: { gateway: string; maxTools: 
   return r;
 }
 
+/** A gateway call; a dropped connection (tunnel restart) is retried, an HTTP error is shown to the agent. */
 async function fetchText(url: string): Promise<string> {
-  const res = await fetch(url);
-  const text = await res.text();
-  if (!res.ok) return `error ${res.status}: ${text.slice(0, 300)}`;
-  return text;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(url);
+      const text = await res.text();
+      if (!res.ok) return `error ${res.status}: ${text.slice(0, 300)}`;
+      return text;
+    } catch (e) {
+      if (attempt >= 5) throw e;
+      await new Promise((r) => setTimeout(r, 10_000));
+    }
+  }
 }
 
 /** One model turn through agy; the first JSON object in the reply, or null (one retry). */
