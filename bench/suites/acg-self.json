@@ -1,0 +1,95 @@
+{
+  "name": "acg-self",
+  "repo": "~/dev/ACG",
+  "project": "ACG",
+  "history": {
+    "claude": [
+      "~/.claude/projects/-Users-kelyan-dev-ACG"
+    ]
+  },
+  "test": {
+    "runner": "vitest"
+  },
+  "environmentNote": "Two tests fail in this environment whatever you change: tests/paths.test.ts (\"an agent can run init against a Codex history kept somewhere unusual\", times out) and tests/remote.test.ts (\"serveProduction writes port file\"). Ignore them. The full suite takes minutes here: run the test files your change touches (npx vitest run tests/<file>.test.ts).",
+  "tasks": [
+    {
+      "id": "codex-subagents",
+      "title": "Codex multi-agent runs collapse into one session",
+      "category": "history-helps",
+      "base": "4586f86b49e661558fc82a985dcf196673e2faf2",
+      "gold": "d077f0867607c3df8ea5768e545332369e10c3c1",
+      "asOf": "2026-09-22T18:24:00Z",
+      "hiddenTests": [
+        "tests/adapters.test.ts"
+      ],
+      "historyNote": "The session that found it while mining real Codex histories had already traced which session_meta field each subagent's rollout carries.",
+      "prompt": "Codex Desktop multi-agent runs are broken in the index: a real run of 15 agents shows up as a single session, and 14 of the agents' work cannot be found. Each subagent writes its own rollout file.\n\nFix the Codex adapter (src/adapters/codex.ts) so that every subagent is listed as its own session by listSessions(), and listTurns(<subagent id>) returns that subagent's own turns, not its parent's. Older rollouts that carry only one id must keep working. Add a test."
+    },
+    {
+      "id": "voyage-retry",
+      "title": "Retry transient Voyage failures",
+      "category": "history-helps",
+      "base": "d077f0867607c3df8ea5768e545332369e10c3c1",
+      "gold": "ebf200de89db0ff1806fa83beb63dfe704de6749",
+      "asOf": "2026-09-22T18:47:00Z",
+      "hiddenTests": [
+        "tests/voyage-retry.test.ts"
+      ],
+      "historyNote": "The backfill that died on one timeout, and how it failed, is in the session just before.",
+      "prompt": "A long embedding backfill of real agent history died on a single Voyage timeout (an AbortError): the embedding client makes one attempt per batch, so one slow request kills the whole run.\n\nMake embedDocuments (src/embeddings/voyage.ts) retry transient failures:\n- timeouts and aborted requests, dropped connections, HTTP 429 and 5xx are retried with jittered exponential backoff, honouring a Retry-After header when there is one;\n- at most VOYAGE_MAX_ATTEMPTS attempts in total (default 4), with base delay VOYAGE_BACKOFF_MS in milliseconds (default 1000; tests set it to 0);\n- a 400 fails at once without a retry, and its error still reads voyage-http-400;\n- after the last attempt, the last error is thrown.\nAdd tests."
+    },
+    {
+      "id": "outcome-noise",
+      "title": "Outcome records count injected text as requests",
+      "category": "control",
+      "base": "97defa1fa9f9edd9d2f74a4b7c905bf9266db7fe",
+      "gold": "240fab631bf1fa9ee852820f0c438cb0a41adccc",
+      "asOf": "2026-09-23T08:22:40Z",
+      "hiddenTests": [
+        "tests/outcome.test.ts"
+      ],
+      "historyNote": "Fully specified: the history holds where the noise was seen, nothing the task needs.",
+      "prompt": "Session outcome records still count some injected text as if the user had asked it. userUtterance (src/outcomes/outcome.ts) must return null for:\n- Codex turn-aborted notices (text starting with <turn_aborted>),\n- skill bodies (starting with <skill>),\n- Codex's automatic approval reviewer prompt (starting with \"The following is the Codex agent history\"),\n- in-app browser turns that carry only page context (starting with <in-app-browser-context).\nAn in-app browser turn that contains \"## My request:\" should yield the text after it, the way Codex IDE turns with \"## My request for Codex:\" already do. Add tests."
+    },
+    {
+      "id": "token-budget",
+      "title": "Hold the result token budget; add a session task digest",
+      "category": "history-helps",
+      "base": "0a0096a9bfe3f2712bf896c6fc5d58c551fe79a0",
+      "gold": "d49cd87b9bc1adc931e9c2cd7b0fac4cac7e4b26",
+      "asOf": "2026-09-23T14:27:50Z",
+      "hiddenTests": [
+        "tests/outcome.test.ts",
+        "tests/search.test.ts"
+      ],
+      "historyNote": "Earlier sessions discussed serving outcome records instead of raw windows, and how results are packaged.",
+      "prompt": "Two problems with what a search hands an agent.\n\n1. The token budget does not hold: a hit turn longer than maxTokens (a pasted log, a long reply) is sent whole; on real history some hits run 9x over. Make each result's window fit maxTokens (about 4 characters per token): keep the hit turn, add neighbouring turns nearest-first only while they fit, and if the hit turn alone is over the budget, cut it to the stretch holding the most query terms. Export focusOn(text: string, terms: string[], maxChars: number): string from src/search/search.ts: text unchanged when it fits; otherwise at most maxChars characters, the stretch with the most occurrences of the (lowercase) terms, with a leading and/or trailing \"…\" where it was cut; with no term present, the start of the text followed by \"…\".\n\n2. An agent handed a hit has no overview of the session it came from. Add taskDigest(o: SessionOutcome, opts?: { matchedSeqs?: number[]; maxChars?: number }): string to src/outcomes/outcome.ts: one line per task that has a request, \"N. <request> [<status>; <file names>]\" (N counts from 1; file names without their folders), with \" <- hit\" on each task that contains a matched seq. Default budget 1200 characters, never exceeded; when too long, shorten each request before dropping anything, so the early requests stay listed. searchOnce puts it on each session's first result as outcome.digest, with all of that session's hits marked; that session's other results carry no digest.\nAdd tests."
+    },
+    {
+      "id": "self-hosted-reranker",
+      "title": "Rerank with a model the operator serves",
+      "category": "history-helps",
+      "base": "54c4fb9a69433f356ed30f098a2b7d7cdbe16879",
+      "gold": "044839d4c04cfa19005cdc6bc8cb862c6f5e70ac",
+      "asOf": "2026-09-23T10:41:30Z",
+      "hiddenTests": [
+        "tests/rerank-http.test.ts"
+      ],
+      "historyNote": "The reranker bake-off being planned (vLLM on GPUs, Qwen3 reranker prompt templates, reply formats) is in the preceding turns.",
+      "prompt": "Add a self-hosted reranker, so an operator can rerank with a model they serve themselves (an open-weights reranker behind vLLM or TEI) instead of a billed API.\n\nNew module src/search/rerank-http.ts exporting:\n- class HttpReranker implementing the Reranker interface (src/search/reranker.ts), constructed with { url, model?, key?, queryTemplate?, docTemplate? } or null (not configured);\n- it POSTs { model?, query, documents, top_n } to url (the Cohere/Jina shape vLLM serves), with query and each document wrapped by the templates when given ({query} and {doc} placeholders); text is scrubbed and truncated as the other rerankers do;\n- readScores(reply): Map<number, number> reads { results: [{ index, relevance_score }] } (vLLM/Cohere), { data: [...] } (Voyage) and TEI's [{ index, score }]; anything else gives an empty map;\n- toProbabilities(scores: number[]): number[] leaves a batch already within 0-1 alone and puts a batch with any score outside 0-1 (raw logits) through a sigmoid;\n- results are blended with the retrieval score like the other rerankers and marked neural; on any failure, or when not configured, it returns the pool in retrieval order with neural: false.\nConfiguration from GATEWAY_RERANK_URL, GATEWAY_RERANK_MODEL, GATEWAY_RERANK_KEY, GATEWAY_RERANK_QUERY_TEMPLATE and GATEWAY_RERANK_DOC_TEMPLATE; selectable as the reranker \"self-hosted\". Add tests."
+    },
+    {
+      "id": "digest-v2",
+      "title": "Task digest built around the matched tasks",
+      "category": "history-helps",
+      "base": "0c1284985fe8fecb8e2d330438bf143b91ff5e24",
+      "gold": "5ad3d13b406abd836025283153cc5e139636e5a5",
+      "asOf": "2026-09-24T01:43:00Z",
+      "hiddenTests": [
+        "tests/outcome.test.ts"
+      ],
+      "historyNote": "The graded failure analysis that motivated it (long sessions cut before the matching task; hits that are the user's request without the agent's answer) is in the session just before.",
+      "prompt": "The task digest (taskDigest in src/outcomes/outcome.ts) loses what matters in long sessions: it lists tasks from the top until its character budget runs out, so the task that matched a search can be cut, and it never says what the agent actually did about a request. Rework it around the matched tasks.\n\n- Each task in buildOutcome(...).tasks gets reply: the agent's last message in that task, as a Cite like the other citations, or null.\n- taskDigest(o, { matchedSeqs, maxChars }) (maxChars default 1500) always shows every matched task in full, as \"N. <request> [<status>; <files>] <- hit\" followed by a line \"   agent: <reply excerpt>\" (three spaces, then \"agent: \"). Tasks that are not hits keep the one-line form, without a reply.\n- The rest of the budget goes to the tasks nearest a hit; tasks left out are counted in a line like \"… 12 more task(s)\". The digest never exceeds maxChars.\n- Existing lines keep their format, e.g. \"1. fix the flaky websocket test [verified; a.ts]\".\nUpdate the tests."
+    }
+  ]
+}

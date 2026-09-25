@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>acg-bench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!--BENCH-DATA-->
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f5f2;
+  --surface-1: #fcfcfb;
+  --surface-2: #f0efec;
+  --border: #e2e0da;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #7a7873;
+  --grid: #e7e5df;
+  --arm-1: #2a78d6;  /* none */
+  --arm-2: #eb6834;  /* acg */
+  --arm-3: #1baf7a;  /* acg-hint */
+  --llm: #b9b7b0;
+  --tool: #2a78d6;
+  --edit: #1baf7a;
+  --gateway: #eb6834;
+  --good: #0ca30c;
+  --good-text: #006300;
+  --critical: #d03b3b;
+  --warning: #fab219;
+  --shadow: 0 1px 2px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --bg: #121211; --surface-1: #1a1a19; --surface-2: #232321; --border: #33332f;
+    --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86; --grid: #2c2c29;
+    --arm-1: #3987e5; --arm-2: #d95926; --arm-3: #199e70;
+    --llm: #5b5a55; --tool: #3987e5; --edit: #199e70; --gateway: #d95926;
+    --good-text: #4cc94c; --shadow: none;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211; --surface-1: #1a1a19; --surface-2: #232321; --border: #33332f;
+  --text-primary: #ffffff; --text-secondary: #c3c2b7; --text-muted: #8f8e86; --grid: #2c2c29;
+  --arm-1: #3987e5; --arm-2: #d95926; --arm-3: #199e70;
+  --llm: #5b5a55; --tool: #3987e5; --edit: #199e70; --gateway: #d95926;
+  --good-text: #4cc94c; --shadow: none;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text-primary); font: 14px/1.45 Inter, system-ui, -apple-system, sans-serif; }
+code, pre, .mono { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; font-size: 12px; }
+a { color: inherit; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 20px 16px 64px; }
+header.top { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+.brand span { color: var(--text-secondary); }
+.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+select, button { font: inherit; color: var(--text-primary); background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+button { cursor: pointer; }
+button:hover { background: var(--surface-2); }
+.meta { color: var(--text-secondary); margin: -6px 0 18px; }
+.live { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--gateway); animation: pulse 1.4s infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); padding: 16px; margin-bottom: 16px; }
+.card h2 { font-size: 15px; margin: 0 0 4px; }
+.card .sub { color: var(--text-secondary); margin: 0 0 14px; font-size: 13px; }
+.headline { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.stat { background: var(--surface-2); border-radius: 10px; padding: 12px; }
+.stat .label { color: var(--text-secondary); font-size: 12px; }
+.stat .value { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; margin-top: 2px; }
+.stat .note { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+.good { color: var(--good-text); }
+.bad { color: var(--critical); }
+.arms { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.arm { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.arm .name { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
+.arm dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 10px 0 0; }
+.arm dt { color: var(--text-secondary); font-size: 12px; }
+.arm dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; color: var(--text-secondary); font-size: 12px; margin-bottom: 10px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.pair { display: grid; grid-template-columns: minmax(150px, 220px) 1fr 1fr; gap: 6px 18px; align-items: center; }
+.pair .head { color: var(--text-secondary); font-size: 12px; font-weight: 500; padding-bottom: 4px; border-bottom: 1px solid var(--grid); }
+.task-name { font-weight: 500; }
+.task-name small { display: block; color: var(--text-muted); font-weight: 400; font-size: 11px; }
+.bars { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; border-bottom: 1px solid var(--grid); }
+.bar-row { display: flex; align-items: center; gap: 6px; height: 16px; cursor: default; }
+.bar { height: 10px; border-radius: 0 4px 4px 0; min-width: 2px; }
+.bar-val { font-size: 11px; color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pass-badge { font-size: 11px; font-variant-numeric: tabular-nums; }
+.task-cell { border-bottom: 1px solid var(--grid); padding: 6px 0; align-self: stretch; display: flex; flex-direction: column; justify-content: center; }
+.cats { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.cat { background: var(--surface-2); border-radius: 8px; padding: 6px 10px; font-size: 12px; color: var(--text-secondary); }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th { color: var(--text-secondary); font-weight: 500; font-size: 12px; position: sticky; top: 0; background: var(--surface-1); }
+td.num, th.num { text-align: right; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--surface-2); }
+.table-wrap { overflow-x: auto; }
+.status { display: inline-flex; align-items: center; gap: 5px; font-weight: 500; }
+.status.pass { color: var(--good-text); }
+.status.fail { color: var(--critical); }
+.status.running, .status.queued { color: var(--text-secondary); }
+.status.error { color: var(--critical); }
+.drawer-bg { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(920px, 100vw); background: var(--bg); border-left: 1px solid var(--border); overflow-y: auto; transform: translateX(100%); transition: transform .18s ease; }
+.drawer.open { transform: none; }
+.drawer-bg.open { display: block; }
+.drawer .inner { padding: 18px 16px 48px; }
+.drawer h3 { margin: 0 0 4px; font-size: 17px; }
+.close { float: right; }
+details { margin-top: 8px; }
+summary { cursor: pointer; color: var(--text-secondary); }
+pre { background: var(--surface-2); border-radius: 8px; padding: 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; max-height: 520px; margin: 8px 0 0; }
+.diff .add { color: var(--good-text); }
+.diff .del { color: var(--critical); }
+.diff .hunk { color: var(--text-muted); }
+.timeline svg { width: 100%; display: block; }
+.timeline text { fill: var(--text-secondary); font-size: 11px; font-family: Inter, system-ui, sans-serif; }
+.steps { margin-top: 12px; }
+.step { border-top: 1px solid var(--grid); padding: 6px 0; }
+.step-head { display: flex; gap: 10px; align-items: baseline; cursor: pointer; }
+.step-head .t { color: var(--text-muted); width: 56px; text-align: right; font-variant-numeric: tabular-nums; flex: none; }
+.step-head .k { flex: none; }
+.step-head .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step-body { display: none; }
+.step.open .step-body { display: block; }
+.tip { position: fixed; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; box-shadow: 0 6px 20px rgba(0,0,0,.15); font-size: 12px; max-width: 360px; display: none; z-index: 10; }
+.tip b { font-weight: 600; }
+.empty { color: var(--text-secondary); padding: 40px 0; text-align: center; }
+.kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 12px 0; }
+.prompt { white-space: pre-wrap; background: var(--surface-2); border-radius: 8px; padding: 10px; font-size: 13px; }
+@media (max-width: 720px) {
+  .pair { grid-template-columns: 1fr; }
+  .pair .head:nth-child(1) { display: none; }
+  .bars { border-bottom: none; }
+  .task-cell { border-bottom: none; padding-top: 12px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><h1>acg-bench</h1><span>does searching earlier agent history help an agent finish real tasks?</span></div>
+    <div class="controls">
+      <span id="live" class="live" hidden><span class="dot"></span><span id="live-text"></span></span>
+      <select id="exp" aria-label="Experiment"></select>
+      <button id="theme" title="Toggle light/dark">◐</button>
+    </div>
+  </header>
+  <p class="meta" id="meta"></p>
+  <div id="main"><div class="empty">Loading…</div></div>
+</div>
+<div class="drawer-bg" id="drawer-bg"></div>
+<aside class="drawer" id="drawer" aria-label="Run detail"><div class="inner" id="drawer-inner"></div></aside>
+<div class="tip" id="tip"></div>
+
+<script>
+const STATIC = window.__BENCH__ || null;
+const ARM_ORDER = ["none", "acg", "acg-hint"];
+const ARM_LABEL = { none: "without gateway", acg: "with gateway", "acg-hint": "with gateway + hint" };
+const armColor = (arm) => `var(--arm-${Math.max(0, ARM_ORDER.indexOf(arm)) + 1})`;
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmtS = (n) => (Number.isFinite(n) ? (n >= 600 ? `${(n / 60).toFixed(1)} min` : `${Math.round(n)} s`) : "–");
+const fmtK = (n) => (Number.isFinite(n) ? (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : `${Math.round(n / 1000)}k`) : "–");
+const fmtPct = (r) => (Number.isFinite(r) ? `${r < 1 ? "−" : "+"}${Math.abs(Math.round((r - 1) * 100))}%` : "–");
+const statusOf = (r) => (r.status === "done" ? (r.check?.passed ? "pass" : "fail") : r.status);
+const statusLabel = { pass: "✓ pass", fail: "✗ fail", running: "◌ running", queued: "· queued", error: "! error" };
+
+// theme toggle: explicit choice wins both ways
+(() => {
+  try { const t = localStorage.getItem("acg-bench-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+  $("#theme").onclick = () => {
+    const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+    const cur = document.documentElement.dataset.theme || (dark ? "dark" : "light");
+    const next = cur === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("acg-bench-theme", next); } catch {}
+  };
+})();
+
+// tooltip
+const tip = $("#tip");
+document.addEventListener("mousemove", (e) => {
+  const el = e.target.closest?.("[data-tip]");
+  if (!el) { tip.style.display = "none"; return; }
+  tip.innerHTML = el.dataset.tip;
+  tip.style.display = "block";
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = Math.min(innerWidth - w - 8, e.clientX + 14) + "px";
+  tip.style.top = Math.min(innerHeight - h - 8, e.clientY + 14) + "px";
+});
+
+async function api(path) {
+  if (STATIC) {
+    if (path === "/api/exps") return STATIC.exps;
+    if (path.includes("/runs/")) return STATIC.runs[decodeURIComponent(path.split("/").pop())];
+    return STATIC.view;
+  }
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(`${path}: ${r.status}`);
+  return r.json();
+}
+
+let current = null;
+let timer = null;
+
+async function loadExps() {
+  const exps = await api("/api/exps");
+  const sel = $("#exp");
+  if (!exps.length) { $("#main").innerHTML = `<div class="empty">No experiments yet. Run <code>npx tsx bench/cli.ts run --exp pilot</code>.</div>`; return; }
+  const want = new URLSearchParams(location.search).get("exp") || exps[0].exp;
+  sel.innerHTML = exps.map((e) => `<option value="${esc(e.exp)}" ${e.exp === want ? "selected" : ""}>${esc(e.exp)} (${e.done}/${e.runs} runs)</option>`).join("");
+  sel.onchange = () => { history.replaceState(null, "", `?exp=${encodeURIComponent(sel.value)}`); show(sel.value); };
+  show(sel.value);
+}
+
+async function show(exp) {
+  clearTimeout(timer);
+  const v = await api(`/api/exps/${encodeURIComponent(exp)}`);
+  current = v;
+  render(v);
+  const running = v.runs.filter((r) => r.status === "running").length;
+  const queued = v.runs.filter((r) => r.status === "queued").length;
+  $("#live").hidden = !running;
+  $("#live-text").textContent = running ? `${running} running, ${queued} queued` : "";
+  if (!STATIC && (running || queued)) timer = setTimeout(() => show(exp), 3000);
+}
+
+function render(v) {
+  const e = v.exp;
+  const arms = ARM_ORDER.filter((a) => e.arms.includes(a)).concat(e.arms.filter((a) => !ARM_ORDER.includes(a)));
+  $("#meta").innerHTML = `Suite <b>${esc(e.suite)}</b> · agent <b>${esc(e.agent)}</b> (${esc(e.model)}) · gateway build <code>${esc(e.gatewayId || "?")}</code> · ${e.repeats} repeat(s) per task and arm · each run sandboxed, history pinned to the moment the task was asked`;
+  const cmp = v.comparisons.find((c) => c.arm === "acg") || v.comparisons[0];
+  let html = "";
+  if (cmp && cmp.tasks) {
+    const t = cmp.timeRatio, k = cmp.tokenRatio;
+    html += `<section class="card"><h2>${esc(ARM_LABEL[cmp.arm] || cmp.arm)} vs ${esc(ARM_LABEL[cmp.baseline] || cmp.baseline)}</h2>
+      <p class="sub">Paired over ${cmp.tasks} task(s): per task the median of its runs, across tasks the geometric mean of the ratios.</p>
+      <div class="headline">
+        <div class="stat"><div class="label">Time to finish</div><div class="value ${t < 1 ? "good" : t > 1 ? "bad" : ""}">${fmtPct(t)}</div><div class="note">faster on ${cmp.faster}, slower on ${cmp.slower}</div></div>
+        <div class="stat"><div class="label">Tokens spent</div><div class="value ${k < 1 ? "good" : k > 1 ? "bad" : ""}">${fmtPct(k)}</div><div class="note">fewer on ${cmp.cheaper}, more on ${cmp.pricier}</div></div>
+        <div class="stat"><div class="label">Tool calls</div><div class="value">${fmtPct(cmp.toolRatio)}</div><div class="note">per run, median</div></div>
+        <div class="stat"><div class="label">Tasks passed</div><div class="value">${cmp.passArm}/${cmp.runsArm}</div><div class="note">vs ${cmp.passBase}/${cmp.runsBase} without</div></div>
+      </div>
+      <div class="cats">${Object.entries(cmp.byCategory).map(([c, b]) => `<span class="cat"><b>${esc(c)}</b> · ${b.tasks} task(s) · time ${fmtPct(b.timeRatio)} · tokens ${fmtPct(b.tokenRatio)} · passed ${b.passArm} vs ${b.passBase}</span>`).join("")}</div>
+    </section>`;
+  }
+  html += `<section class="card"><h2>Arms</h2><p class="sub">What the agent was given, and how it did across every run.</p><div class="arms">${v.arms
+    .map((a) => `<div class="arm"><div class="name"><span class="swatch" style="background:${armColor(a.arm)}"></span>${esc(a.arm)} <span style="color:var(--text-secondary);font-weight:400">${esc(ARM_LABEL[a.arm] || "")}</span></div>
+      <dl><dt>passed</dt><dd>${a.passed}/${a.runs}${a.errors ? ` <span class="bad">(${a.errors} error)</span>` : ""}</dd>
+      <dt>median time</dt><dd>${fmtS(a.wallS)}</dd><dt>median tokens</dt><dd>${fmtK(a.tokens)}</dd>
+      <dt>median model steps</dt><dd>${Number.isFinite(a.llmSteps) ? a.llmSteps : "–"}</dd><dt>median tool calls</dt><dd>${Number.isFinite(a.toolCalls) ? a.toolCalls : "–"}</dd>
+      <dt>gateway calls per run</dt><dd>${a.gatewayCalls.toFixed(1)}</dd></dl></div>`)
+    .join("")}</div></section>`;
+  html += tasksChart(v, arms);
+  html += runsTable(v);
+  $("#main").innerHTML = html;
+  document.querySelectorAll("tr[data-run]").forEach((tr) => (tr.onclick = () => openRun(tr.dataset.run)));
+}
+
+function tasksChart(v, arms) {
+  if (!v.tasks.length) return "";
+  const maxT = Math.max(1, ...v.tasks.flatMap((t) => arms.map((a) => t.arms[a]?.wallS || 0)));
+  const maxK = Math.max(1, ...v.tasks.flatMap((t) => arms.map((a) => t.arms[a]?.tokens || 0)));
+  const barRows = (t, key, max, fmt) =>
+    arms.map((a) => {
+      const c = t.arms[a];
+      if (!c || !c.runs) return `<div class="bar-row"><span class="bar-val">${esc(a)}: no runs</span></div>`;
+      const val = c[key];
+      const w = Number.isFinite(val) ? Math.max(0.5, (val / max) * 82) : 0;
+      const tipHtml = `<b>${esc(t.taskId)}</b> · ${esc(a)}<br>passed ${c.passed}/${c.runs}<br>median time ${fmtS(c.wallS)} · tokens ${fmtK(c.tokens)}<br>median tool calls ${c.toolCalls} · gateway calls/run ${c.gatewayCalls.toFixed(1)}`;
+      return `<div class="bar-row" data-tip="${esc(tipHtml)}"><div class="bar" style="width:${w}%;background:${armColor(a)}"></div><span class="bar-val">${fmt(val)}</span></div>`;
+    }).join("");
+  const passCell = (t) => arms.map((a) => {
+    const c = t.arms[a];
+    if (!c || !c.runs) return "";
+    const all = c.passed === c.runs, none = c.passed === 0;
+    return `<span class="pass-badge ${all ? "good" : none ? "bad" : ""}" style="margin-right:8px"><span class="swatch" style="background:${armColor(a)};width:8px;height:8px"></span> ${all ? "✓" : none ? "✗" : "◐"} ${c.passed}/${c.runs}</span>`;
+  }).join("");
+  return `<section class="card"><h2>Per task</h2><p class="sub">Median over each task's runs. Hover a bar for details.</p>
+    <div class="legend">${arms.map((a) => `<span><span class="swatch" style="background:${armColor(a)}"></span>${esc(a)} · ${esc(ARM_LABEL[a] || "")}</span>`).join("")}</div>
+    <div class="pair"><div class="head">Task</div><div class="head">Time to finish</div><div class="head">Tokens spent</div>
+    ${v.tasks.map((t) => `<div class="task-cell"><div class="task-name">${esc(t.taskId)}<small>${esc(t.category)} · ${esc(t.title)}</small></div><div style="margin-top:4px">${passCell(t)}</div></div>
+      <div class="bars">${barRows(t, "wallS", maxT, fmtS)}</div><div class="bars">${barRows(t, "tokens", maxK, fmtK)}</div>`).join("")}
+    </div></section>`;
+}
+
+function runsTable(v) {
+  const rows = [...v.runs].sort((a, b) => a.taskId.localeCompare(b.taskId) || a.repeat - b.repeat || ARM_ORDER.indexOf(a.arm) - ARM_ORDER.indexOf(b.arm));
+  return `<section class="card"><h2>Runs</h2><p class="sub">Every run. Click one for its timeline, the agent's diff and the hidden tests.</p><div class="table-wrap"><table>
+    <thead><tr><th>task</th><th>arm</th><th class="num">#</th><th>result</th><th class="num">time</th><th class="num">tokens</th><th class="num">model steps</th><th class="num">tool calls</th><th class="num">gateway calls</th><th class="num">files changed</th></tr></thead><tbody>
+    ${rows.map((r) => {
+      const m = r.metrics, st = statusOf(r);
+      const live = r.status === "running" && r.live;
+      return `<tr data-run="${esc(r.runId)}"><td>${esc(r.taskId)}</td><td><span class="swatch" style="background:${armColor(r.arm)}"></span> ${esc(r.arm)}</td><td class="num">${r.repeat}</td>
+        <td><span class="status ${st}">${statusLabel[st] || st}${live ? ` · ${esc(r.phase)}` : ""}</span></td>
+        <td class="num">${m && r.status === "done" ? fmtS(m.wallMs / 1000) : live ? fmtS(r.live.elapsedMs / 1000) : "–"}</td>
+        <td class="num">${m ? fmtK(m.tokens.total) : live ? fmtK(r.live.tokens) : "–"}</td>
+        <td class="num">${m ? m.llmSteps : live ? r.live.steps : "–"}</td>
+        <td class="num">${m ? m.toolCalls : live ? r.live.toolCalls : "–"}</td>
+        <td class="num">${r.gatewayServed ?? (live ? r.live.gatewayCalls : r.arm === "none" ? "" : "–")}</td>
+        <td class="num">${r.diff ? r.diff.files.length : "–"}</td></tr>`;
+    }).join("")}</tbody></table></div></section>`;
+}
+
+async function openRun(runId) {
+  const exp = current.exp.exp;
+  const d = await api(`/api/exps/${encodeURIComponent(exp)}/runs/${encodeURIComponent(runId)}`);
+  const r = d.run, m = r.metrics, spec = current.taskSpecs[r.taskId] || {};
+  const st = statusOf(r);
+  const html = `<button class="close" id="close">Close</button>
+    <h3>${esc(r.taskId)} · <span class="swatch" style="background:${armColor(r.arm)}"></span> ${esc(r.arm)} · run ${r.repeat}</h3>
+    <div style="color:var(--text-secondary)">${esc(spec.title || "")} · <span class="status ${st}">${statusLabel[st] || st}</span>${r.check ? ` · ${r.check.tests} hidden tests, ${r.check.failed} failed` : ""}</div>
+    <div class="kv">
+      <div class="stat"><div class="label">time</div><div class="value">${m ? fmtS(m.wallMs / 1000) : "–"}</div></div>
+      <div class="stat"><div class="label">tokens</div><div class="value">${m ? fmtK(m.tokens.total) : "–"}</div><div class="note">${m ? `in ${fmtK(m.tokens.input)} · out ${fmtK(m.tokens.output)} · think ${fmtK(m.tokens.thinking)}` : ""}</div></div>
+      <div class="stat"><div class="label">model steps</div><div class="value">${m ? m.llmSteps : "–"}</div></div>
+      <div class="stat"><div class="label">tool calls</div><div class="value">${m ? m.toolCalls : "–"}</div><div class="note">${m ? `${m.editCalls} edits · first edit ${m.firstEditMs == null ? "never" : fmtS(m.firstEditMs / 1000)}` : ""}</div></div>
+      <div class="stat"><div class="label">gateway calls</div><div class="value">${r.gatewayServed ?? (r.arm === "none" ? "n/a" : "–")}</div><div class="note">${r.arm === "none" ? "no gateway in this arm" : r.gatewayLoaded ? "gateway tools loaded" : "gateway tools NOT loaded"}</div></div>
+    </div>
+    ${timeline(d.events, m ? m.wallMs : 0)}
+    <details><summary>Task prompt (history pinned at ${esc(spec.asOf || "?")})</summary><div class="prompt">${esc(spec.prompt || "")}</div>${spec.historyNote ? `<p style="color:var(--text-secondary)">${esc(spec.historyNote)}</p>` : ""}</details>
+    ${r.check && !r.check.passed ? `<details open><summary>Hidden test failures</summary><pre>${esc(r.check.failures.map((f) => `${f.test}\n${f.message}`).join("\n\n") || (r.check.brokenFiles || []).join("\n"))}</pre></details>` : ""}
+    ${r.error ? `<details open><summary>Run error</summary><pre>${esc(r.error)}</pre></details>` : ""}
+    <details><summary>Agent's diff${r.diff ? ` (${r.diff.files.length} files, +${r.diff.added} −${r.diff.removed})` : ""}</summary><pre class="diff">${diffHtml(d.diff)}</pre></details>
+    <details><summary>Agent's final answer</summary><pre>${esc(r.finalText || "")}</pre></details>
+    ${r.refusedReads?.length ? `<details><summary>Reads the sandbox refused (${r.refusedReads.length})</summary><pre>${esc(r.refusedReads.join("\n"))}</pre></details>` : ""}
+    <h4 style="margin:18px 0 0">Steps</h4><div class="steps">${steps(d.events)}</div>`;
+  $("#drawer-inner").innerHTML = html;
+  $("#drawer").classList.add("open");
+  $("#drawer-bg").classList.add("open");
+  $("#close").onclick = closeRun;
+  document.querySelectorAll(".step-head").forEach((h) => (h.onclick = () => h.parentElement.classList.toggle("open")));
+}
+function closeRun() { $("#drawer").classList.remove("open"); $("#drawer-bg").classList.remove("open"); }
+$("#drawer-bg").onclick = closeRun;
+document.addEventListener("keydown", (e) => e.key === "Escape" && closeRun());
+
+function kindOf(e) { return e.kind === "llm" ? "llm" : e.gateway ? "gateway" : e.edit ? "edit" : "tool"; }
+const KIND = { llm: "model step", tool: "tool call", edit: "file edit", gateway: "gateway call" };
+
+function timeline(events, wallMs) {
+  const evs = events.filter((e) => e.kind !== "text");
+  if (!evs.length) return "";
+  const total = Math.max(wallMs, ...evs.map((e) => e.t)) || 1;
+  const W = 880, lanes = ["llm", "tool", "edit", "gateway"], laneH = 22, top = 8, left = 96, H = top + lanes.length * laneH + 26;
+  const x = (ms) => left + (ms / total) * (W - left - 8);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Run timeline">`;
+  lanes.forEach((l, i) => {
+    const y = top + i * laneH;
+    svg += `<text x="0" y="${y + 14}">${KIND[l]}s</text><line x1="${left}" x2="${W - 8}" y1="${y + laneH - 2}" y2="${y + laneH - 2}" stroke="var(--grid)"/>`;
+  });
+  for (const e of evs) {
+    const k = kindOf(e), i = lanes.indexOf(k), y = top + i * laneH + 4;
+    const x1 = x(Math.max(0, e.t - (e.durMs || 0))), x2 = Math.max(x1 + 3, x(e.t));
+    const label = k === "llm" ? `${fmtK((e.tokens?.input || 0) + (e.tokens?.output || 0) + (e.tokens?.thinking || 0))} tokens` : `${esc(e.name)} ${esc(briefParams(e))}`;
+    svg += `<rect x="${x1}" y="${y}" width="${x2 - x1}" height="12" rx="3" fill="var(--${k})" data-tip="${esc(`<b>${KIND[k]}</b> at ${fmtS(e.t / 1000)} (${((e.durMs || 0) / 1000).toFixed(1)} s)<br>${label}`)}"/>`;
+  }
+  const ticks = 6;
+  for (let i = 0; i <= ticks; i++) {
+    const ms = (total * i) / ticks;
+    svg += `<text x="${x(ms)}" y="${H - 6}" text-anchor="${i === 0 ? "start" : i === ticks ? "end" : "middle"}">${fmtS(ms / 1000)}</text>`;
+  }
+  svg += `</svg>`;
+  return `<div class="card timeline" style="padding:12px"><div class="legend">${lanes.map((l) => `<span><span class="swatch" style="background:var(--${l})"></span>${KIND[l]}s</span>`).join("")}</div>${svg}</div>`;
+}
+
+function briefParams(e) {
+  const p = e.params || {};
+  const v = p.CommandLine || p.AbsolutePath || p.TargetFile || p.Query || p.SearchPath || p.ServerName || p.ToolName || p.query || Object.values(p)[0] || "";
+  const s = typeof v === "string" ? v : JSON.stringify(v);
+  return s.length > 90 ? s.slice(0, 90) + "…" : s;
+}
+
+function steps(events) {
+  return events.map((e) => {
+    if (e.kind === "text") return `<div class="step open"><div class="step-head"><span class="t">${fmtS(e.t / 1000)}</span><span class="k">final answer</span></div><div class="step-body"><pre>${esc(e.text)}</pre></div></div>`;
+    const k = kindOf(e);
+    const what = k === "llm" ? `${fmtK((e.tokens?.input || 0))} in · ${e.tokens?.output || 0} out · ${e.tokens?.thinking || 0} thinking` : `${esc(e.name)} ${esc(briefParams(e))}`;
+    const body = k === "llm" ? "" : `<pre>${esc(JSON.stringify(e.params || {}, null, 2))}</pre>${e.output ? `<pre>${esc(e.output)}</pre>` : ""}`;
+    return `<div class="step"><div class="step-head"><span class="t">${fmtS(e.t / 1000)}</span><span class="k"><span class="swatch" style="background:var(--${k})"></span></span><span class="what">${what}</span></div><div class="step-body">${body}</div></div>`;
+  }).join("");
+}
+
+function diffHtml(d) {
+  return esc(d || "(no changes)").split("\n").map((l) => (l.startsWith("+") && !l.startsWith("+++") ? `<span class="add">${l}</span>` : l.startsWith("-") && !l.startsWith("---") ? `<span class="del">${l}</span>` : l.startsWith("@@") ? `<span class="hunk">${l}</span>` : l)).join("\n");
+}
+
+loadExps().catch((e) => ($("#main").innerHTML = `<div class="empty">Could not load: ${esc(e.message)}</div>`));
+</script>
+</body>
+</html>
