@@ -60,7 +60,7 @@ export function buildMcpServer(app: GatewayApp, cwd: string = process.cwd()): Mc
       compact: z
         .boolean()
         .optional()
-        .describe("true = each hit's summary, outcome and its session's task digest, without turn windows (~5x fewer tokens); open the hits you need with context.get_context. Omitted = the server's default (off)."),
+        .describe("true = each hit's summary, outcome and its session's task digest, without turn windows (~5x fewer tokens); open the hits you need with context.get_context. false = each hit's turn window too. Omitted = the server's default (compact)."),
       maxResults: z.number().min(1).max(20).optional(),
       maxTurns: z.number().min(1).max(15).optional(),
       maxTokens: z.number().min(100).max(20000).optional(),

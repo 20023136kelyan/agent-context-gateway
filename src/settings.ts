@@ -53,8 +53,10 @@ export interface GatewaySettings {
   readonly facets: boolean;
   /**
    * Search results without turn windows (commands.ts compactResults): the
-   * agent opens the hits it needs with context.get_context. Default off;
-   * GATEWAY_COMPACT=on|off beats the file.
+   * agent opens the hits it needs with context.get_context. Default ON: with
+   * an agent in the loop (scripts/agent-eval.ts, 140 real queries) it picked
+   * as well as with full results and fell for fewer useless sessions, reading
+   * ~5x fewer tokens. GATEWAY_COMPACT=on|off beats the file.
    */
   readonly compact: boolean;
   /** Prompt -> files -> sessions (search/files.ts). Default off; GATEWAY_FILES=on|off beats the file. */
@@ -182,7 +184,7 @@ export function resolveSettings(opts: SettingsOverrides = {}): GatewaySettings {
     reranker: oneOf<RerankerName>(process.env.GATEWAY_RERANKER, RERANKER_DEFS.map((r): RerankerName => r.name)) ?? file.reranker ?? null,
     rerankByDefault: onOff(process.env.GATEWAY_RERANK_DEFAULT) ?? file.rerankByDefault ?? null,
     facets: onOff(process.env.GATEWAY_FACETS) ?? file.facets ?? false,
-    compact: onOff(process.env.GATEWAY_COMPACT) ?? file.compact ?? false,
+    compact: onOff(process.env.GATEWAY_COMPACT) ?? file.compact ?? true,
     files: onOff(process.env.GATEWAY_FILES) ?? file.files ?? false,
     allowedHosts,
     telemetry: telemetryEnabled(file.telemetry),

@@ -107,9 +107,9 @@ describe("resolveSettings", () => {
 });
 
 describe("acg config set: reranker, rerank-default, facets, compact", () => {
-  it("defaults to auto reranking, facets off and full results", () => {
+  it("defaults to auto reranking, facets off and compact results", () => {
     const s = resolveSettings({ stateDir: mkdtempSync(join(tmpdir(), "acg-settings-")) });
-    expect(s).toMatchObject({ reranker: null, rerankByDefault: null, facets: false, compact: false });
+    expect(s).toMatchObject({ reranker: null, rerankByDefault: null, facets: false, compact: true });
   });
 
   it("saves to settings.json, merging; unset removes; the environment still wins", () => {
@@ -118,12 +118,12 @@ describe("acg config set: reranker, rerank-default, facets, compact", () => {
     setSetting(dir, "reranker", "self-hosted");
     setSetting(dir, "rerank-default", "off");
     setSetting(dir, "facets", "on");
-    setSetting(dir, "compact", "on");
-    expect(resolveSettings({ stateDir: dir })).toMatchObject({ reranker: "self-hosted", rerankByDefault: false, facets: true, compact: true, telemetry: true });
+    setSetting(dir, "compact", "off");
+    expect(resolveSettings({ stateDir: dir })).toMatchObject({ reranker: "self-hosted", rerankByDefault: false, facets: true, compact: false, telemetry: true });
     process.env.GATEWAY_FACETS = "off";
     process.env.GATEWAY_RERANK_DEFAULT = "on";
-    process.env.GATEWAY_COMPACT = "off";
-    expect(resolveSettings({ stateDir: dir })).toMatchObject({ rerankByDefault: true, facets: false, compact: false });
+    process.env.GATEWAY_COMPACT = "on";
+    expect(resolveSettings({ stateDir: dir })).toMatchObject({ rerankByDefault: true, facets: false, compact: true });
     setSetting(dir, "reranker", null);
     expect(loadSettingsFile(dir)).not.toHaveProperty("reranker");
     expect(() => setSetting(dir, "facets", "maybe")).toThrow(/on\|off/);

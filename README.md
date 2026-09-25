@@ -24,7 +24,7 @@ Fixture corpus: [`FIXTURE_CORPUS_BRIEF.md`](./FIXTURE_CORPUS_BRIEF.md).
 - [x] Review fixes (2026-09-16) — correctness, security and performance pass over the whole codebase; see [`REVIEW_FIX_PLAN.md`](./REVIEW_FIX_PLAN.md)
 - [x] 0.2.0 (2026-09-22) — Voyage embeddings, Jev reranker and decision judge, component registry, OpenCode and trajectory adapters, sqlite-vec backend (Intel Macs), fixture/BEIR eval program and sweep harness, `init`/`doctor`/`models`/`stats`/`telemetry`
 - [x] 0.2.2 (2026-09-24) — search scoped to the caller's project, action index (`actions`), session outcome records and task digests, opt-in proactive prompt hook, secret scrubbing before anything leaves the machine, key proxy (`acg proxy`), `acg paths`, self-hosted reranker, `acg config set`; reranking and facets off unless chosen (judged on real history), result token budget enforced
-- [x] Unreleased — task digest v2 (built around the matched tasks, with the agent's reply per task), compact results (`compact`), `get_context` held to the token budget
+- [x] Unreleased — task digest v2 (built around the matched tasks, with the agent's reply per task), compact results by default (agent-in-the-loop eval), `get_context` held to the token budget and point in time; measured and left off: reranker focus input, prompt → files → sessions (`files`)
 - [x] Stack focus (2026-09-23) — local fallbacks deleted: MLX and Ollama embedders, ONNX cross-encoder, neural-entailment and Apple FM judges. They were measured and lost (see [Reranking](#reranking)).
 
 ## Quickstart
@@ -459,6 +459,15 @@ best top result (9 better / 3 worse), at about 0.2 s per search on one L4.
 request. The environment beats settings.json; `acg config unset <name>` returns
 to the default and `acg config` shows what is in effect.
 
+**What a reranker reads.** A reranker sees 1,000 characters of each candidate
+turn. `GATEWAY_RERANK_INPUT=focus` gives it the stretch holding the query's
+words instead of the turn's start (`GATEWAY_RERANK_CHARS` sets the length).
+Judged on 125 real queries (Gemini grades, 853 pooled pairs), it changed
+nothing: Voyage -0.005 NDCG@5 (95% interval -0.016 to +0.008), Voyage at
+4,000 chars +0.002, Jev +0.005, and Jev still put a worse session first more
+often than a better one (27 vs 14 queries against plain hybrid). What rerankers
+read is not why they do not help, so the default stays `head`.
+
 Why these components, measured on BEIR nfcorpus (3633 real documents, 100 judged queries):
 
 | Arm | NDCG@5 | p50 |
@@ -635,6 +644,18 @@ default, since judged relevance found no gain; turn it on with
 found the right session for 44% of prompts instead of 39%, and cut false
 alarms from 21% to 16%.
 
+**Files a session edited** (`src/search/files.ts`): a prompt often names what
+an earlier session touched ("the how-it-works section") in words that session's
+conversation never used. With `files` on, sessions are also ranked by how the
+prompt's identifier words (camelCase, snake_case and path parts) match the
+files they edited, from the action index, each word weighted by how few
+sessions touched it; the list joins the fusion like a facet. No model runs.
+Judged on the same 125 queries: +0.012 NDCG@5 (95% interval -0.012 to +0.037),
+better on 11 queries and worse on 17, top result better on 5 and worse on 4:
+not a reliable gain, so it is off. Turn it on with `acg config set files on`
+(or `GATEWAY_FILES=on`). The mined labels favour it (+0.017), since they are
+shared edited files themselves.
+
 **Judged relevance.** Mined labels count a session as relevant only when it
 edited the same files, which misses a session that explains the same bug.
 Three scripts grade what the compared settings actually returned instead:
@@ -749,10 +770,26 @@ each session its digest, and the agent opens the hits it wants with
 2,000-token budget and cuts a long turn to the part matching the query. On the
 24 golden queries a compact response is 5.7x smaller than a full one (median
 2,300 tokens against 12,400; 3.7x to 8.3x); opening a hit takes under a
-millisecond on the gateway, so the cost is the agent's extra turn. It is off by
-default. Turn it on with `acg config set compact on` (or `GATEWAY_COMPACT=on`),
-or per request with MCP `compact: true`, `?compact=true` or `acg search
---compact`. Whether an agent does better with it end to end is not measured yet.
+millisecond on the gateway, so the cost is the agent's extra turn.
+
+**With an agent in the loop** (`scripts/agent-eval.ts`): a model (Gemini, via
+agy) plays the agent on the 140 real queries. It gets the task, may search and
+open hits up to four times, then names the earlier sessions it would rely on.
+Its first pick is graded against the same judged pool (858 pairs; picks outside
+it were graded too):
+
+| what search returns | first pick directly useful (104 queries with a useful session) | first pick useless (all 140) | tokens read (median) | prompt tokens (median) | time (median) |
+|---|---:|---:|---:|---:|---:|
+| search's top result, no agent | 70% | 30% | | | |
+| full results | 78% | 14% | 31,500 | 70,200 | 96 s |
+| compact results | 79% | 9% | 6,800 | 18,700 | 85 s |
+
+Compact picked as well as full (better on 13 queries, worse on 10) and fell for
+fewer useless sessions, reading 4.7x fewer tokens: it opened 1.4 hits per task
+where full searched more instead. So **compact is the default**. For full
+results set `acg config set compact off` (or `GATEWAY_COMPACT=off`), or per
+request MCP `compact: false`, `?compact=false` or `acg search --no-compact`. A
+gateway federating to another always gets full results unless it asks.
 
 `npx tsx scripts/bench.ts [--sync]` times the hot paths against the real local
 histories (read-only).

@@ -114,8 +114,8 @@ program
   .option("--no-rerank", "Skip reranking even if it is on by default")
   .option("--facets", "Also search a long prompt's parts (default off; acg config set facets)")
   .option("--no-facets", "Skip facets even if they are on by default")
-  .option("--compact", "Results without turn windows (default off; acg config set compact)")
-  .option("--no-compact", "Full results even if compact is on by default")
+  .option("--compact", "Results without turn windows (the default; acg config set compact)")
+  .option("--no-compact", "Full results, with each hit's turn window")
   .action(async (query: string, cmdOpts) => {
     const scope = projectArgs(cmdOpts);
     const path = `/search${qs({ q: query, ...scope, repo: cmdOpts.repo, harness: cmdOpts.harness, maxResults: String(cmdOpts.maxResults ?? 5), scope: cmdOpts.scope, callerSessionId: cmdOpts.asSession, principal: cmdOpts.asPrincipal, asOf: cmdOpts.asOf, includeSuperseded: cmdOpts.includeSuperseded ? "true" : undefined, rerank: cmdOpts.rerank === false ? "false" : undefined, facets: cmdOpts.facets === undefined ? undefined : String(cmdOpts.facets), compact: cmdOpts.compact === undefined ? undefined : String(cmdOpts.compact) })}`;
@@ -973,7 +973,7 @@ to its default.
   acg config set reranker self-hosted      rerank with the endpoint GATEWAY_RERANK_URL names
   acg config set rerank-default off        keep a reranker for explicit --rerank only
   acg config set facets on                 also search a long prompt's parts
-  acg config set compact on                results without turn windows; open hits with get_context
+  acg config set compact off               full results with turn windows (default: compact)
   acg config unset reranker`,
   )
   .action(async (op?: string, name?: string, value?: string) => {
