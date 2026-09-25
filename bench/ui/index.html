@@ -171,6 +171,7 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const fmtS = (n) => (Number.isFinite(n) ? (n >= 600 ? `${(n / 60).toFixed(1)} min` : `${Math.round(n)} s`) : "–");
 const fmtK = (n) => (Number.isFinite(n) ? (n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : `${Math.round(n / 1000)}k`) : "–");
+const fmtUsd = (n) => (Number.isFinite(n) ? `$${n.toFixed(2)}` : "–");
 const fmtPct = (r) => (Number.isFinite(r) ? `${r < 1 ? "−" : "+"}${Math.abs(Math.round((r - 1) * 100))}%` : "–");
 const statusOf = (r) => (r.status === "done" ? (r.check?.passed ? "pass" : "fail") : r.status);
 const statusLabel = { pass: "✓ pass", fail: "✗ fail", running: "◌ running", queued: "· queued", error: "! error" };
@@ -239,15 +240,17 @@ function render(v) {
   const e = v.exp;
   const arms = ARM_ORDER.filter((a) => e.arms.includes(a)).concat(e.arms.filter((a) => !ARM_ORDER.includes(a)));
   $("#meta").innerHTML = `Suite <b>${esc(e.suite)}</b> · agent <b>${esc(e.agent)}</b> (${esc(e.model)}) · gateway build <code>${esc(e.gatewayId || "?")}</code> · ${e.repeats} repeat(s) per task and arm · each run sandboxed, history pinned to the moment the task was asked`;
-  const cmp = v.comparisons.find((c) => c.arm === "acg") || v.comparisons[0];
   let html = "";
-  if (cmp && cmp.tasks) {
+  for (const cmp of v.comparisons.filter((c) => c.tasks)) {
     const t = cmp.timeRatio, k = cmp.tokenRatio;
+    const armCell = v.arms.find((a) => a.arm === cmp.arm);
+    const unused = armCell && armCell.runs && armCell.gatewayCalls === 0;
     html += `<section class="card"><h2>${esc(ARM_LABEL[cmp.arm] || cmp.arm)} vs ${esc(ARM_LABEL[cmp.baseline] || cmp.baseline)}</h2>
-      <p class="sub">Paired over ${cmp.tasks} task(s): per task the median of its runs, across tasks the geometric mean of the ratios.</p>
+      <p class="sub">Paired over ${cmp.tasks} task(s): per task the median of its runs, across tasks the geometric mean of the ratios.${unused ? ` <b>The agent never called the gateway in this arm</b>, so these differences are run-to-run noise.` : ""}</p>
       <div class="headline">
         <div class="stat"><div class="label">Time to finish</div><div class="value ${t < 1 ? "good" : t > 1 ? "bad" : ""}">${fmtPct(t)}</div><div class="note">faster on ${cmp.faster}, slower on ${cmp.slower}</div></div>
         <div class="stat"><div class="label">Tokens spent</div><div class="value ${k < 1 ? "good" : k > 1 ? "bad" : ""}">${fmtPct(k)}</div><div class="note">fewer on ${cmp.cheaper}, more on ${cmp.pricier}</div></div>
+        ${Number.isFinite(cmp.costRatio) ? `<div class="stat"><div class="label">Cost</div><div class="value ${cmp.costRatio < 1 ? "good" : cmp.costRatio > 1 ? "bad" : ""}">${fmtPct(cmp.costRatio)}</div><div class="note">as the agent reports it</div></div>` : ""}
         <div class="stat"><div class="label">Tool calls</div><div class="value">${fmtPct(cmp.toolRatio)}</div><div class="note">per run, median</div></div>
         <div class="stat"><div class="label">Tasks passed</div><div class="value">${cmp.passArm}/${cmp.runsArm}</div><div class="note">vs ${cmp.passBase}/${cmp.runsBase} without</div></div>
       </div>
@@ -257,7 +260,7 @@ function render(v) {
   html += `<section class="card"><h2>Arms</h2><p class="sub">What the agent was given, and how it did across every run.</p><div class="arms">${v.arms
     .map((a) => `<div class="arm"><div class="name"><span class="swatch" style="background:${armColor(a.arm)}"></span>${esc(a.arm)} <span style="color:var(--text-secondary);font-weight:400">${esc(ARM_LABEL[a.arm] || "")}</span></div>
       <dl><dt>passed</dt><dd>${a.passed}/${a.runs}${a.errors ? ` <span class="bad">(${a.errors} error)</span>` : ""}</dd>
-      <dt>median time</dt><dd>${fmtS(a.wallS)}</dd><dt>median tokens</dt><dd>${fmtK(a.tokens)}</dd>
+      <dt>median time</dt><dd>${fmtS(a.wallS)}</dd><dt>median tokens</dt><dd>${fmtK(a.tokens)}</dd>${Number.isFinite(a.costUsd) ? `<dt>median cost</dt><dd>${fmtUsd(a.costUsd)}</dd>` : ""}
       <dt>median model steps</dt><dd>${Number.isFinite(a.llmSteps) ? a.llmSteps : "–"}</dd><dt>median tool calls</dt><dd>${Number.isFinite(a.toolCalls) ? a.toolCalls : "–"}</dd>
       <dt>gateway calls per run</dt><dd>${a.gatewayCalls.toFixed(1)}</dd></dl></div>`)
     .join("")}</div></section>`;
@@ -297,7 +300,7 @@ function tasksChart(v, arms) {
 function runsTable(v) {
   const rows = [...v.runs].sort((a, b) => a.taskId.localeCompare(b.taskId) || a.repeat - b.repeat || ARM_ORDER.indexOf(a.arm) - ARM_ORDER.indexOf(b.arm));
   return `<section class="card"><h2>Runs</h2><p class="sub">Every run. Click one for its timeline, the agent's diff and the hidden tests.</p><div class="table-wrap"><table>
-    <thead><tr><th>task</th><th>arm</th><th class="num">#</th><th>result</th><th class="num">time</th><th class="num">tokens</th><th class="num">model steps</th><th class="num">tool calls</th><th class="num">gateway calls</th><th class="num">files changed</th></tr></thead><tbody>
+    <thead><tr><th>task</th><th>arm</th><th class="num">#</th><th>result</th><th class="num">time</th><th class="num">tokens</th><th class="num">cost</th><th class="num">model steps</th><th class="num">tool calls</th><th class="num">gateway calls</th><th class="num">files changed</th></tr></thead><tbody>
     ${rows.map((r) => {
       const m = r.metrics, st = statusOf(r);
       const live = r.status === "running" && r.live;
@@ -305,6 +308,7 @@ function runsTable(v) {
         <td><span class="status ${st}">${statusLabel[st] || st}${live ? ` · ${esc(r.phase)}` : ""}</span></td>
         <td class="num">${m && r.status === "done" ? fmtS(m.wallMs / 1000) : live ? fmtS(r.live.elapsedMs / 1000) : "–"}</td>
         <td class="num">${m ? fmtK(m.tokens.total) : live ? fmtK(r.live.tokens) : "–"}</td>
+        <td class="num">${typeof r.costUsd === "number" ? fmtUsd(r.costUsd) : "–"}</td>
         <td class="num">${m ? m.llmSteps : live ? r.live.steps : "–"}</td>
         <td class="num">${m ? m.toolCalls : live ? r.live.toolCalls : "–"}</td>
         <td class="num">${r.gatewayServed ?? (live ? r.live.gatewayCalls : r.arm === "none" ? "" : "–")}</td>

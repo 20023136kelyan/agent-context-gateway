@@ -21,6 +21,8 @@ export interface Cell {
   toolCalls: number;
   llmSteps: number;
   gatewayCalls: number;
+  /** Median of what the agent reports each run cost (NaN when it reports none). */
+  costUsd: number;
 }
 
 export interface TaskRow {
@@ -42,6 +44,7 @@ export interface Comparison {
   timeRatio: number;
   tokenRatio: number;
   toolRatio: number;
+  costRatio: number;
   faster: number;
   slower: number;
   cheaper: number;
@@ -70,6 +73,7 @@ function cell(runs: RunRecord[]): Cell {
     toolCalls: median(done.map((r) => r.metrics!.toolCalls)),
     llmSteps: median(done.map((r) => r.metrics!.llmSteps)),
     gatewayCalls: done.length ? done.reduce((n, r) => n + (r.gatewayServed ?? 0), 0) / done.length : 0,
+    costUsd: median(done.filter((r) => typeof r.costUsd === "number").map((r) => r.costUsd!)),
   };
 }
 
@@ -120,6 +124,7 @@ export function buildReport(exp: string): Report {
       timeRatio: geo(ratios(paired, "wallS")),
       tokenRatio: geo(ratios(paired, "tokens")),
       toolRatio: geo(ratios(paired, "toolCalls")),
+      costRatio: geo(ratios(paired, "costUsd")),
       faster: paired.filter((t) => t.arms[arm]!.wallS < t.arms[baseline]!.wallS).length,
       slower: paired.filter((t) => t.arms[arm]!.wallS > t.arms[baseline]!.wallS).length,
       cheaper: paired.filter((t) => t.arms[arm]!.tokens < t.arms[baseline]!.tokens).length,
@@ -132,14 +137,16 @@ export function buildReport(exp: string): Report {
 
 const k = (n: number) => (Number.isFinite(n) ? `${Math.round(n / 1000)}k` : "–");
 const s = (n: number) => (Number.isFinite(n) ? `${Math.round(n)}s` : "–");
+const usd = (n: number) => (Number.isFinite(n) ? `$${n.toFixed(2)}` : "–");
 const pct = (r: number) => (Number.isFinite(r) ? `${r < 1 ? "−" : "+"}${Math.abs(Math.round((r - 1) * 100))}%` : "–");
 
 export function printReport(rep: Report): void {
   const e = rep.exp;
   console.log(`${e.exp}: suite ${e.suite}, agent ${e.agent} (${e.model}), gateway build ${e.gatewayId ?? "?"}, ${e.repeats} repeat(s)\n`);
-  console.log("arm        passed      median time  median tokens  median tool calls  gateway calls/run");
+  const costs = rep.arms.some((a) => Number.isFinite(a.costUsd));
+  console.log(`arm        passed      median time  median tokens  ${costs ? "median cost  " : ""}median tool calls  gateway calls/run`);
   for (const a of rep.arms) {
-    console.log(`${a.arm.padEnd(10)} ${`${a.passed}/${a.runs}`.padEnd(11)} ${s(a.wallS).padEnd(12)} ${k(a.tokens).padEnd(14)} ${(Number.isFinite(a.toolCalls) ? String(a.toolCalls) : "–").padEnd(18)} ${a.gatewayCalls.toFixed(1)}${a.errors ? `   (${a.errors} error(s))` : ""}`);
+    console.log(`${a.arm.padEnd(10)} ${`${a.passed}/${a.runs}`.padEnd(11)} ${s(a.wallS).padEnd(12)} ${k(a.tokens).padEnd(14)} ${costs ? usd(a.costUsd).padEnd(12) : ""} ${(Number.isFinite(a.toolCalls) ? String(a.toolCalls) : "–").padEnd(18)} ${a.gatewayCalls.toFixed(1)}${a.errors ? `   (${a.errors} error(s))` : ""}`);
   }
   console.log("\nper task (passed/runs, median time, median tokens):");
   for (const t of rep.tasks) {
@@ -149,7 +156,7 @@ export function printReport(rep: Report): void {
   for (const c of rep.comparisons) {
     console.log(
       `\n${c.arm} vs ${c.baseline} over ${c.tasks} task(s): passed ${c.passArm}/${c.runsArm} vs ${c.passBase}/${c.runsBase}; ` +
-        `time ${pct(c.timeRatio)} (faster on ${c.faster}, slower on ${c.slower}); tokens ${pct(c.tokenRatio)} (fewer on ${c.cheaper}, more on ${c.pricier}); tool calls ${pct(c.toolRatio)}`,
+        `time ${pct(c.timeRatio)} (faster on ${c.faster}, slower on ${c.slower}); tokens ${pct(c.tokenRatio)} (fewer on ${c.cheaper}, more on ${c.pricier}); tool calls ${pct(c.toolRatio)}${Number.isFinite(c.costRatio) ? `; cost ${pct(c.costRatio)}` : ""}`,
     );
     for (const [cat, b] of Object.entries(c.byCategory)) console.log(`  ${cat}: ${b.tasks} task(s), time ${pct(b.timeRatio)}, tokens ${pct(b.tokenRatio)}, passed ${b.passArm} vs ${b.passBase}`);
   }

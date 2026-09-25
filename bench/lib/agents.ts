@@ -44,6 +44,8 @@ export interface AgentRunResult {
   toolsAvailable: string[];
   /** What the agent reports the run cost, if it does. */
   costUsd?: number;
+  /** The run's token totals as the agent reports them at the end, when its per-step counts are incomplete. */
+  totals?: Tokens;
   /** Set when the model's API cut the run short (a usage limit, an outage): the run says nothing about the task. */
   apiError?: string;
   conversationId?: string;
@@ -209,6 +211,7 @@ export const claude: AgentAdapter = {
     let toolsAvailable: string[] = [];
     let costUsd: number | undefined;
     let apiError: string | undefined;
+    let totals: Tokens | undefined;
     let conversationId: string | undefined;
     let lastAt = 0;
     const seenMessages = new Set<string>();
@@ -244,6 +247,7 @@ export const claude: AgentAdapter = {
         if (e.type === "assistant" && e.message) {
           const m = e.message as { id?: string; usage?: Record<string, any>; content?: any[] };
           // One API call can arrive as several events (one per content block) with the same id and usage.
+          // That usage is from the message's start: input and cache are final, output is not (see totals).
           if (m.id && !seenMessages.has(m.id)) {
             seenMessages.add(m.id);
             const u = m.usage ?? {};
@@ -288,12 +292,19 @@ export const claude: AgentAdapter = {
           status = e.subtype ?? status;
           finalText = typeof e.result === "string" ? e.result : "";
           costUsd = typeof e.total_cost_usd === "number" ? e.total_cost_usd : undefined;
+          // Summed over every model the run used; output tokens include thinking.
+          const models = Object.values((e.modelUsage ?? {}) as Record<string, Record<string, number>>);
+          if (models.length) {
+            const sum = (k: string) => models.reduce((n, u) => n + (u[k] ?? 0), 0);
+            const thinking = sum("thinkingTokens");
+            totals = { input: sum("inputTokens") + sum("cacheCreationInputTokens"), output: sum("outputTokens") - thinking, thinking, cacheRead: sum("cacheReadInputTokens") };
+          }
           if (e.is_error && (e.terminal_reason === "api_error" || e.api_error_status)) apiError = `${e.api_error_status ?? "api_error"}: ${finalText}`;
           o.onEvent({ t, kind: "text", text: cut(finalText, 8000) });
         }
       },
     });
-    return { exitCode: r.code, timedOut: r.timedOut, wallMs: Date.now() - t0, status, finalText, toolsAvailable, costUsd, apiError, conversationId, stderr: r.stderr.slice(-4000) };
+    return { exitCode: r.code, timedOut: r.timedOut, wallMs: Date.now() - t0, status, finalText, toolsAvailable, costUsd, totals, apiError, conversationId, stderr: r.stderr.slice(-4000) };
   },
 };
 

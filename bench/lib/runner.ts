@@ -123,6 +123,8 @@ export function listRuns(exp: string): RunRecord[] {
     .map((p) => readJson<RunRecord>(p));
 }
 
+const withTotal = (t: Tokens): RunMetrics["tokens"] => ({ ...t, total: t.input + t.output + t.thinking });
+
 export function summarize(events: AgentEvent[], wallMs: number): RunMetrics {
   const m: RunMetrics = {
     wallMs,
@@ -274,6 +276,7 @@ async function runOne(
     rec.timedOut = res.timedOut;
     rec.finalText = res.finalText.slice(0, 20_000);
     rec.metrics = summarize(events, res.wallMs);
+    if (res.totals) rec.metrics.tokens = withTotal(res.totals);
     rec.refusedReads = [...new Set(events.flatMap((e) => (e.output ?? "").match(REFUSED) ?? []))].slice(0, 30);
     if (res.stderr.trim()) writeFileSync(join(dir, "agent.stderr"), res.stderr);
     if (res.apiError) throw new Error(`agent API error (not a task result; rerun it): ${res.apiError}`);
