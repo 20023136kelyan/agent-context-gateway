@@ -80,11 +80,37 @@ export async function notifyNewTurns(app: GatewayApp, turns: Turn[]): Promise<nu
   return notifications.length;
 }
 
+/**
+ * GATEWAY_AS_OF pins the gateway to a moment (settings.asOfPin): every read
+ * sees history as it stood then, so an eval or a demo can replay a task
+ * without the gateway knowing how it turned out. A request may ask for an
+ * earlier moment, never a later one. An unparsable request is passed through
+ * for the caller's own validation to reject.
+ */
+export function pinAsOf(app: GatewayApp, requested?: string): string | undefined {
+  const pin = app.settings.asOfPin;
+  if (!pin || (requested && Number.isNaN(Date.parse(requested)))) return requested;
+  return requested && Date.parse(requested) < Date.parse(pin) ? requested : pin;
+}
+
+/** Reads that cannot be cut at a moment are refused while the gateway is pinned. */
+function refuseWhenPinned(app: GatewayApp, what: string): void {
+  if (app.settings.asOfPin) throw new Error(`not_supported: ${what} cannot be pinned to GATEWAY_AS_OF`);
+}
+
+/** Pinned: sessions that had not started yet do not exist, and none has ended after the pin. */
+function asOfSession<S extends { startedAt: string; endedAt?: string }>(app: GatewayApp, s: S): S | null {
+  const pin = app.settings.asOfPin;
+  if (!pin) return s;
+  if (Date.parse(s.startedAt) > Date.parse(pin)) return null;
+  return s.endedAt && Date.parse(s.endedAt) > Date.parse(pin) ? { ...s, endedAt: pin } : s;
+}
+
 export async function listSources(app: GatewayApp) {
   const out = [];
   for (const a of app.adapters) {
     const sessions = await a.listSessions().catch(() => []);
-    out.push({ harness: a.harness, sessions: sessions.length });
+    out.push({ harness: a.harness, sessions: sessions.filter((x) => asOfSession(app, x)).length });
   }
   return out;
 }
@@ -95,7 +121,9 @@ export async function listSessions(app: GatewayApp, filter: { harness?: string; 
   for (const a of app.adapters) {
     if (filter.harness && a.harness !== filter.harness) continue;
     const sessions = await a.listSessions().catch(() => []);
-    for (const s of sessions) {
+    for (const found of sessions) {
+      const s = asOfSession(app, found);
+      if (!s) continue;
       if (filter.project && !inProject(s, filter.project)) continue;
       if (filter.repo && s.repo !== filter.repo) continue;
       out.push(s);
@@ -146,6 +174,7 @@ export async function resolveProject(
 
 export async function searchOnce(app: GatewayApp, query: string, requested: SearchOptions & ScopeOptions = {}, chain: string[] = []) {
   if (!query.trim()) throw new Error("bad_request: empty query");
+  requested = { ...requested, asOf: pinAsOf(app, requested.asOf) };
   await ensureSynced(app);
   const projectScope = await resolveProject(app, requested);
   const { defaultProject: _caller, outcomes: _outcomes, ...rest } = requested;
@@ -193,7 +222,8 @@ export async function searchOnce(app: GatewayApp, query: string, requested: Sear
   // P2e federation: fan out to configured remotes (read-only), merge by score.
   // Topological scopes stay local — remotes don't share our link registry.
   // Loop guard: skip remotes already in the chain (A->B->A); 2-hop max.
-  const allRemotes = ["parent", "children", "siblings"].includes(res.scope) ? [] : loadRemotes();
+  // Pinned: remotes cannot honour the pin, so they are left out.
+  const allRemotes = ["parent", "children", "siblings"].includes(res.scope) || app.settings.asOfPin ? [] : loadRemotes();
   const remotes = chain.length >= 2 ? [] : allRemotes.filter((r) => !chain.includes(r.name));
   if (remotes.length === 0) return { ...res, projectScope };
   const maxResults = opts.maxResults ?? 5;
@@ -240,10 +270,12 @@ export function compactResults<T extends { results: PackagedResult[] }>(res: T):
  * how it was checked and how it ended (outcomes/outcome.ts).
  */
 export async function sessionOutcome(app: GatewayApp, harness: string, sessionId: string, opts: { asOf?: string } = {}): Promise<SessionOutcome> {
+  opts = { ...opts, asOf: pinAsOf(app, opts.asOf) };
   if (opts.asOf && Number.isNaN(Date.parse(opts.asOf))) throw new Error(`bad_request: invalid asOf "${opts.asOf}" (want an ISO timestamp)`);
   await ensureSynced(app);
   const adapter = adapterFor(app, harness);
-  const session = (await adapter.listSessions().catch(() => [] as Session[])).find((s) => s.id === sessionId);
+  const found = (await adapter.listSessions().catch(() => [] as Session[])).find((s) => s.id === sessionId);
+  const session = found ? asOfSession(app, found) : null;
   if (!session) throw new Error(`not_found: session "${sessionId}"`);
   return outcomeOf(app, adapter, session, opts.asOf);
 }
@@ -315,7 +347,7 @@ export async function browseSessions(
   query: string,
   requested: SearchOptions & ScopeOptions & { maxSessions?: number; maxTasks?: number } = {},
 ): Promise<{ projectScope: ProjectScopeInfo; sessions: SessionPreview[] }> {
-  const { maxSessions: ms, maxTasks: mt, ...rest } = requested;
+  const { maxSessions: ms, maxTasks: mt, ...rest } = { ...requested, asOf: pinAsOf(app, requested.asOf) };
   const maxSessions = Math.max(1, Math.min(ms ?? 8, 20));
   const maxTasks = Math.max(1, Math.min(mt ?? 12, 50));
   const res = await searchOnce(app, query, { ...rest, maxResults: Math.max(maxSessions * 2, 10), outcomes: false });
@@ -371,6 +403,7 @@ export async function decideOnce(
   requested: SearchOptions & ScopeOptions & { maxDecisions?: number; judge?: DecisionJudge } = {},
 ) {
   if (!query.trim()) throw new Error("bad_request: empty query");
+  requested = { ...requested, asOf: pinAsOf(app, requested.asOf) };
   await ensureSynced(app);
   // Same project rule as search: decide can only weigh what retrieval finds.
   const projectScope = await resolveProject(app, requested);
@@ -483,11 +516,15 @@ export async function getSession(app: GatewayApp, harness: string, sessionId: st
 
 export async function getTurn(app: GatewayApp, harness: string, sessionId: string, turnId: string) {
   const a = adapterFor(app, harness);
+  let turn: Awaited<ReturnType<typeof a.getTurn>>;
   try {
-    return await a.getTurn(sessionId, turnId);
+    turn = await a.getTurn(sessionId, turnId);
   } catch {
     throw new Error(`not_found: turn "${turnId}"`);
   }
+  const pin = app.settings.asOfPin;
+  if (turn && pin && Date.parse(turn.timestamp) > Date.parse(pin)) throw new Error(`not_found: turn "${turnId}"`);
+  return turn;
 }
 
 /** Expanded evidence window around a turn (direct retrieval, spec §44). */
@@ -499,6 +536,7 @@ export async function getContext(
   window = 3,
   opts: { maxTokens?: number; query?: string; asOf?: string } = {},
 ) {
+  opts = { ...opts, asOf: pinAsOf(app, opts.asOf) };
   if (opts.asOf && Number.isNaN(Date.parse(opts.asOf))) throw new Error(`bad_request: invalid asOf "${opts.asOf}" (want an ISO timestamp)`);
   const a = adapterFor(app, harness);
   const turns = await a.listTurns(sessionId).catch(() => {
@@ -587,6 +625,7 @@ export function unlinkSessions(app: GatewayApp, parentHarness: string, parentSes
 }
 
 export function showTopology(app: GatewayApp, filter: { harness?: string; sessionId?: string } = {}) {
+  refuseWhenPinned(app, "the session topology");
   const all = app.topology.all();
   if (filter.sessionId) {
     const ref = { harness: filter.harness ?? "", sessionId: filter.sessionId };
@@ -605,6 +644,7 @@ export function recordFeedback(app: GatewayApp, turnId: string, helpful: boolean
 /** Artifacts related to the given one via session co-occurrence (P3 graph). */
 export async function getRelated(app: GatewayApp, artifact: string, limit = 10) {
   if (!artifact.trim()) throw new Error("bad_request: empty artifact");
+  refuseWhenPinned(app, "the artifact graph");
   await ensureSynced(app);
   return { artifact, ...relatedArtifacts(app.index, artifact, limit) };
 }
@@ -612,12 +652,14 @@ export async function getRelated(app: GatewayApp, artifact: string, limit = 10) 
 /** Multi-hop BFS traversal over the artifact graph (e.g. file -> session -> PR -> session -> file). */
 export async function traverseArtifacts(app: GatewayApp, artifact: string, maxDepth = 2) {
   if (!artifact.trim()) throw new Error("bad_request: empty artifact");
+  refuseWhenPinned(app, "the artifact graph");
   await ensureSynced(app);
   return traverseArtifactGraphBFS(app.index, artifact, maxDepth);
 }
 
 /** Bi-temporal invalidations list (Phase C.1). */
 export function listInvalidations(app: GatewayApp) {
+  refuseWhenPinned(app, "the invalidation log");
   return app.temporal.all();
 }
 
@@ -660,11 +702,13 @@ export async function searchLive(
   opts?: { activeWindowMs?: number; maxTurnsPerSession?: number },
 ) {
   if (!query.trim()) throw new Error("bad_request: empty query");
+  refuseWhenPinned(app, "live search");
   return searchLiveSessions(app.adapters, query, opts);
 }
 
 /** Full ancestry tree, descendants, and siblings explorer (spec §65). */
 export function getLineage(app: GatewayApp, harness: string, sessionId: string) {
+  refuseWhenPinned(app, "session lineage");
   adapterFor(app, harness);
   return exploreLineage(app.topology, { harness, sessionId });
 }
@@ -749,7 +793,7 @@ export async function findActions(
   await ensureSynced(app);
   const projectScope = await resolveProject(app, q);
   const sessionIds = projectScope.project ? await app.search.projectSessionIds(projectScope.project) : undefined;
-  const rows = app.actions.find({ file: q.file, command: q.command, since: q.since, until: q.until, sessionIds, limit: 2000 });
+  const rows = app.actions.find({ file: q.file, command: q.command, since: q.since, until: pinAsOf(app, q.until), sessionIds, limit: 2000 });
   const bySession = new Map<string, ActionFinding>();
   for (const r of rows) {
     const key = `${r.harness}:${r.sessionId}`;

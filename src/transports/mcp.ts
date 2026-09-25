@@ -28,6 +28,10 @@ export function buildMcpServer(app: GatewayApp, cwd: string = process.cwd()): Mc
         ` when it has history. "*" searches every project. Matches across harnesses by folder name.`,
     );
 
+  // Reads that cannot be cut at a moment refuse while GATEWAY_AS_OF pins the
+  // gateway (commands.ts); a pinned server does not offer them at all.
+  const unpinnable: { remove(): void }[] = [];
+
   server.tool("context.list_sources", "List queryable agent-history sources", {}, async () => text(await listSources(app)));
 
   server.tool(
@@ -151,19 +155,19 @@ export function buildMcpServer(app: GatewayApp, cwd: string = process.cwd()): Mc
     async (args) => text(await decideOnce(app, args.query, { ...args, defaultProject })),
   );
 
-  server.tool(
+  unpinnable.push(server.tool(
     "context.get_related",
     "Artifacts (files, PRs, commits) that co-occur with this one across sessions",
     { artifact: z.string(), limit: z.number().min(1).max(30).optional() },
     async (args) => text(await getRelated(app, args.artifact, args.limit ?? 10)),
-  );
+  ));
 
-  server.tool(
+  unpinnable.push(server.tool(
     "context.traverse_artifacts",
     "Multi-hop BFS traversal over artifact co-occurrence graph (e.g. file -> session -> PR -> session -> file)",
     { artifact: z.string(), maxDepth: z.number().min(1).max(3).optional() },
     async (args) => text(await traverseArtifacts(app, args.artifact, args.maxDepth ?? 2)),
-  );
+  ));
 
   server.tool(
     "context.feedback",
@@ -172,19 +176,19 @@ export function buildMcpServer(app: GatewayApp, cwd: string = process.cwd()): Mc
     async (args) => text(recordFeedback(app, args.turnId, args.helpful, args.note)),
   );
 
-  server.tool(
+  unpinnable.push(server.tool(
     "context.get_topology",
     "Show recorded parent/child session links (spec §17)",
     { harness: Harness.optional(), sessionId: z.string().optional() },
     async (args) => text(showTopology(app, args)),
-  );
+  ));
 
-  server.tool(
+  unpinnable.push(server.tool(
     "context.get_invalidations",
     "Show bi-temporal invalidation records (turns superseded by later decisions)",
     {},
     async () => text(listInvalidations(app)),
-  );
+  ));
 
   server.tool(
     "context.get_acl_rules",
@@ -193,7 +197,7 @@ export function buildMcpServer(app: GatewayApp, cwd: string = process.cwd()): Mc
     async () => text(listAclRules(app)),
   );
 
-  server.tool(
+  unpinnable.push(server.tool(
     "context.search_live",
     "Query actively running sessions in real-time bypassing the index (spec §67)",
     { query: z.string(), windowMinutes: z.number().optional() },
@@ -203,14 +207,14 @@ export function buildMcpServer(app: GatewayApp, cwd: string = process.cwd()): Mc
           activeWindowMs: args.windowMinutes ? args.windowMinutes * 60 * 1000 : undefined,
         }),
       ),
-  );
+  ));
 
-  server.tool(
+  unpinnable.push(server.tool(
     "context.explore_lineage",
     "Explore full ancestry tree, descendants, and siblings of an agent session (spec §65)",
     { harness: Harness, sessionId: z.string() },
     async (args) => text(getLineage(app, args.harness, args.sessionId)),
-  );
+  ));
 
   server.tool(
     "context.subscribe",
@@ -226,6 +230,7 @@ export function buildMcpServer(app: GatewayApp, cwd: string = process.cwd()): Mc
     async () => text(listSubscriptions(app)),
   );
 
+  if (app.settings.asOfPin) for (const tool of unpinnable) tool.remove();
   return server;
 }
 

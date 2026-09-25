@@ -61,6 +61,12 @@ export interface GatewaySettings {
   readonly compact: boolean;
   /** Prompt -> files -> sessions (search/files.ts). Default off; GATEWAY_FILES=on|off beats the file. */
   readonly files: boolean;
+  /**
+   * GATEWAY_AS_OF (ISO timestamp): pin every read to history as it stood at
+   * that moment, for evals and demos (commands.ts pinAsOf). Environment only;
+   * null = live.
+   */
+  readonly asOfPin: string | null;
   /** Extra Host header values accepted without a token; null = loopback only. */
   readonly allowedHosts: string[] | null;
   /**
@@ -186,9 +192,18 @@ export function resolveSettings(opts: SettingsOverrides = {}): GatewaySettings {
     facets: onOff(process.env.GATEWAY_FACETS) ?? file.facets ?? false,
     compact: onOff(process.env.GATEWAY_COMPACT) ?? file.compact ?? true,
     files: onOff(process.env.GATEWAY_FILES) ?? file.files ?? false,
+    asOfPin: asOfPin(process.env.GATEWAY_AS_OF),
     allowedHosts,
     telemetry: telemetryEnabled(file.telemetry),
   };
+}
+
+/** A valid ISO timestamp, normalised; anything else (unset, unparsable) is null. */
+function asOfPin(v: string | undefined): string | null {
+  const t = v?.trim();
+  if (!t) return null;
+  const ms = Date.parse(t);
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
 }
 
 /** on/1/true/yes and off/0/false/no; anything else is unset. */
@@ -262,6 +277,7 @@ export function dumpConfig(): Record<string, unknown> {
     facets: s.facets,
     compact: s.compact,
     files: s.files,
+    asOfPin: s.asOfPin,
     judge,
     allowedHosts: s.allowedHosts,
     minVectorSim,
