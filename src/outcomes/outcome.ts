@@ -132,6 +132,8 @@ const INJECTED = [
   /^Continue from where you left off/i,
   /^<turn_aborted>/,
   /^<skill>/,
+  // Claude Code resuming after a usage limit.
+  /^Your claude\.ai usage limit has reset/,
   // Codex's automatic approval reviewer: a whole session of it is not the user's.
   /^The following is the Codex agent history/,
 ];

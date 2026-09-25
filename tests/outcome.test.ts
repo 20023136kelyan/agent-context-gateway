@@ -39,6 +39,7 @@ describe("what the user asked", () => {
       "<turn_aborted> The user interrupted the previous turn on purpose.",
       "<skill> <name>review</name>",
       "The following is the Codex agent history whose request action you are assessing.",
+      "Your claude.ai usage limit has reset. Continue the task you were working on when the limit was reached; do not repeat work that is already complete.",
       "continue",
       "ok thanks!",
       "yo",
