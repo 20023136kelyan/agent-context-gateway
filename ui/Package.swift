@@ -2,22 +2,22 @@
 import PackageDescription
 
 let package = Package(
-  name: "GatewayMenuApp",
+  name: "BifrostMenuApp",
   platforms: [.macOS(.v13)],
   targets: [
     .target(
-      name: "GatewayMenuCore",
-      path: "Sources/GatewayMenuCore"
+      name: "BifrostMenuCore",
+      path: "Sources/BifrostMenuCore"
     ),
     .executableTarget(
-      name: "GatewayMenuApp",
-      dependencies: ["GatewayMenuCore"],
-      path: "Sources/GatewayMenuApp"
+      name: "BifrostMenuApp",
+      dependencies: ["BifrostMenuCore"],
+      path: "Sources/BifrostMenuApp"
     ),
     .testTarget(
-      name: "GatewayMenuAppTests",
-      dependencies: ["GatewayMenuCore"],
-      path: "Tests/GatewayMenuAppTests"
+      name: "BifrostMenuAppTests",
+      dependencies: ["BifrostMenuCore"],
+      path: "Tests/BifrostMenuAppTests"
     ),
   ]
 )

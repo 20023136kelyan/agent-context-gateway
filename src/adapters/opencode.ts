@@ -29,7 +29,7 @@ function loadDatabaseSync(): DatabaseSyncType {
 }
 
 function defaultDbPath(): string {
-  if (process.env.GATEWAY_OPENCODE_DB) return process.env.GATEWAY_OPENCODE_DB;
+  if (process.env.BIFROST_OPENCODE_DB) return process.env.BIFROST_OPENCODE_DB;
   // Tests must never read the developer's real session store: an opencode.db
   // on the test machine would leak live sessions (which quote whatever the
   // developer last ran, including golden queries) into every assertion about

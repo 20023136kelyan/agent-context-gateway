@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.context-gateway.serve</string>
+  <string>com.bifrost.serve</string>
   <key>ProgramArguments</key>
   <array>
     <string>/bin/sh</string>
-    <string>/Users/admin/dev/Agent Context Gateway/gateway.sh</string>
+    <string>/Users/admin/dev/bifrost/bifrost.sh</string>
     <string>serve</string>
     <string>--port</string>
     <string>3000</string>
@@ -18,10 +18,10 @@
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>/Users/admin/.context-gateway/serve.log</string>
+  <string>/Users/admin/.bifrost/serve.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/admin/.context-gateway/serve.log</string>
+  <string>/Users/admin/.bifrost/serve.log</string>
   <key>WorkingDirectory</key>
-  <string>/Users/admin/dev/Agent Context Gateway</string>
+  <string>/Users/admin/dev/bifrost</string>
 </dict>
 </plist>

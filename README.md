@@ -1,4 +1,4 @@
-# Agent Context Gateway
+# Bifröst
 
 **Federated semantic search over native agent work histories — not another memory database.**
 
@@ -6,7 +6,7 @@ One agent asks *"What did Codex decide about the collaboration architecture?"* a
 the relevant turns from Codex's own history, with provenance. No manual memory writes,
 no whole-context handoffs, no central source of truth beyond the native histories.
 
-Full concept: [`Agent Context Gateway — Project Specification.md`](./Agent%20Context%20Gateway%20—%20Project%20Specification.md) (§1–80).
+Full concept: [`Bifröst — Project Specification.md`](./Bifr%C3%B6st%20—%20Project%20Specification.md) (§1–80).
 Build plan: [`IMPLEMENTATION_PLAN_V2.md`](./IMPLEMENTATION_PLAN_V2.md).
 Review fixes: [`REVIEW_FIX_PLAN.md`](./REVIEW_FIX_PLAN.md).
 
@@ -24,7 +24,7 @@ cross-encoder, the local entailment judge) were **deleted, not deprecated**.
 | Lexical | Tantivy BM25 | — | always on; the whole system runs lexical-only with no keys |
 
 `src/components.ts` is the single source of truth for engines, rerankers and
-judges (types, resolution order, allow-lists, cost basis). `gateway models`
+judges (types, resolution order, allow-lists, cost basis). `bifrost models`
 prints the locked stack next to what this machine actually resolves.
 
 **Privacy trade-off.** Setting either key sends data off-machine: Voyage sees
@@ -76,7 +76,7 @@ The API binds `127.0.0.1` by default and answers unauthenticated loopback caller
 which is the local-first case. Two things protect that surface:
 
 - **Host allowlist.** Requests without a valid token must carry a loopback `Host`
-  (extend with `GATEWAY_ALLOWED_HOSTS=host1,host2`). This blocks DNS rebinding: a
+  (extend with `BIFROST_ALLOWED_HOSTS=host1,host2`). This blocks DNS rebinding: a
   hostile page that resolves its own domain to 127.0.0.1 still sends its own Host.
   `/health` answers `{ok:true}` to anything, for liveness probes.
 - **Origin check.** Browser writes (POST/DELETE) whose `Origin` isn't an allowed
@@ -86,12 +86,12 @@ which is the local-first case. Two things protect that surface:
 Serving other machines is opt-in and needs a token:
 
 ```bash
-GATEWAY_TOKEN=$(openssl rand -hex 32) npx tsx src/cli.ts serve --host 0.0.0.0 --announce
+BIFROST_TOKEN=$(openssl rand -hex 32) npx tsx src/cli.ts serve --host 0.0.0.0 --announce
 ```
 
-`--host` refuses any non-loopback address without `GATEWAY_TOKEN`; token-bearing
-requests are accepted from any Host. `--announce` (mDNS `_context-gateway._tcp`)
-requires a non-loopback bind, since a loopback-only gateway is unreachable anyway.
+`--host` refuses any non-loopback address without `BIFROST_TOKEN`; token-bearing
+requests are accepted from any Host. `--announce` (mDNS `_bifrost._tcp`)
+requires a non-loopback bind, since a loopback-only instance is unreachable anyway.
 Remotes added with `remotes-add --token` send their token on every federated query.
 
 ## Decisions
@@ -104,10 +104,10 @@ npx tsx src/cli.ts decide "Why did we reject Monaco?"
 
 Two-stage architecture:
 1. Heuristic recall scans discussion regions for decision shape (conclusion, rationale, alternatives, question) with speech-act and relevance gating: conversational roles only, whole-word cues, sentence-scoped matching, no heading anchors, speaker-or-colon form, no attributive adjectives ("the selected session" ≠ "we selected X"). Only sentences that *end* in "?" count as questions, so a URL or `?.` in a turn no longer hides a verdict.
-2. The Jev decision judge (`src/judgments/judge-jev.ts`, selected in `src/decisions/select.ts`) returns a typed, calibrated judgment of whether a candidate conclusion answers the query. Measured on the fixture corpus it takes decision citations from Hit@1 0.381 to 0.952. Without `TYPESAFE_API_KEY` (or with `GATEWAY_JUDGE=heuristic`) verdicts keep their `heuristic` label instead of claiming a judgement that never happened.
+2. The Jev decision judge (`src/judgments/judge-jev.ts`, selected in `src/decisions/select.ts`) returns a typed, calibrated judgment of whether a candidate conclusion answers the query. Measured on the fixture corpus it takes decision citations from Hit@1 0.381 to 0.952. Without `TYPESAFE_API_KEY` (or with `BIFROST_JUDGE=heuristic`) verdicts keep their `heuristic` label instead of claiming a judgement that never happened.
 
 Decision cues are per-locale packs (`src/decisions/locales/`), selected with
-`GATEWAY_LOCALE` (default `en`).
+`BIFROST_LOCALE` (default `en`).
 
 Every claim carries source turn IDs. Confidence blends shape-completeness with
 *relevance*: verdicts sharing no query terms collapse to ~0.3 (low-confidence
@@ -118,13 +118,13 @@ leads) instead of parading as answers.
 Lexical search matches words, not meaning. Embeddings add paraphrase-level recall:
 
 - **Engine: Voyage `voyage-4`** (1024-dim), enabled by `VOYAGE_API_KEY`.
-  `GATEWAY_EMBED_ENGINE` pins `voyage`, `voyage-code` or `voyage-context`; a
+  `BIFROST_EMBED_ENGINE` pins `voyage`, `voyage-code` or `voyage-context`; a
   pinned engine never falls back, so one corpus can't scatter across tables.
   The provider asserts the returned width matches `VOYAGE_DIM` and throws if not.
 - **Storage is keyed by engine, not width.** Two engines can emit the same
   dimension, and blending their spaces would return plausible garbage.
 - **Vector backend:** LanceDB, or sqlite-vec when the LanceDB native addon is
-  absent (always the case on Intel macOS). Pin with `GATEWAY_VECTOR_BACKEND`.
+  absent (always the case on Intel macOS). Pin with `BIFROST_VECTOR_BACKEND`.
 - **Query-vector cache:** query embeddings are cached per (engine, text); the
   Voyage round trip is the largest fixed cost on the search path.
 
@@ -137,14 +137,14 @@ Hybrid ranking fuses Tantivy BM25 and cosine similarity with RRF, plus
 project/repo/recency/entity/feedback boosts. Missing vectors or a Voyage outage
 degrade to lexical (counted by `embedMeter`, so evals can flag it).
 
-`GATEWAY_SIM_FLOOR`, `GATEWAY_SIM_SPAN` and `GATEWAY_MIN_VECTOR_SIM` are
+`BIFROST_SIM_FLOOR`, `BIFROST_SIM_SPAN` and `BIFROST_MIN_VECTOR_SIM` are
 **engine-calibrated** (swept for voyage-4). Re-sweep before trusting another
 engine: a wrong floor silently zeroes semantic hits.
 
 ### Reranking
 
 `src/search/reranker.ts` resolves the reranker in order **jev → voyage → none**;
-`GATEWAY_RERANKER` pins one and never falls back.
+`BIFROST_RERANKER` pins one and never falls back.
 
 - **Jev (pairwise)** reranks by default on every transport. Fixture corpus:
   hybrid NDCG@5 0.699 → 0.968; BEIR nfcorpus: 0.445 → 0.489. Costs ~450–620 ms
@@ -153,7 +153,7 @@ engine: a wrong floor silently zeroes semantic hits.
   (`VOYAGE_RERANK_MODEL` for lite variants). It is off unless requested, pending
   the reranker bake-off.
 - Opt out per request with `?rerank=false`, `--no-rerank` or `rerank: false`,
-  or system-wide with `GATEWAY_RERANKER=none`. The pool size is `GATEWAY_RERANK_POOL` (default 30).
+  or system-wide with `BIFROST_RERANKER=none`. The pool size is `BIFROST_RERANK_POOL` (default 30).
 
 ## Staying fresh (new chats)
 
@@ -168,7 +168,7 @@ Three layers, fastest first:
    ```json
    { "hooks": { "SessionEnd": [{
      "hooks": [{ "type": "command",
-       "command": "SID=$(jq -r .session_id); node --import tsx \"/Users/admin/dev/Agent Context Gateway/src/cli.ts\" sync-session claude-code \"$SID\"" }]
+       "command": "SID=$(jq -r .session_id); node --import tsx \"/Users/admin/dev/bifrost/src/cli.ts\" sync-session claude-code \"$SID\"" }]
    }] } }
    ```
 2. **Watch mode (catch-all)** — `serve --watch [--embed]` re-syncs seconds after any
@@ -182,8 +182,8 @@ npx tsx src/cli.ts git-hooks install --repo /path/to/repo
 ```
 
 The hook posts url-encoded fields (multi-line messages, quotes and backslashes
-survive), honours `GATEWAY_PORT`/`GATEWAY_TOKEN`, and preserves any existing
-post-commit/post-merge hook as `<name>.pre-gateway`, which it runs first.
+survive), honours `BIFROST_PORT`/`BIFROST_TOKEN`, and preserves any existing
+post-commit/post-merge hook as `<name>.pre-bifrost`, which it runs first.
 
 ## Subscriptions
 
@@ -213,13 +213,13 @@ npx @modelcontextprotocol/inspector node --import tsx src/cli.ts mcp
 opencode (`~/.config/opencode/opencode.json`):
 
 ```json
-{ "mcp": { "context-gateway": {
+{ "mcp": { "bifrost": {
   "type": "local",
-  "command": ["node", "--import", "tsx", "/Users/admin/dev/Agent Context Gateway/src/cli.ts", "mcp"]
+  "command": ["node", "--import", "tsx", "/Users/admin/dev/bifrost/src/cli.ts", "mcp"]
 } } }
 ```
 
-Claude Code: `claude mcp add context-gateway -- node --import tsx /Users/admin/dev/Agent\ Context\ Gateway/src/cli.ts mcp`.
+Claude Code: `claude mcp add bifrost -- node --import tsx /Users/admin/dev/bifrost/src/cli.ts mcp`.
 Tools: `context.search`, `context.decide`, `context.get_session`, `context.get_turn`,
 `context.get_context`, `context.get_topology`, `context.explore_lineage`,
 `context.get_related`, `context.traverse_artifacts`, `context.get_invalidations`,
@@ -230,14 +230,14 @@ Tools: `context.search`, `context.decide`, `context.get_session`, `context.get_t
 ## Native menu-bar app (Phase 3)
 
 ```bash
-./ui/build-app.sh && open ContextGatewayMenu.app
+./ui/build-app.sh && open BifrostMenu.app
 ```
 
 SwiftUI `MenuBarExtra` (branch icon, macOS 13+) against the loopback API:
 Search and Why tabs, harness picker, inline evidence with provenance,
 Helpful/Not-helpful buttons wired to `POST /feedback`, Settings shows index
 health. Port configurable (default 3000). `ui/Tests` decode live `/health`,
-`/search` and `/decide` responses — the contract between gateway JSON and
+`/search` and `/decide` responses — the contract between Bifröst JSON and
 Swift models is tested, not assumed.
 
 ## Evaluation
@@ -329,16 +329,16 @@ src/watch.ts       fs watcher for serve --watch
 scripts/           run-eval.ts, sweep.ts, sweep-cell.ts, bench.ts, score-contexts.mjs
 sweeps/            sweep manifests
 experiments/       training experiments (contrastive/DAPT), deferred paid-hosting notes
-launchd/           com.context-gateway.serve.plist
-gateway.sh         nvm-resolving entrypoint
-ui/                SwiftUI MenuBarExtra native macOS app (GatewayMenuCore + App)
+launchd/           com.bifrost.serve.plist
+bifrost.sh         nvm-resolving entrypoint
+ui/                SwiftUI MenuBarExtra native macOS app (BifrostMenuCore + App)
 tests/             37 suites (~230 tests) + Swift XCTest decoding tests
 ```
 
 ## Known limits
 
-- Single user. Loopback by default; serving the network is opt-in and requires `GATEWAY_TOKEN`.
-- Semantic search, default reranking and judged decisions need third-party keys (Voyage, TypeSafe). Without them the gateway is lexical-only with heuristic decision labels.
+- Single user. Loopback by default; serving the network is opt-in and requires `BIFROST_TOKEN`.
+- Semantic search, default reranking and judged decisions need third-party keys (Voyage, TypeSafe). Without them Bifröst is lexical-only with heuristic decision labels.
 - Jev reranking adds ~0.5 s per search; the Voyage reranker's place in the order is provisional until the reranker bake-off.
 - Summaries are extractive (first lines), never LLM-generated.
 - Changing adapter ID schemes or normalization requires `sync --rebuild` (incremental sync keys on file mtime/size and can't see ID changes).

@@ -8,7 +8,7 @@
  * per-chunk vectors that see the whole group. Unshifted callers (no groups)
  * get one chunk per document — valid, but none of the contextual benefit.
  *
- * Opt-in ONLY via GATEWAY_EMBED_ENGINE=voyage-context pin (never in the
+ * Opt-in ONLY via BIFROST_EMBED_ENGINE=voyage-context pin (never in the
  * default order): different endpoint, different table, $0.12/M pricing, and
  * a backfill against the wrong engine silently writes incomparable vectors
  * into a valid-looking table (same dim as voyage-4).

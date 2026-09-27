@@ -6,7 +6,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { TemporalStore } from "../src/temporal/bi-temporal.js";
-import { createApp, closeApp, type GatewayApp } from "../src/app.js";
+import { createApp, closeApp, type BifrostApp } from "../src/app.js";
 import { searchOnce } from "../src/commands.js";
 import { syncAll } from "../src/indexing/sync.js";
 import { CursorStore } from "../src/indexing/store.js";
@@ -16,7 +16,7 @@ describe("TemporalStore", () => {
   let store: TemporalStore;
 
   beforeAll(async () => {
-    const root = await mkdtemp(join(tmpdir(), "acg-temp-test-"));
+    const root = await mkdtemp(join(tmpdir(), "bifrost-temp-test-"));
     store = new TemporalStore(join(root, "invalidations.jsonl"));
   });
 
@@ -73,7 +73,7 @@ describe("TemporalStore", () => {
   });
 
   it("skips determiners when deriving the target ('replaced the …' doesn't target 'the')", async () => {
-    const fresh = new TemporalStore(join(await mkdtemp(join(tmpdir(), "acg-temp-det-")), "invalidations.jsonl"));
+    const fresh = new TemporalStore(join(await mkdtemp(join(tmpdir(), "bifrost-temp-det-")), "invalidations.jsonl"));
     const turns: Turn[] = [
       { id: "old-1", sessionId: "s1", harness: "codex", timestamp: "2026-08-01T10:00:00Z", role: "assistant", content: "We use the new build system for the app", raw: {}, seq: 0 },
       { id: "new-1", sessionId: "s2", harness: "codex", timestamp: "2026-09-01T10:00:00Z", role: "assistant", content: "We replaced the editor widget with a lighter one", raw: {}, seq: 1 },
@@ -83,13 +83,13 @@ describe("TemporalStore", () => {
 });
 
 describe("search with bi-temporal invalidation", () => {
-  let app: GatewayApp;
+  let app: BifrostApp;
   let prevState: string | undefined;
 
   beforeAll(async () => {
-    prevState = process.env.CONTEXT_GATEWAY_STATE;
-    const root = await mkdtemp(join(tmpdir(), "acg-bitemp-"));
-    process.env.CONTEXT_GATEWAY_STATE = join(root, "state");
+    prevState = process.env.BIFROST_STATE;
+    const root = await mkdtemp(join(tmpdir(), "bifrost-bitemp-"));
+    process.env.BIFROST_STATE = join(root, "state");
 
     const claudeDir = join(root, "claude");
     await mkdir(join(claudeDir, "s"), { recursive: true });
@@ -142,8 +142,8 @@ describe("search with bi-temporal invalidation", () => {
 
   afterAll(() => {
     closeApp(app);
-    if (prevState === undefined) delete process.env.CONTEXT_GATEWAY_STATE;
-    else process.env.CONTEXT_GATEWAY_STATE = prevState;
+    if (prevState === undefined) delete process.env.BIFROST_STATE;
+    else process.env.BIFROST_STATE = prevState;
   });
 
   it("current search ranks active knowledge above superseded knowledge", async () => {

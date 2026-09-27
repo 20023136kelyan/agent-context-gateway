@@ -14,7 +14,7 @@ const require = createRequire(import.meta.url);
 const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
 
 function fixtureDb(): string {
-  const dir = mkdtempSync(join(tmpdir(), "acg-opencode-"));
+  const dir = mkdtempSync(join(tmpdir(), "bifrost-opencode-"));
   const path = join(dir, "opencode.db");
   const db = new DatabaseSync(path);
   db.exec(`CREATE TABLE project (id TEXT, name TEXT);
@@ -61,7 +61,7 @@ describe("OpenCodeAdapter", () => {
   it("returns empty for missing sessions and missing databases", async () => {
     const a = new OpenCodeAdapter(fixtureDb());
     expect(await a.listTurns("nope")).toEqual([]);
-    const missing = new OpenCodeAdapter(join(tmpdir(), "acg-opencode-missing.db"));
+    const missing = new OpenCodeAdapter(join(tmpdir(), "bifrost-opencode-missing.db"));
     expect(await missing.listSessions()).toEqual([]);
     await expect(missing.getTurn("s", "t")).rejects.toThrow();
   });

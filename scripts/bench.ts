@@ -81,7 +81,7 @@ async function main() {
   }
 
   if (args.includes("--sync")) {
-    const dir = await mkdtemp(join(tmpdir(), "acg-bench-sync-"));
+    const dir = await mkdtemp(join(tmpdir(), "bifrost-bench-sync-"));
     const cold = createApp({ indexDir: dir });
     try {
       const r = await time("cold full sync (throwaway index)", () => syncAll(cold.adapters, cold.index, cold.cursors), 1);

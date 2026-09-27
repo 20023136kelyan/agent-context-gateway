@@ -21,13 +21,13 @@ import { TantivyIndex } from "./indexing/tantivy-index.js";
 import { SqliteIndex } from "./indexing/sqlite-index.js";
 import type { PackagedResult } from "./search/search.js";
 import { initVectors } from "./app.js";
-import type { GatewayApp } from "./app.js";
+import type { BifrostApp } from "./app.js";
 import type { SearchOptions } from "./search/search.js";
 import { recordUsage, defaultUsagePath, scoreBucket, termBucket } from "./observability/usage.js";
 
 const HARNESSES = ["claude-code", "codex", "cursor", "zep", "git", "trajectory", "opencode"] as const;
 
-function adapterFor(app: GatewayApp, harness: string) {
+function adapterFor(app: BifrostApp, harness: string) {
   if (!HARNESSES.includes(harness as (typeof HARNESSES)[number])) {
     throw new Error(`bad_request: unknown harness "${harness}"`);
   }
@@ -36,7 +36,7 @@ function adapterFor(app: GatewayApp, harness: string) {
   return a;
 }
 
-export async function ensureSynced(app: GatewayApp) {
+export async function ensureSynced(app: BifrostApp) {
   if (app.index.docCount() > 0) return;
   await app.indexLock.run(async () => {
     if (app.index.docCount() === 0) await syncAll(app.adapters, app.index, app.cursors);
@@ -44,14 +44,14 @@ export async function ensureSynced(app: GatewayApp) {
 }
 
 /** Evaluate subscriptions against turns that are new to the index; deliver webhooks. */
-export async function notifyNewTurns(app: GatewayApp, turns: Turn[]): Promise<number> {
+export async function notifyNewTurns(app: BifrostApp, turns: Turn[]): Promise<number> {
   if (turns.length === 0 || app.subscriptions.all().length === 0) return 0;
   const notifications = app.subscriptions.notifyTurns(turns);
   await app.subscriptions.deliver(notifications);
   return notifications.length;
 }
 
-export async function listSources(app: GatewayApp) {
+export async function listSources(app: BifrostApp) {
   const out = [];
   for (const a of app.adapters) {
     const sessions = await a.listSessions().catch(() => []);
@@ -60,7 +60,7 @@ export async function listSources(app: GatewayApp) {
   return out;
 }
 
-export async function listSessions(app: GatewayApp, filter: { harness?: string; project?: string; repo?: string } = {}) {
+export async function listSessions(app: BifrostApp, filter: { harness?: string; project?: string; repo?: string } = {}) {
   if (filter.harness) adapterFor(app, filter.harness);
   const out = [];
   for (const a of app.adapters) {
@@ -75,7 +75,7 @@ export async function listSessions(app: GatewayApp, filter: { harness?: string; 
   return out;
 }
 
-export async function searchOnce(app: GatewayApp, query: string, opts: SearchOptions = {}, chain: string[] = []) {
+export async function searchOnce(app: BifrostApp, query: string, opts: SearchOptions = {}, chain: string[] = []) {
   if (!query.trim()) throw new Error("bad_request: empty query");
   await ensureSynced(app);
   if (!app.vectors && opts.semantic !== false) {
@@ -153,7 +153,7 @@ export async function searchOnce(app: GatewayApp, query: string, opts: SearchOpt
  * content carries method + confidence + source turns (never bare claims).
  */
 export async function decideOnce(
-  app: GatewayApp,
+  app: BifrostApp,
   query: string,
   opts: SearchOptions & { maxDecisions?: number; judge?: DecisionJudge } = {},
 ) {
@@ -258,14 +258,14 @@ export async function decideOnce(
   };
 }
 
-export async function getSession(app: GatewayApp, harness: string, sessionId: string) {
+export async function getSession(app: BifrostApp, harness: string, sessionId: string) {
   const sessions = await listSessions(app, { harness });
   const found = sessions.find((s) => s.id === sessionId);
   if (!found) throw new Error(`not_found: session "${sessionId}"`);
   return found;
 }
 
-export async function getTurn(app: GatewayApp, harness: string, sessionId: string, turnId: string) {
+export async function getTurn(app: BifrostApp, harness: string, sessionId: string, turnId: string) {
   const a = adapterFor(app, harness);
   try {
     return await a.getTurn(sessionId, turnId);
@@ -276,7 +276,7 @@ export async function getTurn(app: GatewayApp, harness: string, sessionId: strin
 
 /** Expanded evidence window around a turn (direct retrieval, spec §44). */
 export async function getContext(
-  app: GatewayApp,
+  app: BifrostApp,
   harness: string,
   sessionId: string,
   turnId: string,
@@ -293,7 +293,7 @@ export async function getContext(
 
 /** Precise single-session sync for hooks/watcher (fast: one file, no full scan). */
 export async function syncSession(
-  app: GatewayApp,
+  app: BifrostApp,
   harness: string,
   sessionId: string,
   opts: { embed?: boolean; parent?: string } = {},
@@ -344,7 +344,7 @@ export async function syncSession(
   return { session: sessionId, turns: turns.length, vectors, link };
 }
 
-export function linkSessions(app: GatewayApp, parentHarness: string, parentSession: string, childHarness: string, childSession: string) {  adapterFor(app, parentHarness);
+export function linkSessions(app: BifrostApp, parentHarness: string, parentSession: string, childHarness: string, childSession: string) {  adapterFor(app, parentHarness);
   adapterFor(app, childHarness);
   return app.topology.link(
     { harness: parentHarness, sessionId: parentSession },
@@ -352,7 +352,7 @@ export function linkSessions(app: GatewayApp, parentHarness: string, parentSessi
   );
 }
 
-export function unlinkSessions(app: GatewayApp, parentHarness: string, parentSession: string, childHarness: string, childSession: string) {
+export function unlinkSessions(app: BifrostApp, parentHarness: string, parentSession: string, childHarness: string, childSession: string) {
   return {
     removed: app.topology.unlink(
       { harness: parentHarness, sessionId: parentSession },
@@ -361,7 +361,7 @@ export function unlinkSessions(app: GatewayApp, parentHarness: string, parentSes
   };
 }
 
-export function showTopology(app: GatewayApp, filter: { harness?: string; sessionId?: string } = {}) {
+export function showTopology(app: BifrostApp, filter: { harness?: string; sessionId?: string } = {}) {
   const all = app.topology.all();
   if (filter.sessionId) {
     const ref = { harness: filter.harness ?? "", sessionId: filter.sessionId };
@@ -371,34 +371,34 @@ export function showTopology(app: GatewayApp, filter: { harness?: string; sessio
 }
 
 /** Record helpful/not feedback for a turn (affects future ranking). */
-export function recordFeedback(app: GatewayApp, turnId: string, helpful: boolean, note?: string) {
+export function recordFeedback(app: BifrostApp, turnId: string, helpful: boolean, note?: string) {
   const parsed = turnId.split(":");
   if (parsed.length < 3) throw new Error(`bad_request: malformed turnId "${turnId}"`);
   return app.feedback.record(turnId, helpful, note);
 }
 
 /** Artifacts related to the given one via session co-occurrence (P3 graph). */
-export async function getRelated(app: GatewayApp, artifact: string, limit = 10) {
+export async function getRelated(app: BifrostApp, artifact: string, limit = 10) {
   if (!artifact.trim()) throw new Error("bad_request: empty artifact");
   await ensureSynced(app);
   return { artifact, ...relatedArtifacts(app.index, artifact, limit) };
 }
 
 /** Multi-hop BFS traversal over the artifact graph (e.g. file -> session -> PR -> session -> file). */
-export async function traverseArtifacts(app: GatewayApp, artifact: string, maxDepth = 2) {
+export async function traverseArtifacts(app: BifrostApp, artifact: string, maxDepth = 2) {
   if (!artifact.trim()) throw new Error("bad_request: empty artifact");
   await ensureSynced(app);
   return traverseArtifactGraphBFS(app.index, artifact, maxDepth);
 }
 
 /** Bi-temporal invalidations list (Phase C.1). */
-export function listInvalidations(app: GatewayApp) {
+export function listInvalidations(app: BifrostApp) {
   return app.temporal.all();
 }
 
 /** Record a derived or observed invalidation between turns. */
 export function recordInvalidation(
-  app: GatewayApp,
+  app: BifrostApp,
   supersededTurnId: string,
   supersedingTurnId: string,
   reason: string,
@@ -415,22 +415,22 @@ export function recordInvalidation(
 }
 
 /** ACL rule management (Phase C.2). */
-export function listAclRules(app: GatewayApp) {
+export function listAclRules(app: BifrostApp) {
   return app.acl.all();
 }
 
-export function setAclRule(app: GatewayApp, rule: import("./security/acl.js").AccessRule) {
+export function setAclRule(app: BifrostApp, rule: import("./security/acl.js").AccessRule) {
   app.acl.setRule(rule);
   return rule;
 }
 
-export function removeAclRule(app: GatewayApp, principal: string) {
+export function removeAclRule(app: BifrostApp, principal: string) {
   return { removed: app.acl.removeRule(principal) };
 }
 
 /** Search active/running sessions directly from native history (spec §67). */
 export async function searchLive(
-  app: GatewayApp,
+  app: BifrostApp,
   query: string,
   opts?: { activeWindowMs?: number; maxTurnsPerSession?: number },
 ) {
@@ -439,18 +439,18 @@ export async function searchLive(
 }
 
 /** Full ancestry tree, descendants, and siblings explorer (spec §65). */
-export function getLineage(app: GatewayApp, harness: string, sessionId: string) {
+export function getLineage(app: BifrostApp, harness: string, sessionId: string) {
   adapterFor(app, harness);
   return exploreLineage(app.topology, { harness, sessionId });
 }
 
 /** Context subscriptions management (spec §66). */
-export function listSubscriptions(app: GatewayApp) {
+export function listSubscriptions(app: BifrostApp) {
   return app.subscriptions.all();
 }
 
 export function createSubscription(
-  app: GatewayApp,
+  app: BifrostApp,
   query: string,
   opts?: { harness?: string; webhookUrl?: string },
 ) {
@@ -458,11 +458,11 @@ export function createSubscription(
   return app.subscriptions.subscribe(query, opts);
 }
 
-export function cancelSubscription(app: GatewayApp, id: string) {
+export function cancelSubscription(app: BifrostApp, id: string) {
   return { removed: app.subscriptions.unsubscribe(id) };
 }
 
-export async function syncNow(app: GatewayApp, rebuild = false, opts: { embed?: boolean } = {}) {
+export async function syncNow(app: BifrostApp, rebuild = false, opts: { embed?: boolean } = {}) {
   const { result, fresh } = await app.indexLock.run(async () => {
     if (!rebuild) {
       const out = await syncAllDetailed(app.adapters, app.index, app.cursors, { detectNew: app.subscriptions.all().length > 0 });
@@ -493,7 +493,7 @@ export async function syncNow(app: GatewayApp, rebuild = false, opts: { embed?: 
 
 /** Explicit background embedding backfill across historical sessions. */
 export async function backfillEmbeddings(
-  app: GatewayApp,
+  app: BifrostApp,
   opts?: {
     batchSize?: number;
     maxSessions?: number;
@@ -510,7 +510,7 @@ export async function backfillEmbeddings(
   return app.vectorLock.run(() => embedMissing(app.adapters, store, opts));
 }
 
-export async function health(app: GatewayApp) {
+export async function health(app: BifrostApp) {
   const stats = app.index.stats();
   const sources = await listSources(app);
   const embStatus = await embeddingsAvailable();

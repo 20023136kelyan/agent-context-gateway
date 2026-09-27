@@ -3,19 +3,19 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createApp, closeApp, type GatewayApp } from "../src/app.js";
+import { createApp, closeApp, type BifrostApp } from "../src/app.js";
 import { buildHttpServer } from "../src/transports/http.js";
 import { buildMcpServer } from "../src/transports/mcp.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
-let app: GatewayApp;
+let app: BifrostApp;
 let root: string;
 const CLAUDE_SESSION = "cccccccc-dddd-eeee-ffff-111111111111";
 const CODEX_SESSION = "019fcccc-0000-1111-2222-333333333333";
 
 beforeAll(async () => {
-  root = await mkdtemp(join(tmpdir(), "acg-m4-"));
+  root = await mkdtemp(join(tmpdir(), "bifrost-m4-"));
   const claudeDir = join(root, "claude");
   await mkdir(join(claudeDir, "cozea"), { recursive: true });
   await writeFile(
@@ -114,7 +114,7 @@ describe("HTTP request origin checks", () => {
   });
 
   it("accepts a valid bearer token from a non-loopback Host; anonymous LAN requests are refused", async () => {
-    process.env.GATEWAY_TOKEN = "tok-1";
+    process.env.BIFROST_TOKEN = "tok-1";
     try {
       const server = buildHttpServer(app);
       const authed = await server.inject({ method: "GET", url: "/sources", headers: { host: "192.168.1.50:3000", authorization: "Bearer tok-1" } });
@@ -122,7 +122,7 @@ describe("HTTP request origin checks", () => {
       const anon = await server.inject({ method: "GET", url: "/sources", headers: { host: "192.168.1.50:3000" } });
       expect(anon.statusCode).toBe(403);
     } finally {
-      delete process.env.GATEWAY_TOKEN;
+      delete process.env.BIFROST_TOKEN;
     }
   });
 });

@@ -12,13 +12,13 @@
  * Local only: append-only JSONL under the state dir (`usage.jsonl`), capped
  * by row count. No network, no opt-out needed for local logging; any future
  * remote reporting ships aggregates alone behind an explicit flag (not built).
- * Disable entirely with GATEWAY_USAGE=off.
+ * Disable entirely with BIFROST_USAGE=off.
  */
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 
 export function usageEnabled(): boolean {
-  return process.env.GATEWAY_USAGE !== "off";
+  return process.env.BIFROST_USAGE !== "off";
 }
 
 /** Rows per file before the oldest are compacted away. */
@@ -61,7 +61,7 @@ export interface DecideUsageEvent {
 export type UsageEvent = SearchUsageEvent | DecideUsageEvent;
 
 export function defaultUsagePath(stateDir?: string): string {
-  const base = stateDir ?? process.env.CONTEXT_GATEWAY_STATE ?? `${process.env.HOME ?? "/tmp"}/.context-gateway`;
+  const base = stateDir ?? process.env.BIFROST_STATE ?? `${process.env.HOME ?? "/tmp"}/.bifrost`;
   return join(base, "usage.jsonl");
 }
 

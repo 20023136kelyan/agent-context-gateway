@@ -1,5 +1,5 @@
 {
-  "name": "agent-context-gateway",
+  "name": "bifrost",
   "version": "0.2.0",
   "description": "Federated context retrieval over native agent histories (Claude Code + Codex MVP)",
   "type": "module",

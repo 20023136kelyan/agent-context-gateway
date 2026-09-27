@@ -51,8 +51,8 @@ async function main() {
   if (router && router !== "deterministic" && router !== "jev") {
     throw new Error(`unknown --router "${router}" (want deterministic|jev)`);
   }
-  const root = mkdtempSync(join(tmpdir(), "acg-cell-"));
-  process.env.CONTEXT_GATEWAY_STATE = join(root, "state");
+  const root = mkdtempSync(join(tmpdir(), "bifrost-cell-"));
+  process.env.BIFROST_STATE = join(root, "state");
   // Dead-end dirs for every harness the corpus does NOT use. Live-writing
   // harnesses (opencode appends a session per `opencode run`) MUST be
   // included: 68 scoring runs once quoted every golden query verbatim into
@@ -105,7 +105,7 @@ async function main() {
       trajectoryDir: "swe-data/empty-traj",
       ...isolation,
     };
-    process.env.CONTEXT_GATEWAY_STATE = "swe-data/real-state";
+    process.env.BIFROST_STATE = "swe-data/real-state";
     goldenPath = goldenOverride
       ? ((await import("node:path")).isAbsolute(goldenOverride)
           ? goldenOverride
@@ -135,7 +135,7 @@ async function main() {
   const app = createApp(appOpts);
   try {
     // Resolved engine (not the pin) is what prices the row: auto-resolution
-    // picks voyage/voyage-code/voyage-context/none regardless of GATEWAY_EMBED_ENGINE.
+    // picks voyage/voyage-code/voyage-context/none regardless of BIFROST_EMBED_ENGINE.
     let engine = "none";
     if (arms.some(NEEDS_VECTORS)) {
       try {
@@ -151,7 +151,7 @@ async function main() {
     const config = dumpConfig();
     // Resolved backends, not pins: Lance vs sqlite-vec changes pools enough
     // to swing jev-pairwise ±0.10 cross-machine. Rows are only comparable
-    // with equal vector_backend (pin via GATEWAY_VECTOR_BACKEND).
+    // with equal vector_backend (pin via BIFROST_VECTOR_BACKEND).
     const vectorBackend = app.vectorBackend ?? "none";
     const rows = [];
     for (const mode of arms) {

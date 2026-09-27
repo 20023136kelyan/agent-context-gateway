@@ -5,7 +5,7 @@
  * Adding a component used to mean touching six files (union type, factory,
  * order, settings allow-list, table naming, eval arms). Now: one row here
  * plus its factory entry. Types, orders, allow-lists and cost basis all
- * derive from these tables — `gateway models` prints them for operators.
+ * derive from these tables — `bifrost models` prints them for operators.
  *
  * `locked` marks the measured production stack. Anything unlocked is a
  * fallback, experiment, or deprecated path: resolvable when pinned, never
@@ -71,7 +71,7 @@ export const JUDGE_DEFS = [
 
 export type JudgeName = (typeof JUDGE_DEFS)[number]["name"];
 
-/** The measured production stack, for `gateway models` and doctor checks. */
+/** The measured production stack, for `bifrost models` and doctor checks. */
 export function lockedStack(): { engine: string; reranker: string; judge: string } {
   return {
     engine: ENGINE_DEFS.find((e) => e.locked)?.name ?? "voyage",

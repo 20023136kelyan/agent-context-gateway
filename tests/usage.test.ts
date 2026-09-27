@@ -39,7 +39,7 @@ const searchEvent = (over: Partial<UsageEvent> = {}): UsageEvent => ({
 
 describe("usage", () => {
   it("records and aggregates shape-only events", () => {
-    const root = mkdtempSync(join(tmpdir(), "acg-usage-"));
+    const root = mkdtempSync(join(tmpdir(), "bifrost-usage-"));
     const p = defaultUsagePath(root);
     recordUsage(p, searchEvent({ latencyMs: 100 }));
     recordUsage(p, searchEvent({ latencyMs: 200 }));
@@ -64,7 +64,7 @@ describe("usage", () => {
   });
 
   it("contains no text, ids, paths, or principals — ever", () => {
-    const root = mkdtempSync(join(tmpdir(), "acg-usage-"));
+    const root = mkdtempSync(join(tmpdir(), "bifrost-usage-"));
     const p = defaultUsagePath(root);
     const nasty = "secret-token-xyz session abc123 /Users/x/.claude/projects foo@bar.com";
     // The event schema has no string field that could carry content: every
@@ -81,14 +81,14 @@ describe("usage", () => {
   });
 
   it("stays silent when disabled and on missing files", () => {
-    const root = mkdtempSync(join(tmpdir(), "acg-usage-"));
-    process.env.GATEWAY_USAGE = "off";
+    const root = mkdtempSync(join(tmpdir(), "bifrost-usage-"));
+    process.env.BIFROST_USAGE = "off";
     try {
       recordUsage(defaultUsagePath(root), searchEvent());
       const agg = aggregateUsage(defaultUsagePath(root));
       expect(agg.window.events).toBe(0);
     } finally {
-      delete process.env.GATEWAY_USAGE;
+      delete process.env.BIFROST_USAGE;
     }
     expect(aggregateUsage(join(root, "nope.jsonl")).window.events).toBe(0);
   });

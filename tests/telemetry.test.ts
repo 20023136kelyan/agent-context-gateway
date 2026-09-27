@@ -23,8 +23,8 @@ describe("telemetry", () => {
       if (!(k in saved)) delete process.env[k];
     }
     Object.assign(process.env, saved);
-    process.env.CONTEXT_GATEWAY_STATE = mkdtempSync(join(tmpdir(), "acg-tel-"));
-    delete process.env.GATEWAY_TELEMETRY;
+    process.env.BIFROST_STATE = mkdtempSync(join(tmpdir(), "bifrost-tel-"));
+    delete process.env.BIFROST_TELEMETRY;
   });
   afterEach(() => {
     for (const k of Object.keys(process.env)) {
@@ -40,15 +40,15 @@ describe("telemetry", () => {
   it("env beats file in both directions", () => {
     setTelemetry(defaultStateDir(), true);
     expect(resolveSettings().telemetry).toBe(true);
-    process.env.GATEWAY_TELEMETRY = "off";
+    process.env.BIFROST_TELEMETRY = "off";
     expect(resolveSettings().telemetry).toBe(false);
-    delete process.env.GATEWAY_TELEMETRY;
-    process.env.GATEWAY_TELEMETRY = "on";
+    delete process.env.BIFROST_TELEMETRY;
+    process.env.BIFROST_TELEMETRY = "on";
     expect(resolveSettings().telemetry).toBe(true);
   });
 
   it("treats garbage as off", () => {
-    process.env.GATEWAY_TELEMETRY = "maybe";
+    process.env.BIFROST_TELEMETRY = "maybe";
     expect(resolveSettings().telemetry).toBe(false);
   });
 

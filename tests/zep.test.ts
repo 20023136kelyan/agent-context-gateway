@@ -6,7 +6,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ZepAdapter } from "../src/adapters/zep.js";
-import { createApp, closeApp, type GatewayApp } from "../src/app.js";
+import { createApp, closeApp, type BifrostApp } from "../src/app.js";
 import { searchOnce } from "../src/commands.js";
 import { syncAll } from "../src/indexing/sync.js";
 import { CursorStore } from "../src/indexing/store.js";
@@ -15,7 +15,7 @@ let zepDir: string;
 const ZEP_SESSION = "zep-thread-9999";
 
 beforeAll(async () => {
-  zepDir = await mkdtemp(join(tmpdir(), "acg-zep-"));
+  zepDir = await mkdtemp(join(tmpdir(), "bifrost-zep-"));
   const threadsData = [
     {
       uuid: ZEP_SESSION,
@@ -65,7 +65,7 @@ describe("ZepAdapter", () => {
   });
 
   it("federates Zep turns into search alongside other harnesses", async () => {
-    const root = await mkdtemp(join(tmpdir(), "acg-zep-search-"));
+    const root = await mkdtemp(join(tmpdir(), "bifrost-zep-search-"));
     const app = createApp({
       indexDir: join(root, "index"),
       claudeDir: join(root, "empty-c"),
@@ -92,7 +92,7 @@ describe("ZepAdapter", () => {
 
 describe("shared source file (one export, many threads)", () => {
   it("indexes every thread, skips them together, re-indexes them together", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "acg-zep-shared-"));
+    const dir = await mkdtemp(join(tmpdir(), "bifrost-zep-shared-"));
     const thread = (id: string, word: string) => ({
       uuid: id,
       created_at: "2026-09-12T10:00:00Z",
@@ -101,7 +101,7 @@ describe("shared source file (one export, many threads)", () => {
     const write = (word: string) =>
       writeFile(join(dir, "threads.json"), JSON.stringify([thread("t-1", word), thread("t-2", word), thread("t-3", word)]));
     await write("aardvark");
-    const root = await mkdtemp(join(tmpdir(), "acg-zep-shared-idx-"));
+    const root = await mkdtemp(join(tmpdir(), "bifrost-zep-shared-idx-"));
     const app = createApp({ indexDir: join(root, "index"), claudeDir: join(root, "c"), codexDir: join(root, "x"), zepDir: dir, backend: "tantivy", cursorDb: join(root, "no.vscdb"), opencodeDb: join(root, "no-opencode.db") });
     try {
       const first = await syncAll(app.adapters, app.index, app.cursors);

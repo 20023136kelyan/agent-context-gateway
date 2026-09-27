@@ -2,10 +2,10 @@
  * Central typed configuration.
  *
  * Before this, 17 environment variables were read across 34 sites, and the
- * expression `stateDir ?? CONTEXT_GATEWAY_STATE ?? $HOME/.context-gateway` was
+ * expression `stateDir ?? BIFROST_STATE ?? $HOME/.bifrost` was
  * copy-pasted into seven files — two of which had already drifted:
- *   - `topology/store.ts` omitted CONTEXT_GATEWAY_STATE entirely
- *   - `app.ts` resolved vectorDir from $HOME, so setting CONTEXT_GATEWAY_STATE
+ *   - `topology/store.ts` omitted BIFROST_STATE entirely
+ *   - `app.ts` resolved vectorDir from $HOME, so setting BIFROST_STATE
  *     relocated six stores but not the vectors
  * Both are fixed by routing through here.
  *
@@ -15,7 +15,7 @@
  * silently change behaviour for anyone who writes one and forgets an exported
  * variable.
  *
- * GATEWAY_TOKEN is deliberately ABSENT. It is read per-request in http.ts by
+ * BIFROST_TOKEN is deliberately ABSENT. It is read per-request in http.ts by
  * design: the menu-bar app cannot supply it, and an operator must be able to
  * rotate it without restarting. Snapshotting it into immutable settings would
  * break both, so it stays where it is.
@@ -30,7 +30,7 @@ import { RRF_K, HALF_LIFE_DAYS, RANK_WEIGHTS, SIM_FLOOR, SIM_SPAN } from "./sear
 import { EMBED_CHUNK_CHARS } from "./adapters/text.js";
 import { LIVE_WINDOW_MS, LIVE_MAX_TURNS, RECENT_LIMIT } from "./collaboration/live.js";
 
-export interface GatewaySettings {
+export interface BifrostSettings {
   readonly version: 1;
   /** Absolute. Every derived-state store hangs off this. */
   readonly stateDir: string;
@@ -47,7 +47,7 @@ export interface GatewaySettings {
   readonly allowedHosts: string[] | null;
   /**
    * Anonymous aggregate telemetry (report-only, never per-request rows).
-   * Default OFF everywhere: env GATEWAY_TELEMETRY=on|off beats the file,
+   * Default OFF everywhere: env BIFROST_TELEMETRY=on|off beats the file,
    * the file beats the default. Shipping to users with no data to improve
    * on is why this exists; shipping it silent is why it defaults off.
    */
@@ -76,7 +76,7 @@ interface SettingsFile {
 }
 
 export function defaultStateDir(): string {
-  return process.env.CONTEXT_GATEWAY_STATE ?? `${process.env.HOME ?? "/tmp"}/.context-gateway`;
+  return process.env.BIFROST_STATE ?? `${process.env.HOME ?? "/tmp"}/.bifrost`;
 }
 
 export function settingsPath(stateDir?: string): string {
@@ -106,29 +106,29 @@ export function loadSettingsFile(stateDir?: string): SettingsFile {
 const oneOf = <T extends string>(v: string | undefined, allowed: readonly T[]): T | null =>
   v && (allowed as readonly string[]).includes(v) ? (v as T) : null;
 
-export function resolveSettings(opts: SettingsOverrides = {}): GatewaySettings {
+export function resolveSettings(opts: SettingsOverrides = {}): BifrostSettings {
   // stateDir first: the file lives inside it, so it cannot itself come from the file.
   const stateDir = opts.stateDir ?? defaultStateDir();
   const file = loadSettingsFile(stateDir);
 
   const backend =
     opts.backend ??
-    oneOf(process.env.GATEWAY_BACKEND, ["tantivy", "sqlite"] as const) ??
+    oneOf(process.env.BIFROST_BACKEND, ["tantivy", "sqlite"] as const) ??
     (file.backend === "sqlite" || file.backend === "tantivy" ? file.backend : null) ??
     "tantivy";
 
   const indexDir =
     opts.indexDir ??
-    process.env.GATEWAY_INDEX_DIR ??
+    process.env.BIFROST_INDEX_DIR ??
     file.indexDir ??
     join(stateDir, backend === "tantivy" ? "index-tantivy" : "index-sqlite");
 
   // The directory name stays `vectors-lance` even though sqlite-vec also lives
   // there now. Renaming it would strand every existing store, and a backfill is
   // expensive; the name is historical, not a claim about the backend.
-  const vectorDir = opts.vectorDir ?? process.env.GATEWAY_VECTOR_DIR ?? file.vectorDir ?? join(stateDir, "vectors-lance");
+  const vectorDir = opts.vectorDir ?? process.env.BIFROST_VECTOR_DIR ?? file.vectorDir ?? join(stateDir, "vectors-lance");
 
-  const allowedHostsRaw = process.env.GATEWAY_ALLOWED_HOSTS;
+  const allowedHostsRaw = process.env.BIFROST_ALLOWED_HOSTS;
   const allowedHosts = allowedHostsRaw
     ? allowedHostsRaw.split(",").map((h) => h.trim()).filter(Boolean)
     : (file.allowedHosts ?? null);
@@ -140,12 +140,12 @@ export function resolveSettings(opts: SettingsOverrides = {}): GatewaySettings {
     vectorDir,
     backend,
     vectorBackend:
-      oneOf(process.env.GATEWAY_VECTOR_BACKEND, ["lance", "sqlite"] as const) ?? file.vectorBackend ?? null,
+      oneOf(process.env.BIFROST_VECTOR_BACKEND, ["lance", "sqlite"] as const) ?? file.vectorBackend ?? null,
     embedEngine:
-      oneOf<EmbeddingEngine>(process.env.GATEWAY_EMBED_ENGINE, ENGINE_DEFS.map((e): EmbeddingEngine => e.name)) ??
+      oneOf<EmbeddingEngine>(process.env.BIFROST_EMBED_ENGINE, ENGINE_DEFS.map((e): EmbeddingEngine => e.name)) ??
       file.embedEngine ??
       null,
-    reranker: oneOf<RerankerName>(process.env.GATEWAY_RERANKER, RERANKER_DEFS.map((r): RerankerName => r.name)) ?? file.reranker ?? null,
+    reranker: oneOf<RerankerName>(process.env.BIFROST_RERANKER, RERANKER_DEFS.map((r): RerankerName => r.name)) ?? file.reranker ?? null,
     allowedHosts,
     telemetry: telemetryEnabled(file.telemetry),
   };
@@ -153,16 +153,16 @@ export function resolveSettings(opts: SettingsOverrides = {}): GatewaySettings {
 
 /** Explicit opt-in only: unset/anything-else = off. */
 function telemetryEnabled(fileValue: boolean | undefined): boolean {
-  const env = process.env.GATEWAY_TELEMETRY?.trim().toLowerCase();
+  const env = process.env.BIFROST_TELEMETRY?.trim().toLowerCase();
   if (env === "on" || env === "1" || env === "true") return true;
   if (env === "off" || env === "0" || env === "false") return false;
   return fileValue === true;
 }
 
-/** Effective tunable values for sweepability: every GATEWAY_* knob in one place.
+/** Effective tunable values for sweepability: every BIFROST_* knob in one place.
  *
  * Sources of truth stay in their modules (rank.ts, text.ts, live.ts,
- * search.ts); this snapshots them alongside resolveSettings() so `gateway
+ * search.ts); this snapshots them alongside resolveSettings() so `bifrost
  * config` prints what a sweep actually ran with. Plain JSON-serializable.
  */
 export function dumpConfig(): Record<string, unknown> {
@@ -170,15 +170,15 @@ export function dumpConfig(): Record<string, unknown> {
   // Mirrors src/search/search.ts (kept local so settings stays free of the
   // search dependency chain): same defaults, same validation.
   const minVectorSim = (() => {
-    const raw = Number(process.env.GATEWAY_MIN_VECTOR_SIM ?? 0.25);
+    const raw = Number(process.env.BIFROST_MIN_VECTOR_SIM ?? 0.25);
     return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : 0.25;
   })();
   const rerankPool = (() => {
-    const raw = Number(process.env.GATEWAY_RERANK_POOL ?? 30);
+    const raw = Number(process.env.BIFROST_RERANK_POOL ?? 30);
     return Number.isFinite(raw) && raw >= 1 && raw <= 100 ? Math.floor(raw) : 30;
   })();
   // Mirrors src/decisions/select.ts: a pin never falls back; null = auto.
-  const judgeRaw = process.env.GATEWAY_JUDGE;
+  const judgeRaw = process.env.BIFROST_JUDGE;
   const judge = judgeRaw === "jev" || judgeRaw === "heuristic" ? judgeRaw : null;
   return {
     stateDir: s.stateDir,
@@ -192,7 +192,7 @@ export function dumpConfig(): Record<string, unknown> {
     allowedHosts: s.allowedHosts,
     minVectorSim,
     rerankPool,
-    tokenizer: process.env.GATEWAY_TOKENIZER === "en_stem" ? "en_stem" : "default",
+    tokenizer: process.env.BIFROST_TOKENIZER === "en_stem" ? "en_stem" : "default",
     simFloor: SIM_FLOOR,
     simSpan: SIM_SPAN,
     rrfK: RRF_K,

@@ -1,6 +1,6 @@
 import Foundation
 
-// Mirrors the gateway's JSON envelope (CLI --json / HTTP / MCP).
+// Mirrors Bifröst's JSON envelope (CLI --json / HTTP / MCP).
 // Unknown future keys are ignored (JSONDecoder default).
 
 public struct Provenance: Codable {

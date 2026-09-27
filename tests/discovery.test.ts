@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { announce, discover } from "../src/discovery/mdns.js";
 
 describe("mDNS discovery", () => {
-  it("announced gateway is discoverable on loopback", async () => {
+  it("announced instance is discoverable on loopback", async () => {
     const handle = announce(34971, { backend: "tantivy", docCount: 42 });
     try {
       const found = await discover(4000);

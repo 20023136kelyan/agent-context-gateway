@@ -20,7 +20,7 @@ const CLAUDE_SESSION = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 const CODEX_SESSION = "019fzzzz-0000-1111-2222-333333333333";
 
 beforeAll(async () => {
-  root = await mkdtemp(join(tmpdir(), "acg-m2-"));
+  root = await mkdtemp(join(tmpdir(), "bifrost-m2-"));
 
   claudeDir = join(root, "claude");
   await mkdir(join(claudeDir, "cozea"), { recursive: true });

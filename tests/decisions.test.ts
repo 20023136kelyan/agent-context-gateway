@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { extractDecisions, HeuristicJudge } from "../src/decisions/extract.js";
 import { isWhyQuery } from "../src/decisions/cues.js";
 import { normalizeQuery } from "../src/search/query.js";
-import { createApp, closeApp, type GatewayApp } from "../src/app.js";
+import { createApp, closeApp, type BifrostApp } from "../src/app.js";
 import { decideOnce } from "../src/commands.js";
 import { syncAll } from "../src/indexing/sync.js";
 import { CursorStore } from "../src/indexing/store.js";
@@ -49,7 +49,7 @@ describe("extractDecisions", () => {
   });
 
   it("file contents echoed back by a tool never anchor (real Claude shape)", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "acg-dec-claude-"));
+    const dir = await mkdtemp(join(tmpdir(), "bifrost-dec-claude-"));
     const sid = "eeeeeeee-1111-2222-3333-444444444444";
     await mkdir(join(dir, "proj"), { recursive: true });
     const lines = [
@@ -122,9 +122,9 @@ describe("temporal query parsing", () => {
 });
 
 describe("decideOnce", () => {
-  let app: GatewayApp;
+  let app: BifrostApp;
   beforeAll(async () => {
-    const root = await mkdtemp(join(tmpdir(), "acg-dec-"));
+    const root = await mkdtemp(join(tmpdir(), "bifrost-dec-"));
     const codexDir = join(root, "codex");
     await mkdir(join(codexDir, "2026", "09", "10"), { recursive: true });
     const sess = (id: string, texts: string[]) =>

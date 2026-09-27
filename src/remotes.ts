@@ -1,6 +1,6 @@
 /**
- * P2e remote federation — read-only: this gateway fans search out to other
- * gateways' HTTP APIs and merges. Remotes never write here; we never write
+ * P2e remote federation — read-only: this instance fans search out to other
+ * instances' HTTP APIs and merges. Remotes never write here; we never write
  * there. Failures are reported per-remote (spec §35), never fabricated.
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from "node:fs";
@@ -13,7 +13,7 @@ export interface RemoteSource {
 }
 
 export function remotesPath(stateDir?: string): string {
-  const base = stateDir ?? process.env.CONTEXT_GATEWAY_STATE ?? `${process.env.HOME ?? "/tmp"}/.context-gateway`;
+  const base = stateDir ?? process.env.BIFROST_STATE ?? `${process.env.HOME ?? "/tmp"}/.bifrost`;
   return join(base, "remotes.json");
 }
 
@@ -83,8 +83,8 @@ export async function queryRemote(
   if (opts.maxResults) params.set("maxResults", String(opts.maxResults));
   try {
     const headers: Record<string, string> = {
-      // Loop guard: gateways skip remotes already in the chain (A->B->A).
-      "X-Gateway-Chain": [...chain, remote.name].join(","),
+      // Loop guard: instances skip remotes already in the chain (A->B->A).
+      "X-Bifrost-Chain": [...chain, remote.name].join(","),
     };
     if (remote.token) headers.Authorization = `Bearer ${remote.token}`;
     const res = await fetch(`${remote.url.replace(/\/$/, "")}/search?${params}`, {

@@ -18,7 +18,7 @@ describe("Agent Lineage Explorer", () => {
   const SUB_CHILD = "sub-child-agent-4444";
 
   beforeAll(async () => {
-    const rootDir = await mkdtemp(join(tmpdir(), "acg-lineage-"));
+    const rootDir = await mkdtemp(join(tmpdir(), "bifrost-lineage-"));
     topology = new TopologyStore(join(rootDir, "topology.json"));
 
     // Topology tree:

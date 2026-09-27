@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync, rmSync, existsSync, mkdirSync } from "node
 import { join } from "node:path";
 
 export function stateDir(): string {
-  const dir = process.env.CONTEXT_GATEWAY_STATE ?? `${process.env.HOME ?? "/tmp"}/.context-gateway`;
+  const dir = process.env.BIFROST_STATE ?? `${process.env.HOME ?? "/tmp"}/.bifrost`;
   try {
     mkdirSync(dir, { recursive: true });
   } catch {
@@ -82,7 +82,7 @@ export class HttpError extends Error {
 export async function remoteCall(port: number, method: string, path: string, body?: unknown, host = "127.0.0.1"): Promise<unknown> {
   const headers: Record<string, string> = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
-  const token = process.env.GATEWAY_TOKEN;
+  const token = process.env.BIFROST_TOKEN;
   if (token) headers.Authorization = `Bearer ${token}`;
   let res: Response;
   try {

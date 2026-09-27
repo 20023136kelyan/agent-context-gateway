@@ -1,19 +1,19 @@
 #!/usr/bin/env node
-/** CLI transport — `gateway <command>`. Human/debug interface; agents use MCP/HTTP. */
+/** CLI transport — `bifrost <command>`. Human/debug interface; agents use MCP/HTTP. */
 import { rerankDefaultOn } from "./search/reranker.js";
 import { Command } from "commander";
 import { join } from "node:path";
-import { createApp, closeApp, type GatewayApp } from "./app.js";
+import { createApp, closeApp, type BifrostApp } from "./app.js";
 import { dumpConfig } from "./settings.js";
 import { listSources, listSessions, searchOnce, decideOnce, getRelated, traverseArtifacts, listInvalidations, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, recordFeedback, getSession, getTurn, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "./commands.js";
 import { addRemote, removeRemote, loadRemotes } from "./remotes.js";
 import { readServeInfo, probeServer, remoteCall, connectHost, HttpError } from "./remote.js";
 
 const program = new Command();
-program.name("gateway").description("Agent Context Gateway — federated search over native agent histories");
-program.option("--index-dir <dir>", "index directory (default ~/.context-gateway/index-tantivy)");
+program.name("bifrost").description("Bifröst — federated search over native agent histories");
+program.option("--index-dir <dir>", "index directory (default ~/.bifrost/index-tantivy)");
 program.option("--backend <name>", "tantivy (default) or sqlite");
-program.option("--state-dir <dir>", "base for derived state (default CONTEXT_GATEWAY_STATE or ~/.context-gateway)");
+program.option("--state-dir <dir>", "base for derived state (default BIFROST_STATE or ~/.bifrost)");
 program.option("--json", "JSON output (default for search)", false);
 
 function appFromGlobals() {
@@ -55,7 +55,7 @@ async function fetchRemote(method: string, path: string, body?: unknown): Promis
   }
 }
 
-async function withLocal<T>(fn: (app: GatewayApp) => Promise<T> | T): Promise<T> {
+async function withLocal<T>(fn: (app: BifrostApp) => Promise<T> | T): Promise<T> {
   const app = appFromGlobals();
   try {
     return await fn(app);
@@ -175,7 +175,7 @@ program
 
 program
   .command("backfill")
-  .description("Systematically backfill dense vector embeddings (engine: GATEWAY_EMBED_ENGINE or first available)")
+  .description("Systematically backfill dense vector embeddings (engine: BIFROST_EMBED_ENGINE or first available)")
   .option("--batch <n>", "batch size per GPU forward pass", "64")
   .option("--max-sessions <n>", "max sessions to backfill in this run")
   .action(async (cmdOpts) => {
@@ -343,14 +343,14 @@ program
 
 program
   .command("remotes-list")
-  .description("List configured remote gateways")
+  .description("List configured remote Bifröst instances")
   .action(() => {
     print(loadRemotes().map(({ token, ...r }) => r), false);
   });
 
 program
   .command("remotes-add <name> <url>")
-  .description("Add a read-only remote gateway (token stored with 0600 perms)")
+  .description("Add a read-only remote Bifröst instance (token stored with 0600 perms)")
   .option("--token <token>")
   .action((name: string, url: string, cmdOpts) => {
     print(addRemote({ name, url, token: cmdOpts.token }), false);
@@ -358,16 +358,16 @@ program
 
 program
   .command("remotes-remove <name>")
-  .description("Remove a remote gateway")
+  .description("Remove a remote Bifröst instance")
   .action((name: string) => {
     print({ removed: removeRemote(name) }, false);
   });
 
 program
   .command("remotes-discover")
-  .description("Browse LAN for gateways via mDNS (never auto-adds)")
+  .description("Browse LAN for Bifröst instances via mDNS (never auto-adds)")
   .option("--timeout <ms>", "", "5000")
-  .option("--add", "add discovered gateways as tokenless remotes")
+  .option("--add", "add discovered instances as tokenless remotes")
   .action(async (cmdOpts) => {
     const { discover } = await import("./discovery/mdns.js");
     const found = await discover(Number(cmdOpts.timeout ?? 5000));
@@ -416,7 +416,7 @@ program
   .command("serve")
   .description("Start the HTTP API (loopback by default)")
   .option("--port <n>", "", "3000")
-  .option("--host <addr>", "bind address; anything but loopback requires GATEWAY_TOKEN", "127.0.0.1")
+  .option("--host <addr>", "bind address; anything but loopback requires BIFROST_TOKEN", "127.0.0.1")
   .option("--watch", "watch native histories and re-sync on change")
   .option("--embed", "with --watch: also embed new turns")
   .option("--announce", "broadcast on LAN via mDNS (needs a non-loopback --host; off by default for privacy)")
@@ -424,13 +424,13 @@ program
     const { serveProduction, isLoopbackHost } = await import("./transports/http.js");
     const host = String(cmdOpts.host ?? "127.0.0.1");
     const port = Number(cmdOpts.port ?? 3000);
-    if (!isLoopbackHost(host) && !process.env.GATEWAY_TOKEN) {
-      console.error(`refusing to bind ${host}: that exposes agent histories to the network. Set GATEWAY_TOKEN first.`);
+    if (!isLoopbackHost(host) && !process.env.BIFROST_TOKEN) {
+      console.error(`refusing to bind ${host}: that exposes agent histories to the network. Set BIFROST_TOKEN first.`);
       process.exitCode = 1;
       return;
     }
     if (cmdOpts.announce && isLoopbackHost(host)) {
-      console.error("--announce needs --host <LAN address or 0.0.0.0>: a loopback-bound gateway can't be reached from the LAN.");
+      console.error("--announce needs --host <LAN address or 0.0.0.0>: a loopback-bound instance can't be reached from the LAN.");
       process.exitCode = 1;
       return;
     }
@@ -450,12 +450,12 @@ program
       console.error(`watching native histories${cmdOpts.embed ? " (+embed)" : ""}`);
     }
     const server = await serveProduction(app, port, host);
-    console.error(`gateway http on http://${host}:${port}`);
+    console.error(`bifrost http on http://${host}:${port}`);
     let announcer: { stop(): void } | null = null;
     if (cmdOpts.announce) {
       const { announce } = await import("./discovery/mdns.js");
       announcer = announce(port, { backend: app.backend, docCount: app.index.docCount(), host });
-      console.error("announcing _context-gateway._tcp on LAN (opt-in; clients need GATEWAY_TOKEN)");
+      console.error("announcing _bifrost._tcp on LAN (opt-in; clients need BIFROST_TOKEN)");
     }
     const shutdown = async () => {
       announcer?.stop();
@@ -539,7 +539,7 @@ program
       setTelemetry(undefined, true);
       done("telemetry: on (aggregates only)");
     } else {
-      done("telemetry: off (default; `gateway telemetry on` anytime)");
+      done("telemetry: off (default; `bifrost telemetry on` anytime)");
     }
     done(`keys: present=[${Object.entries({ ...keys, ...Object.fromEntries(added.map((k) => [k, true])) }).filter(([, v]) => v).map(([k]) => k).join(", ")}] added=[${added.join(", ")}]`);
 

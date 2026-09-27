@@ -12,7 +12,7 @@
  *
  * Two properties must hold regardless of that default:
  *   - an explicit `rerank` on the request ALWAYS wins, both directions
- *   - `GATEWAY_RERANKER=none` disables it system-wide
+ *   - `BIFROST_RERANKER=none` disables it system-wide
  * A default is a choice; a silently ignored override is a bug.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -24,7 +24,7 @@ import {
   rerankDefaultOn,
 } from "../src/search/reranker.js";
 
-const KEYS = ["TYPESAFE_API_KEY", "JEV_API_KEY", "GATEWAY_RERANKER"] as const;
+const KEYS = ["TYPESAFE_API_KEY", "JEV_API_KEY", "BIFROST_RERANKER"] as const;
 let saved: Record<string, string | undefined> = {};
 
 beforeEach(() => {
@@ -57,20 +57,20 @@ describe("reranker selection", () => {
     // A pinned name is a hard selection: a deployment that pins voyage must
     // not silently switch vendors because another key appeared.
     process.env.TYPESAFE_API_KEY = "k";
-    process.env.GATEWAY_RERANKER = "voyage";
+    process.env.BIFROST_RERANKER = "voyage";
     expect(resolveRerankerName()).toBe("voyage");
   });
 
   it("can be pinned off entirely", () => {
     process.env.TYPESAFE_API_KEY = "k";
-    process.env.GATEWAY_RERANKER = "none";
+    process.env.BIFROST_RERANKER = "none";
     expect(resolveRerankerName()).toBe("none");
   });
 
   it("pinning jev without a key still selects jev, and it degrades at call time", async () => {
     // Explicit intent is honoured; the failure is then loud at the call site
     // rather than a silent downgrade that looks like a quality regression.
-    process.env.GATEWAY_RERANKER = "jev";
+    process.env.BIFROST_RERANKER = "jev";
     expect(resolveRerankerName()).toBe("jev");
     const r = makeReranker("jev");
     const out = await r.rerank("q", [{ id: "a", content: "x", score: 0.5 }]);
@@ -134,9 +134,9 @@ describe("the default is reranker-aware", () => {
     expect(cmds).toContain("opts.rerank ?? rerankDefaultOn(app.reranker)");
   });
 
-  it("GATEWAY_RERANKER=none disables it system-wide regardless of request", async () => {
+  it("BIFROST_RERANKER=none disables it system-wide regardless of request", async () => {
     process.env.TYPESAFE_API_KEY = "k";
-    process.env.GATEWAY_RERANKER = "none";
+    process.env.BIFROST_RERANKER = "none";
     expect(resolveRerankerName()).toBe("none");
     expect(rerankDefaultOn(resolveRerankerName())).toBe(false);
     const out = await makeReranker("none").rerank("q", [
@@ -158,12 +158,12 @@ describe("rerank plumbing, end to end", () => {
     const { buildHttpServer } = await import("../src/transports/http.js");
     const { buildFixtureCorpus } = await import("./fixtures/corpus.js");
 
-    const root = await mkdtemp(join(tmpdir(), "acg-rerank-http-"));
+    const root = await mkdtemp(join(tmpdir(), "bifrost-rerank-http-"));
     const { claudeDir, codexDir } = await buildFixtureCorpus(root);
-    const prevState = process.env.CONTEXT_GATEWAY_STATE;
-    process.env.CONTEXT_GATEWAY_STATE = join(root, "state");
+    const prevState = process.env.BIFROST_STATE;
+    process.env.BIFROST_STATE = join(root, "state");
     process.env.TYPESAFE_API_KEY = "k";
-    process.env.GATEWAY_RERANKER = pin;
+    process.env.BIFROST_RERANKER = pin;
     const app = createApp({ indexDir: join(root, "index"), claudeDir, codexDir });
 
     // Stub stands in for whichever reranker was selected, so this asserts the
@@ -176,8 +176,8 @@ describe("rerank plumbing, end to end", () => {
       await fn(buildHttpServer(app), spy);
     } finally {
       closeApp(app);
-      if (prevState === undefined) delete process.env.CONTEXT_GATEWAY_STATE;
-      else process.env.CONTEXT_GATEWAY_STATE = prevState;
+      if (prevState === undefined) delete process.env.BIFROST_STATE;
+      else process.env.BIFROST_STATE = prevState;
     }
   }
 

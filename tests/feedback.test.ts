@@ -4,20 +4,20 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { FeedbackStore } from "../src/feedback/store.js";
-import { createApp, type GatewayApp } from "../src/app.js";
+import { createApp, type BifrostApp } from "../src/app.js";
 import { searchOnce, recordFeedback } from "../src/commands.js";
 import { syncAll } from "../src/indexing/sync.js";
 import { CursorStore } from "../src/indexing/store.js";
 
-let app: GatewayApp;
+let app: BifrostApp;
 let prevState: string | undefined;
 const A = "aaaaaaaa-1111-1111-1111-111111111111";
 const B = "bbbbbbbb-2222-2222-2222-222222222222";
 
 beforeAll(async () => {
-  prevState = process.env.CONTEXT_GATEWAY_STATE;
-  const root = await mkdtemp(join(tmpdir(), "acg-fb-"));
-  process.env.CONTEXT_GATEWAY_STATE = join(root, "state");
+  prevState = process.env.BIFROST_STATE;
+  const root = await mkdtemp(join(tmpdir(), "bifrost-fb-"));
+  process.env.BIFROST_STATE = join(root, "state");
   const claudeDir = join(root, "claude");
   await mkdir(join(claudeDir, "s"), { recursive: true });
   // Identical content in two sessions -> tied base scores, feedback decides.
@@ -32,8 +32,8 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-  if (prevState === undefined) delete process.env.CONTEXT_GATEWAY_STATE;
-  else process.env.CONTEXT_GATEWAY_STATE = prevState;
+  if (prevState === undefined) delete process.env.BIFROST_STATE;
+  else process.env.BIFROST_STATE = prevState;
 });
 
 describe("FeedbackStore", () => {

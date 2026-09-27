@@ -38,7 +38,7 @@ function turn(harness: string, n: number, text: string): string {
 }
 
 beforeAll(async () => {
-  const root = await mkdtemp(join(tmpdir(), "acg-m3-"));
+  const root = await mkdtemp(join(tmpdir(), "bifrost-m3-"));
   indexDir = join(root, "index");
 
   claudeDir = join(root, "claude");
@@ -204,7 +204,7 @@ describe("SearchService", () => {
   });
 
   it("never lets un-reranked candidates outrank the reranked head", async () => {
-    const root2 = await mkdtemp(join(tmpdir(), "acg-rerank-"));
+    const root2 = await mkdtemp(join(tmpdir(), "bifrost-rerank-"));
     const cdir = join(root2, "claude");
     await mkdir(join(cdir, "p"), { recursive: true });
     for (let i = 0; i < 24; i++) {

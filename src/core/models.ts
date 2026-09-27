@@ -1,5 +1,5 @@
 /**
- * Canonical data model — Agent Context Gateway MVP.
+ * Canonical data model — Bifröst MVP.
  * Source of truth remains native history; these types are normalized views.
  * See IMPLEMENTATION_PLAN_V2.md §3 and spec §8.
  */

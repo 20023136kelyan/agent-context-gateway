@@ -14,7 +14,7 @@ let dbPath: string;
 let wsRoot: string;
 
 beforeAll(async () => {
-  const root = await mkdtemp(join(tmpdir(), "acg-cursor-"));
+  const root = await mkdtemp(join(tmpdir(), "bifrost-cursor-"));
   dbPath = join(root, "state.vscdb");
   wsRoot = join(root, "workspaceStorage");
   await mkdir(join(wsRoot, "abc123"), { recursive: true });

@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import GatewayMenuCore
+import BifrostMenuCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
@@ -10,14 +10,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct GatewayMenuApp: App {
+struct BifrostMenuApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-  @StateObject private var client = GatewayClient()
+  @StateObject private var client = BifrostClient()
 
   var body: some Scene {
     Settings {
       Form {
-        TextField("Gateway port", value: portBinding, formatter: NumberFormatter())
+        TextField("Bifröst port", value: portBinding, formatter: NumberFormatter())
         Text("Restart the app to apply. Default 3000 (serve --port).")
           .font(.caption).foregroundStyle(.secondary)
         Text("Global hotkey: ⌘⇧K toggles the search panel from anywhere.")
@@ -37,10 +37,10 @@ struct GatewayMenuApp: App {
   private var portBinding: Binding<Int> {
     Binding(
       get: {
-        let p = UserDefaults.standard.integer(forKey: "gatewayPort")
+        let p = UserDefaults.standard.integer(forKey: "bifrostPort")
         return p == 0 ? 3000 : p
       },
-      set: { UserDefaults.standard.set($0, forKey: "gatewayPort") }
+      set: { UserDefaults.standard.set($0, forKey: "bifrostPort") }
     )
   }
 }

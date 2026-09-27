@@ -22,9 +22,9 @@ export interface NotificationRecord {
  * 20 from the original subscription store — enough history for MCP agents to
  * poll what matched without unbounded growth of subscriptions.json.
  *
- * Overridable with GATEWAY_SUB_RECENT; invalid values fall back to the default. */
+ * Overridable with BIFROST_SUB_RECENT; invalid values fall back to the default. */
 export const RECENT_LIMIT = (() => {
-  const raw = Number(process.env.GATEWAY_SUB_RECENT ?? 20);
+  const raw = Number(process.env.BIFROST_SUB_RECENT ?? 20);
   return Number.isFinite(raw) && raw >= 1 && raw <= 200 ? Math.floor(raw) : 20;
 })();
 /** Live-search active window: a session file modified within this long counts
@@ -33,18 +33,18 @@ export const RECENT_LIMIT = (() => {
  * 15 minutes from the original live search — long enough to catch an agent
  * mid-thought, short enough to exclude lunch breaks.
  *
- * Overridable with GATEWAY_LIVE_WINDOW_MS; invalid values fall back to the default. */
+ * Overridable with BIFROST_LIVE_WINDOW_MS; invalid values fall back to the default. */
 export const LIVE_WINDOW_MS = (() => {
-  const raw = Number(process.env.GATEWAY_LIVE_WINDOW_MS ?? 15 * 60 * 1000);
+  const raw = Number(process.env.BIFROST_LIVE_WINDOW_MS ?? 15 * 60 * 1000);
   return Number.isFinite(raw) && raw > 0 ? raw : 15 * 60 * 1000;
 })();
 /** Turns per session live search reads (newest first).
  *
  * 20 from the original live search — the working tail of a running session.
  *
- * Overridable with GATEWAY_LIVE_TURNS; invalid values fall back to the default. */
+ * Overridable with BIFROST_LIVE_TURNS; invalid values fall back to the default. */
 export const LIVE_MAX_TURNS = (() => {
-  const raw = Number(process.env.GATEWAY_LIVE_TURNS ?? 20);
+  const raw = Number(process.env.BIFROST_LIVE_TURNS ?? 20);
   return Number.isFinite(raw) && raw >= 1 && raw <= 200 ? Math.floor(raw) : 20;
 })();
 const WEBHOOK_TIMEOUT_MS = 5000;
@@ -267,6 +267,6 @@ export async function searchLiveSessions(
 }
 
 export function defaultSubscriptionsPath(stateDir?: string): string {
-  const base = stateDir ?? process.env.CONTEXT_GATEWAY_STATE ?? `${process.env.HOME ?? "/tmp"}/.context-gateway`;
+  const base = stateDir ?? process.env.BIFROST_STATE ?? `${process.env.HOME ?? "/tmp"}/.bifrost`;
   return join(base, "subscriptions.json");
 }

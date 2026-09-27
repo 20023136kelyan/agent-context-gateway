@@ -17,7 +17,7 @@ import { SqliteIndex } from "./indexing/sqlite-index.js";
 import type { VectorBackend } from "./indexing/vectors.js";
 import { openVectorStore, type VectorBackendName } from "./indexing/vector-backend.js";
 import { resolveReranker, makeReranker, type RerankerName } from "./search/reranker.js";
-import { resolveSettings, type GatewaySettings } from "./settings.js";
+import { resolveSettings, type BifrostSettings } from "./settings.js";
 import { CursorStore } from "./indexing/store.js";
 import { TopologyStore, defaultTopologyPath } from "./topology/store.js";
 import { FeedbackStore, defaultFeedbackPath } from "./feedback/store.js";
@@ -38,7 +38,7 @@ export class AsyncLock {
 }
 
 export interface AppOptions {
-  /** Base for every derived-state store. Defaults to CONTEXT_GATEWAY_STATE or ~/.context-gateway. */
+  /** Base for every derived-state store. Defaults to BIFROST_STATE or ~/.bifrost. */
   stateDir?: string;
   indexDir?: string;
   vectorDir?: string;
@@ -52,7 +52,7 @@ export interface AppOptions {
   backend?: "tantivy" | "sqlite";
 }
 
-export interface GatewayApp {
+export interface BifrostApp {
   adapters: ContextAdapter[];
   index: SearchIndex;
   cursors: CursorStore;
@@ -66,7 +66,7 @@ export interface GatewayApp {
   /** Which reranker is installed. Only used when a request passes rerank. */
   reranker: RerankerName;
   /** Resolved configuration. Reaches every transport, since all take `app`. */
-  readonly settings: GatewaySettings;
+  readonly settings: BifrostSettings;
   vectorDir: string;
   topology: TopologyStore;
   feedback: FeedbackStore;
@@ -79,11 +79,11 @@ export interface GatewayApp {
   vectorLock: AsyncLock;
 }
 
-export function createApp(opts: AppOptions = {}): GatewayApp {
+export function createApp(opts: AppOptions = {}): BifrostApp {
   const settings = resolveSettings(opts);
   const { backend, indexDir, stateDir } = settings;
-  // Previously `${HOME}/.context-gateway/vectors-lance`, which ignored
-  // CONTEXT_GATEWAY_STATE — so setting a state dir relocated six stores but left
+  // Previously `${HOME}/.bifrost/vectors-lance`, which ignored
+  // BIFROST_STATE — so setting a state dir relocated six stores but left
   // the vectors behind. Now it hangs off stateDir like everything else.
   const vectorDir = settings.vectorDir;
   const adapters: ContextAdapter[] = [
@@ -122,7 +122,7 @@ export function createApp(opts: AppOptions = {}): GatewayApp {
 }
 
 /** Open (or create) the vector store and attach it to search. Safe to skip offline. */
-export async function initVectors(app: GatewayApp, dir = app.vectorDir): Promise<VectorBackend> {
+export async function initVectors(app: BifrostApp, dir = app.vectorDir): Promise<VectorBackend> {
   const { mkdirSync } = await import("node:fs");
   mkdirSync(dir, { recursive: true });
   const { store, backend } = await openVectorStore(dir);
@@ -132,7 +132,7 @@ export async function initVectors(app: GatewayApp, dir = app.vectorDir): Promise
   return store;
 }
 
-export function closeApp(app: GatewayApp): void {
+export function closeApp(app: BifrostApp): void {
   try {
     app.index.close();
   } catch {

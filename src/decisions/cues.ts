@@ -4,7 +4,7 @@
  *
  * Word lists live in ./locales (per language/domain pack); this file is the
  * locale-blind machinery. The exported names below resolve against the active
- * pack (GATEWAY_LOCALE, default en) so existing importers keep working.
+ * pack (BIFROST_LOCALE, default en) so existing importers keep working.
  */
 import { localePack } from "./locales/en.js";
 

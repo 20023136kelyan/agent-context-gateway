@@ -5,7 +5,7 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { createApp, closeApp, initVectors, type GatewayApp } from "../app.js";
+import { createApp, closeApp, initVectors, type BifrostApp } from "../app.js";
 import { searchOnce, decideOnce } from "../commands.js";
 import { ndcgAtK, mrrAtK, precisionAtK, evaluateCitations, citationHitAtK } from "./metrics.js";
 import type { Harness } from "../core/models.js";
@@ -217,7 +217,7 @@ function aggregate(results: QueryEvalResult[], domain: string): DomainAggregate 
 }
 
 export async function runEval(
-  app: GatewayApp,
+  app: BifrostApp,
   queries: GoldenQuery[],
   mode: EvalMode | EvalArm,
   opts: { asOf?: string } = {},

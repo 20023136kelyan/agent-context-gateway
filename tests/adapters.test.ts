@@ -16,7 +16,7 @@ const CLAUDE_SESSION = "11111111-2222-3333-4444-555555555555";
 const CODEX_SESSION = "019f73a0-9b73-77a0-ac30-2984a0443ab5";
 
 beforeAll(async () => {
-  const root = await mkdtemp(join(tmpdir(), "acg-m1-"));
+  const root = await mkdtemp(join(tmpdir(), "bifrost-m1-"));
 
   // --- Claude fixture ---
   claudeDir = join(root, "claude");

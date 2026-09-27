@@ -63,7 +63,7 @@ export interface PackagedResult {
   provenance: Provenance;
   context: Turn[];
   artifacts: string[];
-  /** Remote gateway that served this result (absent = local). */
+  /** Remote Bifröst instance that served this result (absent = local). */
   via?: string;
   /** Bi-temporal invalidation record if this turn was superseded */
   invalidation?: InvalidationRecord;
@@ -93,9 +93,9 @@ const TOPO_SCOPES = new Set(["parent", "children", "siblings", "auto"]);
  * `similarityWeight`, 30 -> 0.969 and 50 -> 0.964, so 50 stops paying and
  * costs ~320ms. 30 is the knee of the curve.
  *
- * Overridable with GATEWAY_RERANK_POOL; cost in reranker calls is linear. */
+ * Overridable with BIFROST_RERANK_POOL; cost in reranker calls is linear. */
 const RERANK_POOL = (() => {
-  const raw = Number(process.env.GATEWAY_RERANK_POOL ?? 30);
+  const raw = Number(process.env.BIFROST_RERANK_POOL ?? 30);
   return Number.isFinite(raw) && raw >= 1 && raw <= 100 ? Math.floor(raw) : 30;
 })();
 /** Listing sessions walks every history dir; reuse the result this long. */
@@ -295,10 +295,10 @@ export class SearchService {
     // 0.45 -> 0.6834 NDCG@5. The old floor discarded rank-1 vector targets
     // (paraphrase sims run 0.27-0.72); 0.25 keeps them while gate 0 admits
     // pure noise. Code/prose are flat across the sweep. Carries through to
-    // rerank (0.7483 vs 0.7416). Overridable via GATEWAY_MIN_VECTOR_SIM;
+    // rerank (0.7483 vs 0.7416). Overridable via BIFROST_MIN_VECTOR_SIM;
     // invalid values fall back to the default.
     const MIN_VECTOR_SIM = (() => {
-      const raw = Number(process.env.GATEWAY_MIN_VECTOR_SIM ?? 0.25);
+      const raw = Number(process.env.BIFROST_MIN_VECTOR_SIM ?? 0.25);
       return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : 0.25;
     })();
     const vecRanks = new Map<string, number>();

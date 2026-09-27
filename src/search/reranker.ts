@@ -32,7 +32,7 @@
  * Hence `rerankDefaultOn`: reranking is default-ON for Jev, which earns it, and
  * default-OFF for the cross-encoder, which does not. The cross-encoder remains
  * a legitimate explicit choice — local, deterministic, rate-limit free, nothing
- * leaves the machine — via GATEWAY_RERANKER=cross-encoder plus an explicit
+ * leaves the machine — via BIFROST_RERANKER=cross-encoder plus an explicit
  * `rerank` on the request.
  */
 import { JevReranker } from "../judgments/rerank-jev.js";
@@ -105,7 +105,7 @@ import { RERANKER_ORDER as ORDER } from "../components.js";
 
 /**
  * Which reranker this process will use when a request asks for reranking.
- * GATEWAY_RERANKER pins one; a pinned name is a hard selection and does not
+ * BIFROST_RERANKER pins one; a pinned name is a hard selection and does not
  * fall back, so a deployment cannot silently switch vendors mid-corpus.
  */
 /**
@@ -123,7 +123,7 @@ export function rerankDefaultOn(name: RerankerName): boolean {
 }
 
 export function resolveRerankerName(): RerankerName {
-  const pinned = process.env.GATEWAY_RERANKER as RerankerName | undefined;
+  const pinned = process.env.BIFROST_RERANKER as RerankerName | undefined;
   if (pinned === "jev" || pinned === "voyage" || pinned === "none") return pinned;
   return ORDER.find((n) => rerankerAvailable(n)) ?? "none";
 }

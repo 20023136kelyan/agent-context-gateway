@@ -69,7 +69,7 @@ describe("TrajectoryAdapter", () => {
   });
 
   it("yields zero sessions for a missing dir and never throws on file errors", async () => {
-    const root = await mkdtemp(join(tmpdir(), "acg-traj-"));
+    const root = await mkdtemp(join(tmpdir(), "bifrost-traj-"));
     const a = new TrajectoryAdapter(join(root, "does-not-exist"));
     expect(await a.listSessions()).toEqual([]);
     expect(await a.listTurns("anything")).toEqual([]);

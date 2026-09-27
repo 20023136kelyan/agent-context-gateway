@@ -14,12 +14,12 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
-import { createApp, closeApp, type GatewayApp } from "../src/app.js";
+import { createApp, closeApp, type BifrostApp } from "../src/app.js";
 import { searchOnce, listSessions } from "../src/commands.js";
 import { buildFixtureCorpus, FIXTURE_SESSIONS } from "./fixtures/corpus.js";
 import type { GoldenQuery } from "../src/eval/runner.js";
 
-let app: GatewayApp;
+let app: BifrostApp;
 let prevState: string | undefined;
 
 const golden = JSON.parse(
@@ -27,17 +27,17 @@ const golden = JSON.parse(
 ) as GoldenQuery[];
 
 beforeAll(async () => {
-  const root = await mkdtemp(join(tmpdir(), "acg-fixture-"));
+  const root = await mkdtemp(join(tmpdir(), "bifrost-fixture-"));
   const { claudeDir, codexDir } = await buildFixtureCorpus(root);
-  prevState = process.env.CONTEXT_GATEWAY_STATE;
-  process.env.CONTEXT_GATEWAY_STATE = join(root, "state");
+  prevState = process.env.BIFROST_STATE;
+  process.env.BIFROST_STATE = join(root, "state");
   app = createApp({ indexDir: join(root, "index"), claudeDir, codexDir });
 }, 60_000);
 
 afterAll(() => {
   closeApp(app);
-  if (prevState === undefined) delete process.env.CONTEXT_GATEWAY_STATE;
-  else process.env.CONTEXT_GATEWAY_STATE = prevState;
+  if (prevState === undefined) delete process.env.BIFROST_STATE;
+  else process.env.BIFROST_STATE = prevState;
 });
 
 /** Lexical-only: the floor every other arm has to beat. */

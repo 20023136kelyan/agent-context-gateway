@@ -10,7 +10,7 @@ import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import type { FastifyInstance } from "fastify";
 import { installGitHooks, handleGitCommitEvent } from "../src/git/hooks.js";
-import { createApp, closeApp, type GatewayApp } from "../src/app.js";
+import { createApp, closeApp, type BifrostApp } from "../src/app.js";
 import { searchOnce } from "../src/commands.js";
 import { buildHttpServer } from "../src/transports/http.js";
 
@@ -20,7 +20,7 @@ describe("Git Hooks Installation", () => {
   let gitRepoDir: string;
 
   beforeAll(async () => {
-    gitRepoDir = await mkdtemp(join(tmpdir(), "acg-git-test-"));
+    gitRepoDir = await mkdtemp(join(tmpdir(), "bifrost-git-test-"));
     execFileSync("git", ["init", "-q", gitRepoDir]);
   });
 
@@ -47,12 +47,12 @@ describe("Git Hooks Installation", () => {
 });
 
 describe("Git Commit Event Indexing & Search", () => {
-  let app: GatewayApp;
+  let app: BifrostApp;
   let repoDir: string;
   let realSha: string;
 
   beforeAll(async () => {
-    repoDir = await mkdtemp(join(tmpdir(), "acg-git-repo-"));
+    repoDir = await mkdtemp(join(tmpdir(), "bifrost-git-repo-"));
     execFileSync("git", ["init", "-q", repoDir]);
     execFileSync("git", ["-C", repoDir, "config", "user.email", "test@example.com"]);
     execFileSync("git", ["-C", repoDir, "config", "user.name", "Test User"]);
@@ -61,7 +61,7 @@ describe("Git Commit Event Indexing & Search", () => {
     execFileSync("git", ["-C", repoDir, "commit", "-qm", "feat(collab): complete phase 8 coordinated production deployment"]);
     realSha = execFileSync("git", ["-C", repoDir, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 
-    const root = await mkdtemp(join(tmpdir(), "acg-git-idx-"));
+    const root = await mkdtemp(join(tmpdir(), "bifrost-git-idx-"));
     app = createApp({
       indexDir: join(root, "index"),
       claudeDir: join(root, "empty-c"),
@@ -97,19 +97,19 @@ describe("Git Commit Event Indexing & Search", () => {
 });
 
 describe("installed hook delivers commits end-to-end", () => {
-  let app: GatewayApp;
+  let app: BifrostApp;
   let server: FastifyInstance;
   let repo: string;
   let port = 0;
 
   beforeAll(async () => {
-    repo = await mkdtemp(join(tmpdir(), "acg-git-hook-e2e-"));
+    repo = await mkdtemp(join(tmpdir(), "bifrost-git-hook-e2e-"));
     execFileSync("git", ["init", "-q", repo]);
     execFileSync("git", ["-C", repo, "config", "user.email", "test@example.com"]);
     execFileSync("git", ["-C", repo, "config", "user.name", "Test User"]);
     // A pre-existing (husky-style) hook must survive install and keep running.
     await writeFile(join(repo, ".git", "hooks", "post-commit"), '#!/bin/sh\ntouch "$(git rev-parse --git-dir)/pre-existing-hook-ran"\n', { mode: 0o755 });
-    const root = await mkdtemp(join(tmpdir(), "acg-git-hook-idx-"));
+    const root = await mkdtemp(join(tmpdir(), "bifrost-git-hook-idx-"));
     app = createApp({ indexDir: join(root, "index"), claudeDir: join(root, "empty-c"), codexDir: join(root, "empty-x"), backend: "tantivy", cursorDb: join(root, "no.vscdb") });
     server = buildHttpServer(app);
     await server.listen({ port: 0, host: "127.0.0.1" });
@@ -124,10 +124,10 @@ describe("installed hook delivers commits end-to-end", () => {
 
   it("preserves an existing hook and reinstalls idempotently", () => {
     const first = installGitHooks(repo);
-    expect(first.preserved).toEqual([join(repo, ".git", "hooks", "post-commit.pre-gateway")]);
+    expect(first.preserved).toEqual([join(repo, ".git", "hooks", "post-commit.pre-bifrost")]);
     const again = installGitHooks(repo);
     expect(again.preserved).toEqual([]);
-    expect(existsSync(join(repo, ".git", "hooks", "post-commit.pre-gateway"))).toBe(true);
+    expect(existsSync(join(repo, ".git", "hooks", "post-commit.pre-bifrost"))).toBe(true);
   });
 
   it("indexes multi-line messages with quotes and backslashes intact", async () => {
@@ -135,7 +135,7 @@ describe("installed hook delivers commits end-to-end", () => {
     execFileSync("git", ["-C", repo, "add", "."]);
     const message = 'fix: handle "quoted" zebracorn names\n\nBody keeps a C:\\path and a second line';
     await execFileAsync("git", ["-C", repo, "commit", "-q", "-m", message], {
-      env: { ...process.env, GATEWAY_PORT: String(port), GATEWAY_TOKEN: "" },
+      env: { ...process.env, BIFROST_PORT: String(port), BIFROST_TOKEN: "" },
     });
     expect(existsSync(join(repo, ".git", "pre-existing-hook-ran"))).toBe(true);
     const hits = app.index.search("zebracorn");

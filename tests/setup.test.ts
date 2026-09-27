@@ -11,7 +11,7 @@ import { detectHistories, keyStatus, appendEnvKeys, installClaudeHook, HOOK_MARK
 
 describe("setup", () => {
   it("detects histories under a fake HOME", () => {
-    const root = mkdtempSync(join(tmpdir(), "acg-setup-"));
+    const root = mkdtempSync(join(tmpdir(), "bifrost-setup-"));
     const found = detectHistories({ ...process.env, HOME: root });
     expect(found.map((f) => [f.kind, f.present])).toEqual([
       ["claude-code", false],
@@ -26,7 +26,7 @@ describe("setup", () => {
   });
 
   it("appends missing keys without touching existing ones", () => {
-    const root = mkdtempSync(join(tmpdir(), "acg-setup-"));
+    const root = mkdtempSync(join(tmpdir(), "bifrost-setup-"));
     const p = join(root, ".env");
     writeFileSync(p, "# comment\nVOYAGE_API_KEY=old\n");
     const added = appendEnvKeys(p, { VOYAGE_API_KEY: "new", TYPESAFE_API_KEY: "t" });
@@ -38,12 +38,12 @@ describe("setup", () => {
   });
 
   it("installs the Claude hook idempotently with backup", () => {
-    const root = mkdtempSync(join(tmpdir(), "acg-setup-"));
+    const root = mkdtempSync(join(tmpdir(), "bifrost-setup-"));
     const p = join(root, "settings.json");
     writeFileSync(p, JSON.stringify({ hooks: { SessionEnd: [] }, other: 1 }));
     const first = installClaudeHook(p, "/x/cli.ts");
     expect(first.installed).toBe(true);
-    expect(first.backupPath).toContain("pre-gateway-");
+    expect(first.backupPath).toContain("pre-bifrost-");
     const second = installClaudeHook(p, "/x/cli.ts");
     expect(second.installed).toBe(false);
     const body = JSON.parse(readFileSync(p, "utf8"));
@@ -52,7 +52,7 @@ describe("setup", () => {
   });
 
   it("creates settings from scratch when missing", () => {
-    const root = mkdtempSync(join(tmpdir(), "acg-setup-"));
+    const root = mkdtempSync(join(tmpdir(), "bifrost-setup-"));
     const p = join(root, "sub", "settings.json");
     const r = installClaudeHook(p, "/x/cli.ts");
     expect(r.installed).toBe(true);

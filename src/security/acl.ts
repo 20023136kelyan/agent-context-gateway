@@ -113,6 +113,6 @@ export class AclStore {
 }
 
 export function defaultAclPath(stateDir?: string): string {
-  const base = stateDir ?? process.env.CONTEXT_GATEWAY_STATE ?? `${process.env.HOME ?? "/tmp"}/.context-gateway`;
+  const base = stateDir ?? process.env.BIFROST_STATE ?? `${process.env.HOME ?? "/tmp"}/.bifrost`;
   return join(base, "acl.json");
 }

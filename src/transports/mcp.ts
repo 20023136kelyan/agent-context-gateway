@@ -1,12 +1,12 @@
 /**
- * MCP transport — exposes the gateway to agents via Model Context Protocol.
+ * MCP transport — exposes Bifröst to agents via Model Context Protocol.
  * Thin wrappers over commands.ts; same core as CLI/HTTP.
  */
 import { rerankDefaultOn } from "../search/reranker.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import type { GatewayApp } from "../app.js";
+import type { BifrostApp } from "../app.js";
 import { listSources, listSessions, searchOnce, decideOnce, getRelated, traverseArtifacts, listInvalidations, listAclRules, searchLive, getLineage, createSubscription, listSubscriptions, recordFeedback, getSession, getTurn, getContext, showTopology } from "../commands.js";
 
 const Harness = z.enum(["claude-code", "codex", "cursor", "zep", "git", "trajectory", "opencode"]);
@@ -15,8 +15,8 @@ function text(data: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
 }
 
-export function buildMcpServer(app: GatewayApp): McpServer {
-  const server = new McpServer({ name: "agent-context-gateway", version: "0.1.0" });
+export function buildMcpServer(app: BifrostApp): McpServer {
+  const server = new McpServer({ name: "bifrost", version: "0.1.0" });
 
   server.tool("context.list_sources", "List queryable agent-history sources", {}, async () => text(await listSources(app)));
 
@@ -166,7 +166,7 @@ export function buildMcpServer(app: GatewayApp): McpServer {
   return server;
 }
 
-export async function runMcp(app: GatewayApp): Promise<void> {
+export async function runMcp(app: BifrostApp): Promise<void> {
   const server = buildMcpServer(app);
   await server.connect(new StdioServerTransport());
 }
