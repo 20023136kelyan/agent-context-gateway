@@ -1,13 +1,13 @@
 /**
- * P3 mDNS auto-discovery — gateways announce `_context-gateway._tcp` on the
+ * P3 mDNS auto-discovery — Bifröst instances announce `_bifrost._tcp` on the
  * LAN; `remotes-discover` browses and prints candidates (never auto-adds:
  * joining a federation is an explicit, token-bearing act).
  */
 import { Bonjour, type Service } from "bonjour-service";
 
-export const GATEWAY_SERVICE = "context-gateway";
+export const BIFROST_SERVICE = "bifrost";
 
-export interface DiscoveredGateway {
+export interface DiscoveredInstance {
   name: string;
   host: string;
   port: number;
@@ -27,8 +27,8 @@ export function announce(
   // A specific bind address is the only one that answers; wildcards answer on any interface.
   if (info.host && info.host !== "0.0.0.0" && info.host !== "::") txt.addr = info.host;
   const service = bonjour.publish({
-    name: `context-gateway-${port}`,
-    type: GATEWAY_SERVICE,
+    name: `bifrost-${port}`,
+    type: BIFROST_SERVICE,
     port,
     txt,
   });
@@ -44,7 +44,7 @@ export function announce(
   };
 }
 
-function toDiscovered(service: Service): DiscoveredGateway | null {
+function toDiscovered(service: Service): DiscoveredInstance | null {
   const port = service.port;
   if (!port) return null;
   const host = service.txt?.addr ?? service.referer?.address ?? service.host ?? "127.0.0.1";
@@ -57,11 +57,11 @@ function toDiscovered(service: Service): DiscoveredGateway | null {
   };
 }
 
-export function discover(timeoutMs = 5000): Promise<DiscoveredGateway[]> {
+export function discover(timeoutMs = 5000): Promise<DiscoveredInstance[]> {
   const bonjour = new Bonjour();
   return new Promise((resolve) => {
-    const found = new Map<string, DiscoveredGateway>();
-    const browser = bonjour.find({ type: GATEWAY_SERVICE }, (service) => {
+    const found = new Map<string, DiscoveredInstance>();
+    const browser = bonjour.find({ type: BIFROST_SERVICE }, (service) => {
       const d = toDiscovered(service);
       if (d) found.set(`${d.host}:${d.port}`, d);
     });

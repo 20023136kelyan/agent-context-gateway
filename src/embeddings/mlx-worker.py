@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 MLX Embedding Worker — stdio JSON-RPC protocol.
-Runs in-process inside ~/.context-gateway/mlx-venv on Apple Silicon GPU via Metal.
+Runs in-process inside ~/.bifrost/mlx-venv on Apple Silicon GPU via Metal.
 No external network server needed.
 """
 import sys

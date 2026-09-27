@@ -1,9 +1,9 @@
 import SwiftUI
 import AppKit
-import GatewayMenuCore
+import BifrostMenuCore
 
 struct SearchView: View {
-  @ObservedObject var client: GatewayClient
+  @ObservedObject var client: BifrostClient
   @State private var query = ""
   @State private var harness = "all"
   @State private var mode = 0 // 0 search, 1 decide

@@ -2,7 +2,7 @@
  * Decision-judge selection.
  *
  * Mirrors `src/search/reranker.ts`. Order: jev -> heuristic passthrough.
- * `GATEWAY_JUDGE` pins one; a pin never falls back.
+ * `BIFROST_JUDGE` pins one; a pin never falls back.
  *
  * Unlike reranking there is no per-request opt-in for `decide` yet, so a Jev key
  * alone changes which judge runs. Without one, verdicts stand as heuristic
@@ -23,7 +23,7 @@ export function makeJudge(name: JudgeName): DecisionJudge {
 }
 
 export function resolveJudgeName(): JudgeName {
-  const pinned = process.env.GATEWAY_JUDGE as JudgeName | undefined;
+  const pinned = process.env.BIFROST_JUDGE as JudgeName | undefined;
   if (pinned === "jev" || pinned === "heuristic") return pinned;
   return jevAvailable() ? "jev" : "heuristic";
 }

@@ -121,7 +121,7 @@ import { ENGINE_ORDER } from "../components.js";
 const DEFAULT_ORDER: readonly EmbeddingEngine[] = ENGINE_ORDER;
 
 function preferredOrder(): readonly EmbeddingEngine[] {
-  const pinned = process.env.GATEWAY_EMBED_ENGINE as EmbeddingEngine | undefined;
+  const pinned = process.env.BIFROST_EMBED_ENGINE as EmbeddingEngine | undefined;
   // A pinned engine is a hard selection, not a hint: falling back past it would
   // scatter one corpus across two tables, which is what pinning exists to stop.
   if (pinned && PROVIDERS[pinned]) return [pinned];

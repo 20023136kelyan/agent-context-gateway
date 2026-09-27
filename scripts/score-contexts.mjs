@@ -37,8 +37,8 @@ async function main() {
   const limit = Number(arg("--limit", "0")) || Infinity;
   mkdirSync(dirname(out), { recursive: true });
 
-  const root = mkdtempSync(join(tmpdir(), "acg-score-"));
-  process.env.CONTEXT_GATEWAY_STATE = join(root, "state");
+  const root = mkdtempSync(join(tmpdir(), "bifrost-score-"));
+  process.env.BIFROST_STATE = join(root, "state");
   let appOpts = { indexDir: join(root, "index") };
   if (corpus === "fixture") {
     const { buildFixtureCorpus } = await import("../tests/fixtures/corpus.js");
@@ -67,7 +67,7 @@ async function main() {
         // once polluted every subsequent fixture eval (judge Hit@1 0.952 zone
         // -> 0.381 with zero code change). Scoring must not write scorable
         // histories anywhere near an eval corpus.
-        const xdg = mkdtempSync(join(tmpdir(), "acg-score-xdg-"));
+        const xdg = mkdtempSync(join(tmpdir(), "bifrost-score-xdg-"));
         raw = execFileSync("opencode", ["run", "--model", MODEL, prompt], {
           encoding: "utf8",
           timeout: 300000,

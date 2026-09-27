@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createApp, closeApp, type GatewayApp } from "../src/app.js";
+import { createApp, closeApp, type BifrostApp } from "../src/app.js";
 import { syncSession, searchOnce, syncNow } from "../src/commands.js";
 import { watchSources } from "../src/watch.js";
 import type { VectorStore } from "../src/indexing/vectors.js";
@@ -11,7 +11,7 @@ import { embeddingsAvailable } from "../src/embeddings/provider.js";
 
 const HAS_EMBEDDINGS = (await embeddingsAvailable()).available;
 
-let app: GatewayApp;
+let app: BifrostApp;
 let claudeDir: string;
 let root: string;
 const SID = "eeeeeeee-1111-2222-3333-444444444444";
@@ -24,7 +24,7 @@ function claudeLines(id: string, text: string): string {
 }
 
 beforeAll(async () => {
-  root = await mkdtemp(join(tmpdir(), "acg-watch-"));
+  root = await mkdtemp(join(tmpdir(), "bifrost-watch-"));
   claudeDir = join(root, "claude");
   await mkdir(join(claudeDir, "cozea"), { recursive: true });
   app = createApp({ indexDir: join(root, "index"), claudeDir, codexDir: join(root, "empty-codex"), backend: "tantivy", cursorDb: join(root, "no-cursor.vscdb") });

@@ -12,7 +12,7 @@ know that a memory system exists.
 Full concept: [`docs/work-layer-architecture.md`](./docs/work-layer-architecture.md).
 
 > **Branch note.** This branch starts the Work Layer direction. `main` holds the
-> previous approach, the Agent Context Gateway (federated search over native
+> previous approach, Bifröst (formerly the Agent Context Gateway: federated search over native
 > agent histories), and its README, spec and plans remain in this tree for
 > reference until they are retired or reused.
 
@@ -114,13 +114,13 @@ the smallest useful finding schema, conflict display, staleness detection, what
 counts as "new", presence expiry, when to summarize activity into findings, and
 how much semantics place resolution really needs.
 
-## Inherited from the gateway
+## Inherited from Bifröst
 
-The Agent Context Gateway code in `src/` stays in place. It is not the
+The Bifröst code in `src/` stays in place. It is not the
 product on this branch. Parts of it may serve the Work Layer, but each is
 unproven here and stays unused until the experiment calls for it:
 
-| Gateway piece | Possible Work Layer role |
+| Bifröst piece | Possible Work Layer role |
 |---|---|
 | `src/adapters/` (Claude Code, Codex, Cursor, OpenCode, git) | Activity capture and offline extraction input |
 | `src/temporal/` (bi-temporal invalidation, `asOf`) | Supersession and validity intervals for findings |
@@ -129,4 +129,4 @@ unproven here and stays unused until the experiment calls for it:
 | `src/artifacts/graph.ts` | A rough file-level code map |
 | `src/transports/mcp.ts`, `src/git/hooks.ts`, session hooks | Integration points for triggers and ingestion |
 
-Running the existing gateway: `npm install && npx tsx src/cli.ts --help`.
+Running Bifröst: `npm install && npx tsx src/cli.ts --help`.

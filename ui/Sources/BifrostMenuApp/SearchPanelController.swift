@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
-import GatewayMenuCore
+import BifrostMenuCore
 
-/// Spotlight-style floating search panel controller for Context Gateway.
+/// Spotlight-style floating search panel controller for Bifröst.
 /// Summoned via global shortcut ⌘⇧K or menu bar icon.
 @MainActor
 final class SearchPanelController: NSObject, NSWindowDelegate {
@@ -12,7 +12,7 @@ final class SearchPanelController: NSObject, NSWindowDelegate {
   private var statusItem: NSStatusItem?
   private var globalMonitor: Any?
   private var localMonitor: Any?
-  private let client = GatewayClient()
+  private let client = BifrostClient()
 
   override init() {
     super.init()
@@ -27,7 +27,7 @@ final class SearchPanelController: NSObject, NSWindowDelegate {
   private func setupStatusItem() {
     statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     if let button = statusItem?.button {
-      button.image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: "Context Gateway")
+      button.image = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: "Bifröst")
       button.action = #selector(togglePanel)
       button.target = self
     }

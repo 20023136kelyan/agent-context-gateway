@@ -2,7 +2,7 @@
  * Trajectory adapter — READ-ONLY view over SWE-Gym/OpenHands-style
  * coding-agent trajectories.
  *
- * Layout: a directory of trajectory files (env `GATEWAY_TRAJECTORY_DIR`,
+ * Layout: a directory of trajectory files (env `BIFROST_TRAJECTORY_DIR`,
  * default `<stateDir>/trajectories`). Each file is either JSON
  * (`{ instance_id, repo, steps: [{ thought, action, observation }] }`,
  * or a bare array of step objects) or JSONL (one step object per line,
@@ -47,7 +47,7 @@ const OBS_MAX = 2000;
 const HEADER_BYTES = 8192;
 
 export function defaultTrajectoryDir(): string {
-  return process.env.GATEWAY_TRAJECTORY_DIR ?? join(defaultStateDir(), "trajectories");
+  return process.env.BIFROST_TRAJECTORY_DIR ?? join(defaultStateDir(), "trajectories");
 }
 
 type Json = Record<string, unknown>;

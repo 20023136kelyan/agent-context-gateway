@@ -30,7 +30,7 @@ const { SchemaBuilder, Index, Document, Query, Occur, TokenizerStatic, FilterSta
 type TantivyIndexHandle = InstanceType<typeof Index>;
 
 /**
- * Content-field analyzer, selectable for sweeps (GATEWAY_TOKENIZER).
+ * Content-field analyzer, selectable for sweeps (BIFROST_TOKENIZER).
  * Default is stock Tantivy behavior (no stemming — the Porter leaks live
  * here, not in SQLite). `en_stem` adds simple + lowercase + English stemmer;
  * ids and filters stay `raw` regardless. Schema is immutable per index dir,
@@ -38,7 +38,7 @@ type TantivyIndexHandle = InstanceType<typeof Index>;
  * (`parseQueryLenient` on `content`) uses the same analyzer symmetrically.
  */
 export function contentTokenizerName(): string {
-  return process.env.GATEWAY_TOKENIZER === "en_stem" ? "en_stem" : "default";
+  return process.env.BIFROST_TOKENIZER === "en_stem" ? "en_stem" : "default";
 }
 
 /** Register named analyzers on an index handle (both create and open paths). */
@@ -122,7 +122,7 @@ export class TantivyIndex implements SearchIndex {
    * brief. Throws LockBusy with a clear message when another writer runs.
    */
   private writer: InstanceType<typeof tantivy.IndexWriter> | null = null;
-  /** Per-harness doc counts: loaded from gateway-meta.json on first write, saved on commit. */
+  /** Per-harness doc counts: loaded from bifrost-meta.json on first write, saved on commit. */
   private counts: Record<string, number> | null = null;
   private uncommitted = false;
   readonly dir: string;
@@ -148,7 +148,7 @@ export class TantivyIndex implements SearchIndex {
         this.writer = this.index.writer(50_000_000);
       } catch (e) {
         throw new Error(
-          `index busy: another gateway writer (serve --watch?) holds ${this.dir}. Retry, or run writes through the live server.`,
+          `index busy: another Bifröst writer (serve --watch?) holds ${this.dir}. Retry, or run writes through the live server.`,
         );
       }
     }
@@ -327,7 +327,7 @@ export class TantivyIndex implements SearchIndex {
 
   private readMeta(): { lastSync?: string; counts?: Record<string, number> } {
     try {
-      return JSON.parse(readFileSync(join(this.dir, "gateway-meta.json"), "utf8")) as {
+      return JSON.parse(readFileSync(join(this.dir, "bifrost-meta.json"), "utf8")) as {
         lastSync?: string;
         counts?: Record<string, number>;
       };
@@ -338,7 +338,7 @@ export class TantivyIndex implements SearchIndex {
 
   private writeMeta(patch: { lastSync?: string; counts?: Record<string, number> }): void {
     try {
-      writeFileSync(join(this.dir, "gateway-meta.json"), JSON.stringify({ ...this.readMeta(), lastSync: new Date().toISOString(), ...patch }));
+      writeFileSync(join(this.dir, "bifrost-meta.json"), JSON.stringify({ ...this.readMeta(), lastSync: new Date().toISOString(), ...patch }));
     } catch {
       // freshness marker is best-effort
     }
@@ -362,7 +362,7 @@ export class TantivyIndex implements SearchIndex {
 
 export function defaultIndexDir(): string {
   const home = process.env.HOME ?? "/tmp";
-  const dir = join(home, ".context-gateway", "index-tantivy");
+  const dir = join(home, ".bifrost", "index-tantivy");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   return dir;
 }

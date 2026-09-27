@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Dump eval-turn corpora as {session, text} JSONL for scripts/eval-dapt.py.
- * Run on the worker VM (needs the gateway tree + data, no API keys).
+ * Run on the worker VM (needs Bifröst tree + data, no API keys).
  *
  * Usage: node --import tsx scripts/dump-eval-turns.ts [fixture|trajfixtures|real|swe|all]
  */
@@ -45,7 +45,7 @@ async function dumpTrajFixtures() {
 }
 
 async function dumpReal() {
-  process.env.CONTEXT_GATEWAY_STATE = "swe-data/real-state";
+  process.env.BIFROST_STATE = "swe-data/real-state";
   const app = createApp({
     indexDir: "swe-data/real-index",
     claudeDir: "swe-data/real-claude",

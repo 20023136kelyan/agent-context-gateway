@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createApp, closeApp, type GatewayApp } from "../src/app.js";
+import { createApp, closeApp, type BifrostApp } from "../src/app.js";
 import { TopologyStore, routeAutoScope } from "../src/topology/store.js";
 import { searchOnce } from "../src/commands.js";
 import { syncAll } from "../src/indexing/sync.js";
@@ -14,7 +14,7 @@ const C1 = "22222222-2222-2222-2222-222222222222";
 const C2 = "33333333-3333-3333-3333-333333333333";
 const U = "44444444-4444-4444-4444-444444444444";
 
-let app: GatewayApp;
+let app: BifrostApp;
 let prevState: string | undefined;
 
 function codexSess(id: string, texts: string[]): string {
@@ -27,9 +27,9 @@ function codexSess(id: string, texts: string[]): string {
 }
 
 beforeAll(async () => {
-  prevState = process.env.CONTEXT_GATEWAY_STATE;
-  process.env.CONTEXT_GATEWAY_STATE = await mkdtemp(join(tmpdir(), "acg-topo-state-"));
-  const root = await mkdtemp(join(tmpdir(), "acg-topo-"));
+  prevState = process.env.BIFROST_STATE;
+  process.env.BIFROST_STATE = await mkdtemp(join(tmpdir(), "bifrost-topo-state-"));
+  const root = await mkdtemp(join(tmpdir(), "bifrost-topo-"));
   const codexDir = join(root, "codex");
   await mkdir(join(codexDir, "2026", "09", "10"), { recursive: true });
   await writeFile(join(codexDir, "2026", "09", "10", `r-p-${P}.jsonl`), codexSess(P, ["Parent architectural vision: workbench isolation folly"]));
@@ -44,8 +44,8 @@ beforeAll(async () => {
 
 afterAll(() => {
   closeApp(app);
-  if (prevState === undefined) delete process.env.CONTEXT_GATEWAY_STATE;
-  else process.env.CONTEXT_GATEWAY_STATE = prevState;
+  if (prevState === undefined) delete process.env.BIFROST_STATE;
+  else process.env.BIFROST_STATE = prevState;
 });
 
 describe("TopologyStore", () => {

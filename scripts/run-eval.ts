@@ -101,7 +101,7 @@ async function main() {
     // --beir-root keeps the corpus, index and vectors across runs. Without it a
     // sweep re-embeds the whole corpus at every point (nfcorpus: 25 minutes).
     const beirRoot = argValue(args, "--beir-root");
-    const root = beirRoot ?? mkdtempSync(join(tmpdir(), "acg-eval-beir-"));
+    const root = beirRoot ?? mkdtempSync(join(tmpdir(), "bifrost-eval-beir-"));
     const built = await buildBeirCorpus(beirDir, root, {
       split: beirSplit,
       maxQueries: beirQueryCap ? Number(beirQueryCap) : undefined,
@@ -116,7 +116,7 @@ async function main() {
       codexDir: join(root, "codex-empty"),
       indexDir: indexDir ?? join(root, "index"),
     };
-    process.env.CONTEXT_GATEWAY_STATE = join(root, "state");
+    process.env.BIFROST_STATE = join(root, "state");
     const st = built.stats;
     console.log(
       `BEIR ${st.name}/${beirSplit ?? "test"}: ${st.docsWritten} docs ` +
@@ -132,10 +132,10 @@ async function main() {
   }
   if (useFixture) {
     const { buildFixtureCorpus } = await import("../tests/fixtures/corpus.js");
-    const root = mkdtempSync(join(tmpdir(), "acg-eval-fixture-"));
+    const root = mkdtempSync(join(tmpdir(), "bifrost-eval-fixture-"));
     const { claudeDir, codexDir } = await buildFixtureCorpus(root);
     appOpts = { ...appOpts, claudeDir, codexDir, indexDir: indexDir ?? join(root, "index") };
-    process.env.CONTEXT_GATEWAY_STATE = join(root, "state");
+    process.env.BIFROST_STATE = join(root, "state");
     console.log(`Fixture corpus built at ${root}`);
   }
   const app = createApp(appOpts);

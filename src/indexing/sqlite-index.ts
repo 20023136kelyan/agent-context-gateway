@@ -269,7 +269,7 @@ export class SqliteIndex implements SearchIndex {
 
 export function defaultIndexDir(): string {
   const home = process.env.HOME ?? "/tmp";
-  const dir = join(home, ".context-gateway", "index-sqlite");
+  const dir = join(home, ".bifrost", "index-sqlite");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   return dir;
 }

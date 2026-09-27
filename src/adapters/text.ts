@@ -28,9 +28,9 @@ export function truncate(s: string, max = MAX_CONTENT): string {
  * into more rows the backfill must embed, larger ones push BGE past its
  * window and silently truncate.
  *
- * Overridable with GATEWAY_CHUNK_CHARS; invalid values fall back to the default. */
+ * Overridable with BIFROST_CHUNK_CHARS; invalid values fall back to the default. */
 export const EMBED_CHUNK_CHARS = (() => {
-  const raw = Number(process.env.GATEWAY_CHUNK_CHARS ?? 1600);
+  const raw = Number(process.env.BIFROST_CHUNK_CHARS ?? 1600);
   return Number.isFinite(raw) && raw >= 200 && raw <= 8000 ? Math.floor(raw) : 1600;
 })();
 /** A sentence cut by a window boundary is still whole in the neighbouring one. */

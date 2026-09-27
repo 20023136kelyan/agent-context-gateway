@@ -31,7 +31,7 @@ describe("resolveTopologyReferences", () => {
   const siblingId = "sibling-sess-3333";
 
   beforeAll(async () => {
-    const root = await mkdtemp(join(tmpdir(), "acg-topo-test-"));
+    const root = await mkdtemp(join(tmpdir(), "bifrost-topo-test-"));
     topo = new TopologyStore(join(root, "topology.json"));
     topo.link({ harness: "claude-code", sessionId: parentId }, { harness: "claude-code", sessionId: childId });
     topo.link({ harness: "claude-code", sessionId: parentId }, { harness: "claude-code", sessionId: siblingId });

@@ -1,5 +1,5 @@
 /**
- * Onboarding primitives behind `gateway init` (product surface).
+ * Onboarding primitives behind `bifrost init` (product surface).
  *
  * All filesystem mutations are explicit, backed up, and idempotent: running
  * init twice changes nothing the second time. Nothing here phones home;
@@ -75,7 +75,7 @@ export interface HookInstall {
  * anything already there. Idempotent: re-running finds its own marker and
  * stops. A timestamped backup precedes every write.
  */
-export const HOOK_MARKER = "context-gateway-sync-session";
+export const HOOK_MARKER = "bifrost-sync-session";
 
 export function installClaudeHook(
   settingsPath = join(homedir(), ".claude", "settings.json"),
@@ -106,7 +106,7 @@ export function installClaudeHook(
     hooks: { ...hooks, SessionEnd: [...sessionEnd, entry] },
   };
   if (existsSync(settingsPath)) {
-    const backupPath = `${settingsPath}.pre-gateway-${Date.now()}`;
+    const backupPath = `${settingsPath}.pre-bifrost-${Date.now()}`;
     copyFileSync(settingsPath, backupPath);
     writeFileSync(settingsPath, JSON.stringify(next, null, 2));
     return { installed: true, backupPath };

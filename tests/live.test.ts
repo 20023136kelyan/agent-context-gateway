@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { ClaudeAdapter } from "../src/adapters/claude.js";
-import { createApp, closeApp, type GatewayApp } from "../src/app.js";
+import { createApp, closeApp, type BifrostApp } from "../src/app.js";
 import { syncNow, createSubscription, listSubscriptions } from "../src/commands.js";
 import {
   SubscriptionStore,
@@ -20,7 +20,7 @@ describe("SubscriptionStore", () => {
   let store: SubscriptionStore;
 
   beforeAll(async () => {
-    const root = await mkdtemp(join(tmpdir(), "acg-subs-test-"));
+    const root = await mkdtemp(join(tmpdir(), "bifrost-subs-test-"));
     store = new SubscriptionStore(join(root, "subscriptions.json"));
   });
 
@@ -91,7 +91,7 @@ describe("subscription matching and delivery", () => {
   let store: SubscriptionStore;
 
   beforeAll(async () => {
-    store = new SubscriptionStore(join(await mkdtemp(join(tmpdir(), "acg-subs-deliver-")), "subscriptions.json"));
+    store = new SubscriptionStore(join(await mkdtemp(join(tmpdir(), "bifrost-subs-deliver-")), "subscriptions.json"));
   });
 
   it("rejects webhook URLs that aren't http(s)", () => {
@@ -122,14 +122,14 @@ describe("subscription matching and delivery", () => {
 });
 
 describe("subscriptions fire on sync", () => {
-  let app: GatewayApp;
+  let app: BifrostApp;
   let claudeDir: string;
   let prevState: string | undefined;
 
   beforeAll(async () => {
-    prevState = process.env.CONTEXT_GATEWAY_STATE;
-    const root = await mkdtemp(join(tmpdir(), "acg-subs-sync-"));
-    process.env.CONTEXT_GATEWAY_STATE = join(root, "state");
+    prevState = process.env.BIFROST_STATE;
+    const root = await mkdtemp(join(tmpdir(), "bifrost-subs-sync-"));
+    process.env.BIFROST_STATE = join(root, "state");
     claudeDir = join(root, "claude");
     await mkdir(join(claudeDir, "p"), { recursive: true });
     await writeFile(join(claudeDir, "p", "old-session.jsonl"), claudeLine("old-session", "u1", "narwhal migration was discussed long ago"));
@@ -139,8 +139,8 @@ describe("subscriptions fire on sync", () => {
 
   afterAll(() => {
     closeApp(app);
-    if (prevState === undefined) delete process.env.CONTEXT_GATEWAY_STATE;
-    else process.env.CONTEXT_GATEWAY_STATE = prevState;
+    if (prevState === undefined) delete process.env.BIFROST_STATE;
+    else process.env.BIFROST_STATE = prevState;
   });
 
   it("notifies once for turns new to the index, never for re-indexed history", async () => {
@@ -168,7 +168,7 @@ describe("searchLiveSessions", () => {
   const ACTIVE_SESS = "live-session-active";
 
   beforeAll(async () => {
-    const root = await mkdtemp(join(tmpdir(), "acg-live-test-"));
+    const root = await mkdtemp(join(tmpdir(), "bifrost-live-test-"));
     claudeDir = join(root, "claude");
     await mkdir(join(claudeDir, "live-proj"), { recursive: true });
 

@@ -4,7 +4,7 @@
  * Every number this system reports comes from one synthetic 72-session corpus
  * whose documents and queries were authored together. That is a real risk of
  * fitting the corpus to itself, and the constants most exposed to it are the
- * engine-calibrated ones — `GATEWAY_SIM_FLOOR` above all, whose failure mode is
+ * engine-calibrated ones — `BIFROST_SIM_FLOOR` above all, whose failure mode is
  * silent. This module exists to re-measure them against corpora nobody here
  * wrote.
  *
@@ -13,7 +13,7 @@
  *   queries.jsonl   {_id, text}
  *   qrels/<split>.tsv   query-id \t corpus-id \t score   (with a header row)
  *
- * MAPPING: one document becomes one session holding one turn. ACG scores
+ * MAPPING: one document becomes one session holding one turn. Bifröst scores
  * relevance per session, and BEIR judges per document, so collapsing the two
  * makes the existing metrics correct without touching them. It costs a file per
  * document, which is why `maxDocs` exists — Quora's 523k would be absurd, and

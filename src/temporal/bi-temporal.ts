@@ -2,7 +2,7 @@
  * Bi-temporal Memory & Derived Invalidation Markers (Zep/Graphiti & spec §43, §69).
  * Tracks two timelines:
  * - Event Time (T): when the fact was stated in native turn history
- * - Transaction Time (T'): when the gateway derived/indexed the invalidation
+ * - Transaction Time (T'): when Bifröst derived/indexed the invalidation
  *
  * Implements non-destructive invalidation:
  * - Current search filters out or marks superseded turns
@@ -142,6 +142,6 @@ export class TemporalStore {
 }
 
 export function defaultTemporalPath(stateDir?: string): string {
-  const base = stateDir ?? process.env.CONTEXT_GATEWAY_STATE ?? `${process.env.HOME ?? "/tmp"}/.context-gateway`;
+  const base = stateDir ?? process.env.BIFROST_STATE ?? `${process.env.HOME ?? "/tmp"}/.bifrost`;
   return join(base, "invalidations.jsonl");
 }

@@ -6,7 +6,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { AclStore } from "../src/security/acl.js";
-import { createApp, closeApp, type GatewayApp } from "../src/app.js";
+import { createApp, closeApp, type BifrostApp } from "../src/app.js";
 import { searchOnce, syncNow } from "../src/commands.js";
 import { syncAll } from "../src/indexing/sync.js";
 import { CursorStore } from "../src/indexing/store.js";
@@ -16,7 +16,7 @@ describe("AclStore", () => {
   let store: AclStore;
 
   beforeAll(async () => {
-    const root = await mkdtemp(join(tmpdir(), "acg-acl-store-"));
+    const root = await mkdtemp(join(tmpdir(), "bifrost-acl-store-"));
     store = new AclStore(join(root, "acl.json"));
   });
 
@@ -71,7 +71,7 @@ describe("AclStore", () => {
   });
 
   it("applies the '*' rule to anonymous callers; without one, anonymous stays open", async () => {
-    const anon = new AclStore(join(await mkdtemp(join(tmpdir(), "acg-acl-anon-")), "acl.json"));
+    const anon = new AclStore(join(await mkdtemp(join(tmpdir(), "bifrost-acl-anon-")), "acl.json"));
     expect(anon.canAccess(undefined, mockSession({ projectId: "secret-project" }))).toBe(true);
     anon.setRule({ principal: "*", allowedProjects: ["public-project"] });
     expect(anon.canAccess(undefined, mockSession({ projectId: "secret-project" }))).toBe(false);
@@ -80,14 +80,14 @@ describe("AclStore", () => {
 });
 
 describe("search with PermCov evaluation", () => {
-  let app: GatewayApp;
+  let app: BifrostApp;
   let prevState: string | undefined;
   const sessionsMap = new Map<string, Session>();
 
   beforeAll(async () => {
-    prevState = process.env.CONTEXT_GATEWAY_STATE;
-    const root = await mkdtemp(join(tmpdir(), "acg-permcov-"));
-    process.env.CONTEXT_GATEWAY_STATE = join(root, "state");
+    prevState = process.env.BIFROST_STATE;
+    const root = await mkdtemp(join(tmpdir(), "bifrost-permcov-"));
+    process.env.BIFROST_STATE = join(root, "state");
 
     const claudeDir = join(root, "claude");
     // Public Project
@@ -144,8 +144,8 @@ describe("search with PermCov evaluation", () => {
 
   afterAll(() => {
     closeApp(app);
-    if (prevState === undefined) delete process.env.CONTEXT_GATEWAY_STATE;
-    else process.env.CONTEXT_GATEWAY_STATE = prevState;
+    if (prevState === undefined) delete process.env.BIFROST_STATE;
+    else process.env.BIFROST_STATE = prevState;
   });
 
   it("enforces zero permission contamination (PermCov = 0.0)", async () => {

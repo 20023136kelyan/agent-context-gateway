@@ -5,7 +5,7 @@
 import { rerankDefaultOn } from "../search/reranker.js";
 import { timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
-import type { GatewayApp } from "../app.js";
+import type { BifrostApp } from "../app.js";
 import type { Harness } from "../core/models.js";
 import { listSources, listSessions, searchOnce, decideOnce, getRelated, traverseArtifacts, listInvalidations, recordInvalidation, listAclRules, setAclRule, removeAclRule, searchLive, getLineage, listSubscriptions, createSubscription, cancelSubscription, recordFeedback, getSession, getTurn, getContext, syncNow, syncSession, backfillEmbeddings, linkSessions, unlinkSessions, showTopology, health } from "../commands.js";
 import { writeServeInfo, clearServeInfo } from "../remote.js";
@@ -20,9 +20,9 @@ function toStatus(e: unknown): { code: number; message: string } {
 
 const LOOPBACK_HOSTS = ["127.0.0.1", "localhost", "::1"];
 
-/** Loopback names plus GATEWAY_ALLOWED_HOSTS (comma-separated), lowercased. */
+/** Loopback names plus BIFROST_ALLOWED_HOSTS (comma-separated), lowercased. */
 function allowedHosts(): Set<string> {
-  const extra = (process.env.GATEWAY_ALLOWED_HOSTS ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean);
+  const extra = (process.env.BIFROST_ALLOWED_HOSTS ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean);
   return new Set([...LOOPBACK_HOSTS, ...extra]);
 }
 
@@ -52,7 +52,7 @@ function isCrossSiteWrite(req: FastifyRequest): boolean {
   }
 }
 
-export function buildHttpServer(app: GatewayApp): FastifyInstance {
+export function buildHttpServer(app: BifrostApp): FastifyInstance {
   const fastify = Fastify({ logger: false });
   // Git hooks post URL-encoded fields (see git/hooks.ts).
   fastify.addContentTypeParser("application/x-www-form-urlencoded", { parseAs: "string" }, (_req, body, done) => {
@@ -63,16 +63,16 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
   // must name a loopback Host (DNS rebinding: a hostile page that resolves its
   // own domain to 127.0.0.1 is same-origin to the browser, but its Host header
   // still names that domain) and must not be a browser cross-site write (CSRF).
-  // P2e token auth: when GATEWAY_TOKEN is set, every route except liveness
+  // P2e token auth: when BIFROST_TOKEN is set, every route except liveness
   // needs `Authorization: Bearer <token>`.
   fastify.addHook("onRequest", async (req, reply) => {
-    const want = process.env.GATEWAY_TOKEN;
+    const want = process.env.BIFROST_TOKEN;
     const authed = !!want && tokenMatches(req.headers.authorization, want);
     const isHealth = req.url === "/health" || req.url.startsWith("/health?");
     if (!authed) {
       if (!allowedHosts().has(hostnameOf(req.headers.host))) {
         if (isHealth) return reply.code(200).send({ ok: true }); // liveness only
-        return reply.code(403).send({ error: "forbidden: unrecognized Host (non-loopback access needs GATEWAY_TOKEN)" });
+        return reply.code(403).send({ error: "forbidden: unrecognized Host (non-loopback access needs BIFROST_TOKEN)" });
       }
       if (isCrossSiteWrite(req)) return reply.code(403).send({ error: "forbidden: cross-site request" });
     }
@@ -96,7 +96,7 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
     const q = req.query as Record<string, string | undefined>;
     if (!q.q?.trim()) return reply.code(400).send({ error: 'bad_request: missing "q"' });
     // Federation loop guard (see remotes.ts): honor the incoming chain.
-    const chain = String(req.headers["x-gateway-chain"] ?? "")
+    const chain = String(req.headers["x-bifrost-chain"] ?? "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
@@ -111,14 +111,14 @@ export function buildHttpServer(app: GatewayApp): FastifyInstance {
           sessionId: q.sessionId,
           scope: q.scope,
           callerSessionId: q.callerSessionId,
-          callerPrincipal: (req.headers["x-gateway-principal"] as string | undefined) ?? q.principal,
+          callerPrincipal: (req.headers["x-bifrost-principal"] as string | undefined) ?? q.principal,
           asOf: q.asOf,
           includeSuperseded: q.includeSuperseded === "true",
           semantic: q.semantic === "false" ? false : undefined,
           // Absent = let the registry decide, which is reranker-aware: ON for
           // Jev (0.445 -> 0.489 NDCG@5 on BEIR nfcorpus at 620ms), OFF for the
           // deleted local cross-encoder (0.433 at 6984ms — below plain hybrid). An explicit
-          // ?rerank=true/false always wins; GATEWAY_RERANKER=none kills it.
+          // ?rerank=true/false always wins; BIFROST_RERANKER=none kills it.
           rerank:
             q.rerank === undefined
               ? rerankDefaultOn(app.reranker)
@@ -373,8 +373,8 @@ export function isLoopbackHost(host: string): boolean {
 
 /** Anything reachable off this machine exposes agent histories: refuse it without a token. */
 function assertBindable(host: string): void {
-  if (!isLoopbackHost(host) && !process.env.GATEWAY_TOKEN) {
-    throw new Error(`bad_request: binding ${host} exposes agent histories to the network; set GATEWAY_TOKEN first`);
+  if (!isLoopbackHost(host) && !process.env.BIFROST_TOKEN) {
+    throw new Error(`bad_request: binding ${host} exposes agent histories to the network; set BIFROST_TOKEN first`);
   }
 }
 
@@ -383,7 +383,7 @@ function boundPort(server: FastifyInstance, fallback: number): number {
   return typeof addr === "object" && addr ? addr.port : fallback;
 }
 
-export async function serveHttp(app: GatewayApp, port = 3000, host = "127.0.0.1"): Promise<FastifyInstance> {
+export async function serveHttp(app: BifrostApp, port = 3000, host = "127.0.0.1"): Promise<FastifyInstance> {
   assertBindable(host);
   const server = buildHttpServer(app);
   await server.listen({ port, host });
@@ -394,7 +394,7 @@ export async function serveHttp(app: GatewayApp, port = 3000, host = "127.0.0.1"
  * Production serve wrapper: owns the global port file + cleanup.
  * serveHttp itself stays side-effect-free so tests/scripts can't clobber it.
  */
-export async function serveProduction(app: GatewayApp, port = 3000, host = "127.0.0.1"): Promise<FastifyInstance> {
+export async function serveProduction(app: BifrostApp, port = 3000, host = "127.0.0.1"): Promise<FastifyInstance> {
   assertBindable(host);
   const server = buildHttpServer(app);
   server.addHook("onClose", async () => clearServeInfo());

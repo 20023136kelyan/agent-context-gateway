@@ -1,17 +1,17 @@
 import Foundation
 
-/// Thin client over the loopback gateway (default :3000).
+/// Thin client over the loopback Bifröst server (default :3000).
 /// All calls are GET/POST against 127.0.0.1 — no credentials needed locally
-/// (GATEWAY_TOKEN only matters for remote-federated setups).
+/// (BIFROST_TOKEN only matters for remote-federated setups).
 @MainActor
-public final class GatewayClient: ObservableObject {
+public final class BifrostClient: ObservableObject {
   @Published public var health: Health?
   @Published public var lastError: String?
 
   public let baseURL: URL
 
   public init() {
-    let port = UserDefaults.standard.integer(forKey: "gatewayPort")
+    let port = UserDefaults.standard.integer(forKey: "bifrostPort")
     let resolved = port == 0 ? 3000 : port
     baseURL = URL(string: "http://127.0.0.1:\(resolved)")!
   }
@@ -29,7 +29,7 @@ public final class GatewayClient: ObservableObject {
       health = try await get("health")
       lastError = nil
     } catch {
-      lastError = "Gateway unreachable — is `serve` running?"
+      lastError = "Bifröst unreachable — is `serve` running?"
     }
   }
 

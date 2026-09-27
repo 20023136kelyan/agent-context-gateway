@@ -8,9 +8,9 @@
  * darwin-x64 binary (support ended at 0.22.3), so on an Intel Mac the Lance
  * path is not merely slow, it cannot load — and because app.ts pulls this in,
  * an unguarded failure took the whole CLI down with it. Probing and falling
- * back to sqlite-vec keeps the gateway usable on every platform.
+ * back to sqlite-vec keeps Bifröst usable on every platform.
  *
- * Override with GATEWAY_VECTOR_BACKEND=lance|sqlite. A pinned backend is a hard
+ * Override with BIFROST_VECTOR_BACKEND=lance|sqlite. A pinned backend is a hard
  * selection: it throws rather than silently writing a corpus into the other
  * backend's store, which would leave two half-populated stores and no error.
  */
@@ -42,7 +42,7 @@ export async function lanceAvailable(): Promise<boolean> {
 export async function openVectorStore(
   dir: string,
 ): Promise<{ store: VectorBackend; backend: VectorBackendName }> {
-  const pinned = process.env.GATEWAY_VECTOR_BACKEND as VectorBackendName | undefined;
+  const pinned = process.env.BIFROST_VECTOR_BACKEND as VectorBackendName | undefined;
   if (pinned === "sqlite") return { store: await openSqlite(dir), backend: "sqlite" };
   if (pinned === "lance") return { store: await openLance(dir), backend: "lance" };
 

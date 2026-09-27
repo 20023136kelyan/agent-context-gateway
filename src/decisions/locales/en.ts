@@ -5,7 +5,7 @@
  * here is word lists and one grammar pattern; the machinery (splitting,
  * matching, anchoring, scoring) lives in ../cues.ts and is locale-blind.
  * A French pack, a legal-domain pack, a medical pack: same interface, new
- * words, zero machinery changes. Select with GATEWAY_LOCALE (default "en").
+ * words, zero machinery changes. Select with BIFROST_LOCALE (default "en").
  */
 export interface LocalePack {
   conclusionStrong: string[];
@@ -71,7 +71,7 @@ export const enPack: LocalePack = {
 
 const PACKS: Record<string, LocalePack> = { en: enPack };
 
-/** Active pack by GATEWAY_LOCALE; unknown locales fall back to English. */
+/** Active pack by BIFROST_LOCALE; unknown locales fall back to English. */
 export function localePack(): LocalePack {
-  return PACKS[process.env.GATEWAY_LOCALE ?? "en"] ?? enPack;
+  return PACKS[process.env.BIFROST_LOCALE ?? "en"] ?? enPack;
 }

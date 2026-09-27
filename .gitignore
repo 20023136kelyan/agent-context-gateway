@@ -1,12 +1,12 @@
 node_modules/
 dist/
 ui/.build/
-ContextGatewayMenu.app/
+BifrostMenu.app/
 .claude/settings.local.json
 *.log
 .DS_Store
 
-# Secrets: VOYAGE_API_KEY / TYPESAFE_API_KEY / GATEWAY_TOKEN live here.
+# Secrets: VOYAGE_API_KEY / TYPESAFE_API_KEY / BIFROST_TOKEN live here.
 # .env.example is the committed template and must stay free of real values.
 .env
 .env.*

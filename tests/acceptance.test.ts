@@ -11,7 +11,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { mkdtemp, mkdir, writeFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { createApp, closeApp, type GatewayApp } from "../src/app.js";
+import { createApp, closeApp, type BifrostApp } from "../src/app.js";
 import { searchOnce, getTurn, listSessions } from "../src/commands.js";
 
 const CODEX_A = "aaaaaaaa-1111-2222-3333-444444444444"; // the architecture session
@@ -19,7 +19,7 @@ const CODEX_X = "aaaaaaaa-5555-6666-7777-888888888888"; // distractor: Monaco
 const CLAUDE_B = "bbbbbbbb-1111-2222-3333-444444444444"; // the querier
 const CLAUDE_Y = "bbbbbbbb-5555-6666-7777-888888888888"; // distractor: lunch
 
-let app: GatewayApp;
+let app: BifrostApp;
 let claudeDir: string;
 let codexDir: string;
 let filesBefore: string[];
@@ -47,7 +47,7 @@ function claudeSession(id: string, texts: string[]): string[] {
 }
 
 beforeAll(async () => {
-  const root = await mkdtemp(join(tmpdir(), "acg-accept-"));
+  const root = await mkdtemp(join(tmpdir(), "bifrost-accept-"));
   claudeDir = join(root, "claude");
   codexDir = join(root, "codex");
   await mkdir(join(claudeDir, "cozea"), { recursive: true });
@@ -135,7 +135,7 @@ describe("§78 acceptance", () => {
     expect(topSessions).not.toContain(CLAUDE_Y);
 
     // (10) no manual memory: fixtures hold native histories only, and the
-    // gateway wrote nothing into source dirs (index lives elsewhere).
+    // Bifröst wrote nothing into source dirs (index lives elsewhere).
     const filesAfter = [...(await readdir(join(claudeDir, "cozea"))), ...(await readdir(join(codexDir, "2026", "09", "10")))].sort();
     expect(filesAfter).toEqual(filesBefore);
     expect(filesAfter.every((f) => f.endsWith(".jsonl"))).toBe(true);

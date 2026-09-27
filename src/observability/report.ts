@@ -7,7 +7,7 @@
  * construction (it imports aggregateUsage, not readFileSync-on-rows).
  *
  * Default off everywhere (settings.telemetry). Endpoint override for
- * self-hosters: GATEWAY_TELEMETRY_URL. Fail-silent with a boolean outcome —
+ * self-hosters: BIFROST_TELEMETRY_URL. Fail-silent with a boolean outcome —
  * telemetry must never break serving or installs.
  */
 import { aggregateUsage, defaultUsagePath } from "./usage.js";
@@ -48,7 +48,7 @@ export function buildReport(
 /** POST the aggregate if (and only if) the caller already checked opt-in. */
 export async function flushReport(
   report: TelemetryReport,
-  url = process.env.GATEWAY_TELEMETRY_URL ?? DEFAULT_TELEMETRY_URL,
+  url = process.env.BIFROST_TELEMETRY_URL ?? DEFAULT_TELEMETRY_URL,
   timeoutMs = 10000,
 ): Promise<boolean> {
   const ac = new AbortController();

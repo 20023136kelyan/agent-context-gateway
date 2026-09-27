@@ -1,4 +1,4 @@
-# Agent Context Gateway — Detailed MVP Plan (v2)
+# Bifröst — Detailed MVP Plan (v2)
 
 **Status: MVP + Phase 2 complete (2026-09-15). 52/52 suite green, live index
 156 sessions / 99.5k docs serving on loopback via launchd.**
@@ -46,7 +46,7 @@ Both are JSONL, append-only → incremental index via `(file_path, mtime, byte_o
 ## 2. Repo structure (MVP-trimmed, extensible to spec §60)
 
 ```text
-agent-context-gateway/
+bifrost/
   package.json (pnpm, ESM, node>=20)
   tsconfig.json (strict)
   src/
@@ -98,7 +98,7 @@ workspace (facet), timestamp (fast, i64 ms), role (facet),
 content (text, tokenizer: default + lower + stem), fileRefs (facet)
 ```
 
-- Index dir: `~/.context-gateway/index-tantivy/` — disposable. `rebuild` = rm -rf + rescan.
+- Index dir: `~/.bifrost/index-tantivy/` — disposable. `rebuild` = rm -rf + rescan.
 - Incremental: compare mtime/size, resume from byte offset, append new turns.
 - Direct retrieval bypasses Tantivy (read JSONL at offset) for freshness.
 
@@ -126,12 +126,12 @@ Pipeline: normalize query → scope filter → Tantivy topK=50 → boost → exp
 CLI:
 
 ```bash
-gateway sources
-gateway sessions --harness claude-code --project <slug>
-gateway search "what did codex decide about collaboration?" --project <slug> --json
-gateway session <harness> <sessionId>
-gateway turn <harness> <sessionId> <turnId>
-gateway sync [--rebuild]
+bifrost sources
+bifrost sessions --harness claude-code --project <slug>
+bifrost search "what did codex decide about collaboration?" --project <slug> --json
+bifrost session <harness> <sessionId>
+bifrost turn <harness> <sessionId> <turnId>
+bifrost sync [--rebuild]
 ```
 
 HTTP (localhost `127.0.0.1` only):
@@ -184,7 +184,7 @@ Total ~9d solo, ~4-5d with parallel adapter work.
 ## 10. Updated acceptance (2-harness)
 
 1. Two real histories present (Claude + Codex, same project slug).
-2. `gateway sync` indexes both.
+2. `bifrost sync` indexes both.
 3. `search("What did Codex decide about collaboration?")` with project scope
    returns Codex Session A turns, not unrelated.
 4. Result includes harness/agent/session/turn/timestamp/sourcePath.
@@ -199,7 +199,7 @@ Total ~9d solo, ~4-5d with parallel adapter work.
 
 ## 11. Source of truth
 
-Concept spec: `Agent Context Gateway — Project Specification.md` (§1-80).
+Concept spec: `Bifröst — Project Specification.md` (§1-80).
 This file is the build plan. On conflict, spec principles win (§73):
 native history is truth, provenance always, least context, disposable index.
 

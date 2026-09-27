@@ -14,9 +14,9 @@ import type { NormalizedQuery } from "./query.js";
  * 30 days from the original hybrid ranking — recent work outranks last
  * month's without erasing it.
  *
- * Overridable with GATEWAY_HALFLIFE_DAYS; invalid values fall back to the default. */
+ * Overridable with BIFROST_HALFLIFE_DAYS; invalid values fall back to the default. */
 export const HALF_LIFE_DAYS = (() => {
-  const raw = Number(process.env.GATEWAY_HALFLIFE_DAYS ?? 30);
+  const raw = Number(process.env.BIFROST_HALFLIFE_DAYS ?? 30);
   return Number.isFinite(raw) && raw > 0 ? raw : 30;
 })();
 /** RRF damping factor: lower k rewards top ranks more steeply.
@@ -24,9 +24,9 @@ export const HALF_LIFE_DAYS = (() => {
  * 10, not the classic 60 — with only two fused lists (lexical + vector) the
  * smaller k keeps rank-1 agreement decisive instead of washing it out.
  *
- * Overridable with GATEWAY_RRF_K; invalid values fall back to the default. */
+ * Overridable with BIFROST_RRF_K; invalid values fall back to the default. */
 export const RRF_K = (() => {
-  const raw = Number(process.env.GATEWAY_RRF_K ?? 10);
+  const raw = Number(process.env.BIFROST_RRF_K ?? 10);
   return Number.isFinite(raw) && raw >= 1 && raw <= 100 ? Math.floor(raw) : 10;
 })();
 
@@ -34,18 +34,18 @@ export const RRF_K = (() => {
  * original finalScore (0.65 RRF + 0.10 project + 0.10 repo + 0.10 recency +
  * 0.05 entity) that the pooled-judging eval isolates against the reranker.
  *
- * Each overridable with its GATEWAY_W_* var (0..1); invalid values fall back
+ * Each overridable with its BIFROST_W_* var (0..1); invalid values fall back
  * to the default for that weight only. */
 function envWeight(name: string, def: number): number {
   const raw = Number(process.env[name] ?? def);
   return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : def;
 }
 export const RANK_WEIGHTS = {
-  rrf: envWeight("GATEWAY_W_RRF", 0.65),
-  project: envWeight("GATEWAY_W_PROJECT", 0.1),
-  repo: envWeight("GATEWAY_W_REPO", 0.1),
-  recency: envWeight("GATEWAY_W_RECENCY", 0.1),
-  entity: envWeight("GATEWAY_W_ENTITY", 0.05),
+  rrf: envWeight("BIFROST_W_RRF", 0.65),
+  project: envWeight("BIFROST_W_PROJECT", 0.1),
+  repo: envWeight("BIFROST_W_REPO", 0.1),
+  recency: envWeight("BIFROST_W_RECENCY", 0.1),
+  entity: envWeight("BIFROST_W_ENTITY", 0.05),
 };
 
 /**
@@ -72,16 +72,16 @@ export function rrfTerm(rank: number, k = RRF_K): number {
  * That is why paraphrase recall@60 was 0.95 while recall@1 was 0.15: the
  * candidates were always there and the fusion could not see them.
  *
- * Tunable per engine: GATEWAY_SIM_FLOOR / GATEWAY_SIM_SPAN. Invalid values
+ * Tunable per engine: BIFROST_SIM_FLOOR / BIFROST_SIM_SPAN. Invalid values
  * fall back to the defaults rather than silently disabling the weighting.
  */
 const SIM_FLOOR = (() => {
-  const raw = Number(process.env.GATEWAY_SIM_FLOOR ?? 0.15);
+  const raw = Number(process.env.BIFROST_SIM_FLOOR ?? 0.15);
   return Number.isFinite(raw) && raw >= 0 && raw < 1 ? raw : 0.15;
 })();
 export { SIM_FLOOR };
 const SIM_SPAN = (() => {
-  const raw = Number(process.env.GATEWAY_SIM_SPAN ?? 0.35);
+  const raw = Number(process.env.BIFROST_SIM_SPAN ?? 0.35);
   return Number.isFinite(raw) && raw > 0 && raw <= 1 ? raw : 0.35;
 })();
 export { SIM_SPAN };

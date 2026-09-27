@@ -1,13 +1,13 @@
 /**
  * Git Repository Hook Integration (spec §28 & §32).
  * Installs post-commit and post-merge hooks that automatically record commit SHAs,
- * branch names, commit messages, and touched files into the Context Gateway artifact graph.
+ * branch names, commit messages, and touched files into the Bifröst artifact graph.
  */
 import { existsSync, mkdirSync, writeFileSync, chmodSync, readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { turnId as makeTurnId } from "../core/id.js";
 import { extractFileRefs } from "../adapters/text.js";
-import type { GatewayApp } from "../app.js";
+import type { BifrostApp } from "../app.js";
 import { notifyNewTurns } from "../commands.js";
 
 export interface GitCommitEvent {
@@ -20,16 +20,16 @@ export interface GitCommitEvent {
 }
 
 /** Marks hooks we manage, so reinstalling never treats our own hook as a user hook. */
-const SENTINEL = "# context-gateway-hook";
+const SENTINEL = "# bifrost-hook";
 
 // Fields go through curl --data-urlencode: any message (newlines, quotes,
 // backslashes) arrives intact, unlike JSON assembled by shell interpolation.
-// A pre-existing hook is kept as <name>.pre-gateway and runs first.
+// A pre-existing hook is kept as <name>.pre-bifrost and runs first.
 const HOOK_SCRIPT = `#!/bin/sh
-${SENTINEL} (installed by \`gateway git-hooks install\`)
+${SENTINEL} (installed by \`bifrost git-hooks install\`)
 status=0
-if [ -x "$0.pre-gateway" ]; then
-  "$0.pre-gateway" "$@" || status=$?
+if [ -x "$0.pre-bifrost" ]; then
+  "$0.pre-bifrost" "$@" || status=$?
 fi
 sha=$(git rev-parse HEAD 2>/dev/null) || exit $status
 branch=$(git branch --show-current 2>/dev/null)
@@ -37,8 +37,8 @@ message=$(git log -1 --pretty=%B 2>/dev/null)
 stamp=$(git log -1 --pretty=%aI 2>/dev/null)
 files=$(git diff-tree --root --no-commit-id --name-only -r HEAD 2>/dev/null)
 repo=$(git rev-parse --show-toplevel 2>/dev/null)
-if [ -n "$GATEWAY_TOKEN" ]; then set -- -H "Authorization: Bearer $GATEWAY_TOKEN"; else set --; fi
-curl -s -o /dev/null -m 5 -X POST "http://127.0.0.1:\${GATEWAY_PORT:-3000}/hooks/git" "$@" \\
+if [ -n "$BIFROST_TOKEN" ]; then set -- -H "Authorization: Bearer $BIFROST_TOKEN"; else set --; fi
+curl -s -o /dev/null -m 5 -X POST "http://127.0.0.1:\${BIFROST_PORT:-3000}/hooks/git" "$@" \\
   --data-urlencode "repo=$repo" --data-urlencode "sha=$sha" --data-urlencode "branch=$branch" \\
   --data-urlencode "message=$message" --data-urlencode "files=$files" --data-urlencode "timestamp=$stamp" \\
   >/dev/null 2>&1 || true
@@ -57,7 +57,7 @@ export function installGitHooks(repoPath: string): { installed: string[]; preser
   const preserved: string[] = [];
   for (const hookName of ["post-commit", "post-merge"]) {
     const hookPath = join(hooksDir, hookName);
-    const backup = `${hookPath}.pre-gateway`;
+    const backup = `${hookPath}.pre-bifrost`;
     if (existsSync(hookPath) && !readFileSync(hookPath, "utf8").includes(SENTINEL)) {
       if (existsSync(backup)) {
         throw new Error(`bad_request: both ${hookPath} and ${backup} exist; merge them by hand, then re-run install`);
@@ -82,7 +82,7 @@ export function installGitHooks(repoPath: string): { installed: string[]; preser
  * as a turn into Tantivy and linking touched files for BFS graph traversal.
  */
 export async function handleGitCommitEvent(
-  app: GatewayApp,
+  app: BifrostApp,
   event: GitCommitEvent,
 ): Promise<{ indexed: boolean; turnId: string }> {
   // Ensure the git adapter has this repo registered

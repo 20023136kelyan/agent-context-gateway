@@ -4,15 +4,15 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { FastifyInstance } from "fastify";
-import { createApp, closeApp, type GatewayApp } from "../src/app.js";
+import { createApp, closeApp, type BifrostApp } from "../src/app.js";
 import { buildHttpServer, serveHttp } from "../src/transports/http.js";
 import { searchOnce } from "../src/commands.js";
 import { syncAll } from "../src/indexing/sync.js";
 import { CursorStore } from "../src/indexing/store.js";
 import { addRemote } from "../src/remotes.js";
 
-let local: GatewayApp;
-let remote: GatewayApp;
+let local: BifrostApp;
+let remote: BifrostApp;
 let remoteServer: FastifyInstance | null = null;
 let remotePort = 0;
 let prevState: string | undefined;
@@ -27,13 +27,13 @@ async function fixtureClaude(dir: string, id: string, text: string) {
 }
 
 beforeAll(async () => {
-  prevState = process.env.CONTEXT_GATEWAY_STATE;
-  prevToken = process.env.GATEWAY_TOKEN;
-  delete process.env.GATEWAY_TOKEN;
-  const state = await mkdtemp(join(tmpdir(), "acg-fed-state-"));
-  process.env.CONTEXT_GATEWAY_STATE = state;
+  prevState = process.env.BIFROST_STATE;
+  prevToken = process.env.BIFROST_TOKEN;
+  delete process.env.BIFROST_TOKEN;
+  const state = await mkdtemp(join(tmpdir(), "bifrost-fed-state-"));
+  process.env.BIFROST_STATE = state;
 
-  const root = await mkdtemp(join(tmpdir(), "acg-fed-"));
+  const root = await mkdtemp(join(tmpdir(), "bifrost-fed-"));
   const localClaude = join(root, "local-claude");
   const remoteClaude = join(root, "remote-claude");
   await fixtureClaude(localClaude, "aaaaaaaa-1111-1111-1111-111111111111", "Local folly about lighthouse keepers");
@@ -55,27 +55,27 @@ afterAll(async () => {
   await remoteServer?.close().catch(() => {});
   closeApp(local);
   closeApp(remote);
-  if (prevState === undefined) delete process.env.CONTEXT_GATEWAY_STATE;
-  else process.env.CONTEXT_GATEWAY_STATE = prevState;
-  if (prevToken === undefined) delete process.env.GATEWAY_TOKEN;
-  else process.env.GATEWAY_TOKEN = prevToken;
+  if (prevState === undefined) delete process.env.BIFROST_STATE;
+  else process.env.BIFROST_STATE = prevState;
+  if (prevToken === undefined) delete process.env.BIFROST_TOKEN;
+  else process.env.BIFROST_TOKEN = prevToken;
 });
 
 describe("token auth", () => {
   it("health stays open; routes require bearer when configured", async () => {
-    process.env.GATEWAY_TOKEN = "secret-1";
+    process.env.BIFROST_TOKEN = "secret-1";
     const server = buildHttpServer(local);
     expect((await server.inject({ method: "GET", url: "/health" })).statusCode).toBe(200);
     expect((await server.inject({ method: "GET", url: "/sources" })).statusCode).toBe(401);
     const authed = await server.inject({ method: "GET", url: "/sources", headers: { authorization: "Bearer secret-1" } });
     expect(authed.statusCode).toBe(200);
-    delete process.env.GATEWAY_TOKEN;
+    delete process.env.BIFROST_TOKEN;
   });
 });
 
 describe("federation", () => {
   it("merges remote results tagged via, with per-remote report", async () => {
-    // maxResults 10: merged slice must have room for both gateways' hits.
+    // maxResults 10: merged slice must have room for both instances' hits.
     const res = await searchOnce(local, "lighthouse keepers folly", { maxResults: 10 });
     const vias = new Set(res.results.map((r) => r.via ?? "local"));
     expect(vias.has("local")).toBe(true);

@@ -25,7 +25,7 @@
         "hybrid"
       ],
       "env": {
-        "GATEWAY_EMBED_ENGINE": "voyage-code"
+        "BIFROST_EMBED_ENGINE": "voyage-code"
       }
     },
     {
@@ -35,7 +35,7 @@
         "hybrid"
       ],
       "env": {
-        "GATEWAY_EMBED_ENGINE": "voyage-context"
+        "BIFROST_EMBED_ENGINE": "voyage-context"
       }
     },
     {
@@ -101,7 +101,7 @@
         "hybrid"
       ],
       "env": {
-        "GATEWAY_EMBED_ENGINE": "voyage-context"
+        "BIFROST_EMBED_ENGINE": "voyage-context"
       }
     },
     {

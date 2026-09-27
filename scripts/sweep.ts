@@ -4,7 +4,7 @@
  *
  * Manifest: { out: "sweeps/results.sqlite", jobs: 2, cells: [
  *   { name: "baseline", corpus: "fixture", arms: ["lexical","hybrid","rerank-voyage"], env: {} },
- *   { name: "gate-025",  corpus: "fixture", arms: ["lexical","hybrid","rerank-voyage"], env: { GATEWAY_MIN_VECTOR_SIM: "0.25" } },
+ *   { name: "gate-025",  corpus: "fixture", arms: ["lexical","hybrid","rerank-voyage"], env: { BIFROST_MIN_VECTOR_SIM: "0.25" } },
  * ]}
  *
  * Each cell runs in its own process (see sweep-cell.ts header for why).

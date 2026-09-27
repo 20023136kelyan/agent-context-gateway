@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { SqliteVectorStore } from "../src/indexing/vectors-sqlite.js";
 import { embedChunkId } from "../src/core/id.js";
 
-const dir = async (tag: string) => join(await mkdtemp(join(tmpdir(), `acg-sqlitevec-${tag}-`)), "v");
+const dir = async (tag: string) => join(await mkdtemp(join(tmpdir(), `bifrost-sqlitevec-${tag}-`)), "v");
 const row = (id: string, vector: number[], over: Partial<{ harness: string; sessionId: string; projectId: string; timestampMs: number }> = {}) => ({
   id, vector, harness: "claude-code", sessionId: "s1", projectId: "p", timestampMs: 1000, ...over,
 });

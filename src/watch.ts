@@ -7,7 +7,7 @@
 import { watch, type FSWatcher } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { GatewayApp } from "./app.js";
+import type { BifrostApp } from "./app.js";
 import { syncAllDetailed } from "./indexing/sync.js";
 import { notifyNewTurns } from "./commands.js";
 import { embedSessionTurns, resolveEmbeddingEngine } from "./indexing/embed-sync.js";
@@ -26,7 +26,7 @@ export interface WatchOptions {
   onError?: (err: unknown) => void;
 }
 
-export function watchSources(app: GatewayApp, opts: WatchOptions = {}): FSWatcher[] {
+export function watchSources(app: BifrostApp, opts: WatchOptions = {}): FSWatcher[] {
   const dirs = opts.dirs ?? defaultWatchDirs();
   const debounceMs = opts.debounceMs ?? 2000;
   let timer: NodeJS.Timeout | null = null;

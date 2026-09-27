@@ -1,4 +1,4 @@
-# Agent Context Gateway
+# Bifröst
 
 **Status:** Concept / Architecture Specification  
 **Type:** Open-source infrastructure  
@@ -9,9 +9,9 @@
 
 # 1. Executive Summary
 
-The **Agent Context Gateway** is an open-source infrastructure layer that allows one AI agent to retrieve relevant context from another agent's existing work history.
+The **Bifröst** is an open-source infrastructure layer that allows one AI agent to retrieve relevant context from another agent's existing work history.
 
-The gateway is designed for environments where multiple agents, agent harnesses, sessions, machines, or development environments are operating on the same or related work.
+Bifröst is designed for environments where multiple agents, agent harnesses, sessions, machines, or development environments are operating on the same or related work.
 
 An agent should be able to ask questions such as:
 
@@ -25,9 +25,9 @@ An agent should be able to ask questions such as:
 
 > "What files did the other agent modify when implementing collaboration?"
 
-The gateway searches the relevant agent's **native session/history data**, retrieves the relevant turns or context, and returns them with provenance.
+Bifröst searches the relevant agent's **native session/history data**, retrieves the relevant turns or context, and returns them with provenance.
 
-The gateway is therefore best understood as:
+Bifröst is therefore best understood as:
 
 > **Federated semantic search over native agent work histories.**
 
@@ -95,7 +95,7 @@ Agent B
    │
    │ "What did Agent A conclude about X?"
    ▼
-Context Gateway
+Bifröst
    │
    ├── identify Agent A
    ├── search Agent A's native history
@@ -128,13 +128,13 @@ The system MUST:
 11. Be open source.
 12. Permit multiple transport mechanisms, with MCP being an important initial interface.
 13. Make indexes/caches disposable and rebuildable.
-14. Avoid turning the gateway into the authoritative owner of agent history.
+14. Avoid turning Bifröst into the authoritative owner of agent history.
 
 ---
 
 # 4. Non-Goals
 
-The gateway is NOT intended to be:
+Bifröst is NOT intended to be:
 
 ### 4.1 A replacement for native agent history
 
@@ -145,7 +145,7 @@ Native history
       ↓
 SOURCE OF TRUTH
       ↓
-Context Gateway
+Bifröst
 ```
 
 not:
@@ -153,7 +153,7 @@ not:
 ```text
 Agent
   ↓
-Gateway
+Bifröst
   ↓
 new permanent memory database
 ```
@@ -176,7 +176,7 @@ If it disappears, it should be possible to reconstruct it from native histories.
 
 Systems such as long-term memory stores, knowledge graphs, and memory databases solve a related but different problem.
 
-The gateway's central abstraction is:
+Bifröst's central abstraction is:
 
 > **"Find something another agent already did or knew."**
 
@@ -195,7 +195,7 @@ A2A-style systems can be used for:
 - exchanging artifacts
 - live agent communication
 
-The Context Gateway instead answers:
+Bifröst instead answers:
 
 > "What has already happened?"
 
@@ -205,7 +205,7 @@ These systems can therefore coexist.
 
 ### 4.5 A hidden synchronization mechanism
 
-The gateway should not silently modify another agent's context.
+Bifröst should not silently modify another agent's context.
 
 It is primarily a retrieval layer.
 
@@ -244,7 +244,7 @@ Context Source
 └── History
 ```
 
-The gateway provides a common interface over these heterogeneous sources.
+Bifröst provides a common interface over these heterogeneous sources.
 
 ---
 
@@ -256,7 +256,7 @@ The architecture should be adapter-based.
                          Agent
                            │
                            ▼
-                  Context Gateway API
+                  Bifröst API
                            │
              ┌─────────────┼─────────────┐
              │             │             │
@@ -276,13 +276,13 @@ Additional adapters can later support:
 - enterprise agent systems
 - other open-source coding agents
 
-The gateway itself should know as little as possible about any individual harness.
+Bifröst itself should know as little as possible about any individual harness.
 
 ---
 
 # 7. Harness Adapter
 
-Each harness adapter translates a native history format into the gateway's normalized representation.
+Each harness adapter translates a native history format into Bifröst's normalized representation.
 
 An adapter should conceptually expose capabilities such as:
 
@@ -321,7 +321,7 @@ Example:
 
 # 8. Normalized Context Model
 
-The gateway should define a small canonical data model.
+Bifröst should define a small canonical data model.
 
 ## 8.1 Agent
 
@@ -395,7 +395,7 @@ Artifacts should retain references to their originating session/turn whenever po
 
 Provenance is a fundamental requirement.
 
-A retrieved statement should never appear to be anonymous gateway knowledge.
+A retrieved statement should never appear to be anonymous Bifröst knowledge.
 
 For example:
 
@@ -421,7 +421,7 @@ FACT FROM SOURCE
 from:
 
 ```text
-GATEWAY INTERPRETATION
+BIFRÖST INTERPRETATION
 ```
 
 and:
@@ -446,7 +446,7 @@ Example:
 "What did the other agent decide about replacing Monaco?"
 ```
 
-The gateway should translate this into a search over relevant histories.
+Bifröst should translate this into a search over relevant histories.
 
 Possible search pipeline:
 
@@ -484,12 +484,12 @@ Compact result
 
 # 11. Search Should Be Federated
 
-The gateway should not require all data to be centralized.
+Bifröst should not require all data to be centralized.
 
 Possible architecture:
 
 ```text
-                   Gateway
+                   Bifröst
                       │
           ┌───────────┼───────────┐
           ▼           ▼           ▼
@@ -501,7 +501,7 @@ Possible architecture:
 
 Each machine may maintain its own local searchable representation.
 
-The gateway can federate queries across them.
+Bifröst can federate queries across them.
 
 This makes the architecture suitable for:
 
@@ -528,7 +528,7 @@ Local Adapter
 Local Index
       │
       ▼
-Gateway
+Bifröst
       │
       ▼
 Remote Agent
@@ -651,7 +651,7 @@ Suppose turn 48 contains:
 
 The preceding turns may explain why.
 
-The gateway should therefore support context windows.
+Bifröst should therefore support context windows.
 
 Example:
 
@@ -698,7 +698,7 @@ For example, if an agent asks:
 
 > "What did my parent decide about PR #169?"
 
-then the gateway should strongly prioritize:
+then Bifröst should strongly prioritize:
 
 ```text
 parent agent
@@ -714,7 +714,7 @@ rather than unrelated semantically similar conversations.
 
 # 17. Agent Topology
 
-One of the gateway's important capabilities is understanding relationships between agents.
+One of Bifröst's important capabilities is understanding relationships between agents.
 
 Example:
 
@@ -765,7 +765,7 @@ Subagent B
      │
      │ query
      ▼
-Context Gateway
+Bifröst
      │
      ▼
 Parent history
@@ -784,7 +784,7 @@ The principle is:
 
 # 19. Cross-Harness Queries
 
-The gateway should normalize across harnesses.
+Bifröst should normalize across harnesses.
 
 Example:
 
@@ -793,7 +793,7 @@ Claude Code
      │
      │ "What did Codex conclude?"
      ▼
-Context Gateway
+Bifröst
      │
      ▼
 Codex Adapter
@@ -810,7 +810,7 @@ Likewise:
 Codex
   │
   ▼
-Gateway
+Bifröst
   │
   ▼
 Claude Code history
@@ -820,9 +820,9 @@ Claude Code history
 
 # 20. MCP Interface
 
-MCP is a natural initial transport/interface for the gateway.
+MCP is a natural initial transport/interface for Bifröst.
 
-The gateway itself should remain conceptually independent of MCP.
+Bifröst itself should remain conceptually independent of MCP.
 
 Architecture:
 
@@ -833,14 +833,14 @@ Architecture:
                   MCP
                     │
                     ▼
-          Context Gateway
+          Bifröst
                     │
         ┌───────────┼───────────┐
         ▼           ▼           ▼
       Codex       Claude      Cursor
 ```
 
-MCP provides a convenient mechanism for exposing gateway operations to agents.
+MCP provides a convenient mechanism for exposing Bifröst operations to agents.
 
 Potential MCP tools:
 
@@ -926,7 +926,7 @@ or:
 scope="project"
 ```
 
-The gateway should also support automatic scope selection.
+Bifröst should also support automatic scope selection.
 
 For example:
 
@@ -946,7 +946,7 @@ requires searching the parent.
 
 Because context may contain sensitive information, authorization is fundamental.
 
-The gateway must never assume:
+Bifröst must never assume:
 
 ```text
 agent exists
@@ -988,13 +988,13 @@ Permissions should be explicit.
 
 # 24. Privacy
 
-The gateway should follow a data-minimization principle.
+Bifröst should follow a data-minimization principle.
 
 If an agent asks:
 
 > "What did the other agent decide about PR #169?"
 
-the gateway should not return the other agent's entire history.
+Bifröst should not return the other agent's entire history.
 
 It should return:
 
@@ -1009,7 +1009,7 @@ and nothing more.
 
 # 25. Security Boundary
 
-The gateway is effectively a **context access broker**.
+Bifröst is effectively a **context access broker**.
 
 Therefore:
 
@@ -1018,14 +1018,14 @@ Agent
   │
   │ authenticated request
   ▼
-Gateway
+Bifröst
   │
   │ authorization
   ▼
 Context source
 ```
 
-The adapter must enforce that the caller cannot arbitrarily read local history files merely because the gateway has access to them.
+The adapter must enforce that the caller cannot arbitrarily read local history files merely because Bifröst has access to them.
 
 The implementation should separate:
 
@@ -1083,7 +1083,7 @@ If Agent B asks:
 
 > "What did the other agent decide about collaboration?"
 
-the gateway should not necessarily search every conversation ever created.
+Bifröst should not necessarily search every conversation ever created.
 
 The default scope should usually prioritize the current project/workspace.
 
@@ -1119,7 +1119,7 @@ Example:
 "What did the previous agent discover while working on src/collaboration?"
 ```
 
-The gateway can heavily prioritize sessions that touched:
+Bifröst can heavily prioritize sessions that touched:
 
 ```text
 src/collaboration
@@ -1168,7 +1168,7 @@ rather than:
 Find messages containing X.
 ```
 
-The gateway should therefore eventually support decision-oriented retrieval.
+Bifröst should therefore eventually support decision-oriented retrieval.
 
 Conceptually:
 
@@ -1236,7 +1236,7 @@ Commit
 PR
 ```
 
-This makes the gateway much more useful for software engineering workflows.
+This makes Bifröst much more useful for software engineering workflows.
 
 ---
 
@@ -1269,7 +1269,7 @@ The graph must not become the required source of truth.
 
 # 34. Derived Knowledge
 
-The gateway may produce:
+Bifröst may produce:
 
 - summaries
 - embeddings
@@ -1308,7 +1308,7 @@ Agent A
 remote machine offline
 ```
 
-The gateway should report:
+Bifröst should report:
 
 ```text
 Source unavailable
@@ -1323,7 +1323,7 @@ Index may be stale.
 Last synchronized: ...
 ```
 
-The gateway should make freshness visible when relevant.
+Bifröst should make freshness visible when relevant.
 
 ---
 
@@ -1331,7 +1331,7 @@ The gateway should make freshness visible when relevant.
 
 This is a critical design requirement.
 
-The gateway should never claim:
+Bifröst should never claim:
 
 > "The previous agent decided X"
 
@@ -1409,14 +1409,14 @@ The real interface should remain minimal and capability-driven.
 
 # 39. Remote Sources
 
-The gateway should support remote context sources.
+Bifröst should support remote context sources.
 
 Example:
 
 ```text
 Machine A
 ┌───────────────────────┐
-│ Agent Gateway Node    │
+│ Bifröst Node          │
 │                       │
 │ Codex Adapter         │
 │ Claude Adapter        │
@@ -1427,14 +1427,14 @@ Machine A
             ▼
 Machine B
 ┌───────────────────────┐
-│ Agent Gateway Node    │
+│ Bifröst Node          │
 │                       │
 │ Cozea Adapter         │
 │ Local Index           │
 └───────────────────────┘
 ```
 
-A centralized gateway can then federate queries.
+A centralized Bifröst instance can then federate queries.
 
 ---
 
@@ -1447,7 +1447,7 @@ The project should support multiple deployment modes.
 ```text
 Agent
  ↓
-Local Gateway
+Local Bifröst
  ↓
 Local histories
 ```
@@ -1456,12 +1456,12 @@ Best for personal development.
 
 ---
 
-## Mode B — Machine Gateway
+## Mode B — Machine Bifröst
 
 ```text
 Multiple local agents
         ↓
-Machine Gateway
+Machine Bifröst
         ↓
 Machine histories
 ```
@@ -1473,7 +1473,7 @@ Best for shared development machines.
 ## Mode C — Federated
 
 ```text
-                Gateway
+                Bifröst
              /     |      \
             /      |       \
        Machine A Machine B Machine C
@@ -1485,11 +1485,11 @@ Best for teams.
 
 ## Mode D — Embedded
 
-The gateway can be embedded directly into an agent runtime.
+Bifröst can be embedded directly into an agent runtime.
 
 ```text
 Agent Runtime
- ├── Context Gateway
+ ├── Bifröst
  └── Native History
 ```
 
@@ -1501,16 +1501,16 @@ The system should default toward:
 
 ```text
 history owned by harness
-index owned by gateway
+index owned by Bifröst
 ```
 
 rather than:
 
 ```text
-history copied into gateway database
+history copied into a Bifröst database
 ```
 
-The gateway should minimize duplication.
+Bifröst should minimize duplication.
 
 ---
 
@@ -1613,7 +1613,7 @@ This is much more useful than dumping 500 turns.
 
 # 46. Token Efficiency
 
-The gateway exists partly because context is expensive.
+Bifröst exists partly because context is expensive.
 
 Therefore, results should support:
 
@@ -1676,7 +1676,7 @@ Good:
 search("What did the parent decide about X?")
 ```
 
-The gateway should hide unnecessary implementation complexity.
+Bifröst should hide unnecessary implementation complexity.
 
 ---
 
@@ -1687,7 +1687,7 @@ A human-facing UI is optional but valuable.
 Possible interface:
 
 ```text
-Context Gateway
+Bifröst
 ────────────────────────────
 
 Search
@@ -1718,7 +1718,7 @@ The primary consumer is another agent.
 
 # 50. Observability
 
-The gateway should expose operational information such as:
+Bifröst should expose operational information such as:
 
 - source availability
 - index status
@@ -1766,7 +1766,7 @@ entire conversation history
 Child
 ```
 
-The gateway provides:
+Bifröst provides:
 
 ```text
 Parent history
@@ -1806,21 +1806,21 @@ memory database
 future retrieval
 ```
 
-The gateway instead looks like:
+Bifröst instead looks like:
 
 ```text
 Agent
   ↓
 native history
   ↓
-gateway index
+Bifröst index
   ↓
 future retrieval
 ```
 
 The difference is important.
 
-The gateway does not require an agent to remember to write a memory.
+Bifröst does not require an agent to remember to write a memory.
 
 If something happened in the native history, it is potentially searchable.
 
@@ -1832,13 +1832,13 @@ Systems such as Zep provide sophisticated shared memory and graph-based retrieva
 
 That is a useful adjacent category.
 
-The Context Gateway should not attempt to compete by simply becoming another memory database.
+Bifröst should not attempt to compete by simply becoming another memory database.
 
 The differentiation is:
 
 > **Native-history federation.**
 
-Zep-like systems may still be useful alongside the gateway.
+Zep-like systems may still be useful alongside Bifröst.
 
 For example:
 
@@ -1847,7 +1847,7 @@ For example:
                       │
             ┌─────────┴─────────┐
             ▼                   ▼
-     Context Gateway          Memory
+     Bifröst          Memory
             │                   │
      native histories       persistent memories
 ```
@@ -1867,7 +1867,7 @@ A2A-style protocols are appropriate for:
 - artifacts
 - agent-to-agent workflows
 
-The Context Gateway is concerned with:
+Bifröst is concerned with:
 
 - historical context
 - previous decisions
@@ -1882,7 +1882,7 @@ A2A
  ↓
 "Please investigate X."
 
-Context Gateway
+Bifröst
  ↓
 "What has already been investigated about X?"
 ```
@@ -1893,12 +1893,12 @@ Context Gateway
 
 MCP is primarily an interface/transport mechanism.
 
-The gateway is the actual capability.
+Bifröst is the actual capability.
 
 Therefore:
 
 ```text
-Context Gateway
+Bifröst
       │
       ├── MCP
       ├── HTTP
@@ -1917,23 +1917,23 @@ A CLI would be useful for debugging and humans.
 Example:
 
 ```bash
-context-gateway sources
+bifrost sources
 ```
 
 ```bash
-context-gateway sessions
+bifrost sessions
 ```
 
 ```bash
-context-gateway search "what did the previous agent decide about collaboration?"
+bifrost search "what did the previous agent decide about collaboration?"
 ```
 
 ```bash
-context-gateway session abc123
+bifrost session abc123
 ```
 
 ```bash
-context-gateway turn abc123 turn47
+bifrost turn abc123 turn47
 ```
 
 ---
@@ -1945,7 +1945,7 @@ The project should eventually provide an SDK.
 Potential usage:
 
 ```typescript
-const context = await gateway.search({
+const context = await bifrost.search({
   query: "What did the previous agent decide about collaboration?",
   scope: "project"
 })
@@ -1957,7 +1957,7 @@ The SDK should return structured provenance-rich results.
 
 # 59. Language Support
 
-The gateway should ideally support:
+Bifröst should ideally support:
 
 - TypeScript
 - Python
@@ -1974,7 +1974,7 @@ The repository should be modular.
 Suggested structure:
 
 ```text
-agent-context-gateway/
+bifrost/
 │
 ├── core/
 │   ├── models/
@@ -2095,7 +2095,7 @@ Claude asks:
 "What was decided about collaboration?"
 ```
 
-Gateway returns:
+Bifröst returns:
 
 ```text
 Codex — Session A
@@ -2115,7 +2115,7 @@ Claude can then ask:
 "Why?"
 ```
 
-and the gateway can retrieve the surrounding discussion.
+and Bifröst can retrieve the surrounding discussion.
 
 ---
 
@@ -2128,7 +2128,7 @@ Add:
 - multiple adapters
 - parent/child topology
 - project-aware search
-- remote gateways
+- remote Bifröst instances
 - authorization
 - context budgets
 - artifact relationships
@@ -2188,7 +2188,7 @@ Example:
 the collaboration architecture."
 ```
 
-This turns the gateway from purely pull-based retrieval into:
+This turns Bifröst from purely pull-based retrieval into:
 
 ```text
 pull + optional push
@@ -2198,7 +2198,7 @@ pull + optional push
 
 # 67. Live Context
 
-The gateway may eventually search active sessions.
+Bifröst may eventually search active sessions.
 
 Example:
 
@@ -2209,7 +2209,7 @@ Agent B:
 "What is Agent A currently investigating?"
 ```
 
-If permissions allow, the gateway can retrieve recent active context.
+If permissions allow, Bifröst can retrieve recent active context.
 
 This is particularly useful in collaborative environments.
 
@@ -2243,7 +2243,7 @@ Agent B:
 Architecture X was rejected.
 ```
 
-The gateway should not silently merge them.
+Bifröst should not silently merge them.
 
 Instead, return:
 
@@ -2263,7 +2263,7 @@ The consuming agent can then reason about the conflict.
 
 # 70. No Artificial Consensus
 
-The gateway should retrieve evidence.
+Bifröst should retrieve evidence.
 
 It should not automatically decide which agent is correct.
 
@@ -2301,7 +2301,7 @@ Adding a new harness should ideally require implementing:
 ContextAdapter
 ```
 
-rather than modifying the gateway core.
+rather than modifying Bifröst core.
 
 For example:
 
@@ -2323,7 +2323,7 @@ The project should follow these principles.
 
 ### Principle 1 — Native history is truth
 
-Never make the gateway's index more authoritative than the original history.
+Never make Bifröst's index more authoritative than the original history.
 
 ### Principle 2 — Retrieval, not forced memory
 
@@ -2347,7 +2347,7 @@ Never couple the core to one harness.
 
 ### Principle 7 — Protocol-independent
 
-MCP is useful, but the gateway should not be fundamentally dependent on it.
+MCP is useful, but Bifröst should not be fundamentally dependent on it.
 
 ### Principle 8 — Agent-first
 
@@ -2382,7 +2382,7 @@ The complete conceptual system is:
              │             │             │
              └─────────────┼─────────────┘
                            ▼
-                 CONTEXT GATEWAY
+                 BIFRÖST
                            │
         ┌──────────────────┼──────────────────┐
         │                  │                  │
@@ -2405,7 +2405,7 @@ The complete conceptual system is:
 
 # 75. Relationship to the Broader Agent Infrastructure Stack
 
-The Context Gateway is one primitive in a broader agent-computer ecosystem.
+Bifröst is one primitive in a broader agent-computer ecosystem.
 
 Conceptually:
 
@@ -2415,7 +2415,7 @@ Conceptually:
           ┌─────────────────┼──────────────────┐
           │                 │                  │
           ▼                 ▼                  ▼
-       AID              Agentic UI       Context Gateway
+       AID              Agentic UI       Bifröst
           │                 │                  │
           ▼                 ▼                  ▼
      Computer/device    Applications       Agent history
@@ -2444,7 +2444,7 @@ Agent → computer/device
 Agent → application
 ```
 
-### Context Gateway
+### Bifröst
 
 ```text
 Agent → previous agent work
@@ -2470,7 +2470,7 @@ The project can ultimately be summarized by one idea:
 
 > **An agent should be able to query the work that other agents have already done without requiring those agents to manually create memories or transfer their entire context.**
 
-The gateway turns isolated histories:
+Bifröst turns isolated histories:
 
 ```text
 Agent A ── History A
@@ -2483,7 +2483,7 @@ Agent C ── History C
 into a federated context space:
 
 ```text
-                 Context Gateway
+                 Bifröst
                 /       |       \
                /        |        \
         History A   History B   History C
@@ -2504,13 +2504,13 @@ while preserving the most important architectural constraint:
               Native Agent History
                        │
                        ▼
-              Context Gateway Index
+              Bifröst Index
                        │
                        ▼
                  Agent Retrieval
 ```
 
-The gateway therefore does not attempt to become the place where agent knowledge lives.
+Bifröst therefore does not attempt to become the place where agent knowledge lives.
 
 It becomes the **way agents find knowledge that already exists elsewhere**.
 
@@ -2604,7 +2604,7 @@ Session B subsequently asks:
 "What did Codex decide about the collaboration architecture?"
 ```
 
-The gateway must:
+Bifröst must:
 
 1. identify relevant Codex history,
 2. search it,
@@ -2656,7 +2656,7 @@ This creates an important distinction:
 
 The histories can remain distributed, private, and native to their respective systems.
 
-The gateway simply provides a standardized way to ask:
+Bifröst simply provides a standardized way to ask:
 
 > **"What happened over there?"**
 
@@ -2666,4 +2666,4 @@ and receive the relevant answer with enough evidence to trust it.
 
 # 80. One-Sentence Definition
 
-**Agent Context Gateway is an open-source, federated context retrieval layer that lets agents semantically search and retrieve relevant context from other agents' native histories—across sessions, subagents, harnesses, and machines—without requiring a separate authoritative memory database.**
+**Bifröst is an open-source, federated context retrieval layer that lets agents semantically search and retrieve relevant context from other agents' native histories—across sessions, subagents, harnesses, and machines—without requiring a separate authoritative memory database.**

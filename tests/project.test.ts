@@ -28,7 +28,7 @@ function sess(id: string, cwd: string, text: string): string {
 }
 
 beforeAll(async () => {
-  const root = await mkdtemp(join(tmpdir(), "acg-proj-"));
+  const root = await mkdtemp(join(tmpdir(), "bifrost-proj-"));
   repoA = join(root, "repoA");
   repoB = join(root, "repoB");
   plain = join(root, "plain");

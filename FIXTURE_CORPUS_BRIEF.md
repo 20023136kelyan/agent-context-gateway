@@ -1,6 +1,6 @@
 # Fixture Corpus Expansion Brief
 
-Expand the Agent Context Gateway evaluation corpus from 12 sessions to roughly
+Expand the Bifröst evaluation corpus from 12 sessions to roughly
 60–100, and its golden set from 15 queries to roughly 60–100, without losing the
 properties that let it tell retrieval arms apart — and add the one case it
 currently cannot produce.

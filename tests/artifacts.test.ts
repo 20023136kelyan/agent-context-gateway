@@ -12,7 +12,7 @@ import { relatedArtifacts, sessionsForArtifact, traverseArtifactGraphBFS } from 
 let index: TantivyIndex;
 
 beforeAll(async () => {
-  const root = await mkdtemp(join(tmpdir(), "acg-graph-"));
+  const root = await mkdtemp(join(tmpdir(), "bifrost-graph-"));
   const claudeDir = join(root, "claude");
   await mkdir(join(claudeDir, "s"), { recursive: true });
   const sess = (id: string, texts: string[]) =>
