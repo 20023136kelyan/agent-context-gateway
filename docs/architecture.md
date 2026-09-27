@@ -1,6 +1,6 @@
-# Work Layer
+# Bifröst
 
-**A Persistent, Realtime Context Layer for Agentic Software Development**
+**A persistent, realtime work layer for agentic software development**
 *Architecture & product concept*
 
 > **Core thesis:** Agents should encounter the relevant history of work at the
@@ -15,7 +15,7 @@ object. The result is a coordination gap: agents repeat failed approaches,
 decisions disappear into transcripts, and it becomes difficult to understand
 where work is happening or what has already been learned.
 
-The Work Layer is a standalone system designed to close that gap. It sits on top
+Bifröst is a standalone system designed to close that gap. It sits on top
 of a structural map of the codebase and maintains a realtime, temporal layer of
 work context anchored to code locations. The system records mechanical activity,
 live presence, compact typed findings, and task state. Context is delivered by
@@ -30,11 +30,11 @@ repository-native references such as path, symbol, line span, and commit rather
 than ephemeral graph node IDs, allowing the work layer to survive map rebuilds and
 to reference code the graph has not yet indexed.
 
-> **Mental model:** The code map is the road map. The Work Layer is the traffic,
+> **Mental model:** The code map is the road map. Bifröst is the traffic,
 > traces, warnings, active vehicles, and recent events moving across it.
 
 ```text
-                         WORK LAYER
+                          BIFRÖST
        ┌─────────────────────────────────────┐
        │ activity   presence   findings      │
        │ tasks      trails     timelines     │
@@ -88,18 +88,18 @@ The architecture consists of two independent but co-located layers.
 | Layer | Purpose | Examples | Lifecycle |
 |---|---|---|---|
 | Base map | Represent the structure of the codebase. | Files, symbols, imports, calls, regions. | Snapshot; rebuilt periodically. |
-| Work Layer | Represent what agents are doing and learning about that structure. | Activity, presence, findings, tasks, trails, timelines. | Continuous; evolves in realtime. |
+| Bifröst (work layer) | Represent what agents are doing and learning about that structure. | Activity, presence, findings, tasks, trails, timelines. | Continuous; evolves in realtime. |
 
-The map provides topology; the Work Layer provides operational context. Neither
+The map provides topology; Bifröst provides operational context. Neither
 should be forced to own the other's concerns.
 
 ### 3.2 Views are projections of one layer
 
 Notes, heatmaps, agent presence, activity trails, timelines, and map annotations
-are not separate memory systems. They are views over the same underlying Work Layer.
+are not separate memory systems. They are views over the same underlying Bifröst.
 
 ```text
-Work Layer state
+Bifröst state
       │
       ├── Notes / findings view
       ├── Activity heatmap
@@ -109,9 +109,9 @@ Work Layer state
       └── Map-attached context
 ```
 
-## 4. What Lives in the Work Layer
+## 4. What Lives in Bifröst
 
-The Work Layer intentionally distinguishes mechanical telemetry from semantic
+Bifröst intentionally distinguishes mechanical telemetry from semantic
 knowledge and live state. This prevents every event from becoming a "memory."
 
 ### 4.1 Activity — mechanical history
@@ -190,7 +190,7 @@ anchor = {
 }
 ```
 
-This lets the Work Layer remain useful even when the underlying structural map is
+This lets Bifröst remain useful even when the underlying structural map is
 rebuilt, incomplete, or temporarily stale.
 
 ### 5.2 Every item has time semantics
@@ -217,7 +217,7 @@ silently presented as current.
 
 ## 6. Delivery: Context by Place, Not Search
 
-The primary product behavior is contextual delivery. The Work Layer should
+The primary product behavior is contextual delivery. Bifröst should
 surface information because an agent arrived at a relevant location, not because
 the agent remembered to perform a search.
 
@@ -251,7 +251,7 @@ the agent begins modifying code.
 ### 6.3 Map queries
 
 When a user or agent opens a code-map node, the node can be returned together
-with the relevant Work Layer items. This makes the work context part of
+with the relevant Bifröst items. This makes the work context part of
 navigating the codebase rather than a separate research activity.
 
 ### 6.4 `where(topic)`
@@ -262,7 +262,7 @@ symbols, regions, or tasks, with their attached findings and status.
 
 ## 7. Agent Interaction Model
 
-The Work Layer is principally an informant. It should make relevant work visible
+Bifröst is principally an informant. It should make relevant work visible
 without taking control away from the agent.
 
 | Interaction | Default behavior |
@@ -274,7 +274,7 @@ without taking control away from the agent.
 | Conflicting finding | Expose the conflict; do not silently lock behavior. |
 | Task state update | Allow later work to verify, fail, revert, or supersede. |
 
-> **Non-blocking principle:** The Work Layer should inform by default. It is
+> **Non-blocking principle:** Bifröst should inform by default. It is
 > contextual infrastructure, not an autonomous gatekeeper.
 
 ## 8. How Knowledge Enters the Layer
@@ -309,7 +309,7 @@ that belief.
 ## 10. System Architecture
 
 A reference architecture can remain small and local-first. The major components
-are separable so that the Work Layer can exist independently of any particular
+are separable so that Bifröst can exist independently of any particular
 code graph implementation or agent provider.
 
 ```text
@@ -321,7 +321,7 @@ code graph implementation or agent provider.
                                 │ events / queries
                                 ▼
                    ┌──────────────────────────┐
-                   │      Work Layer API      │
+                   │       Bifröst API        │
                    │ ingest · resolve · read  │
                    └───────┬─────────┬────────┘
                            │         │
@@ -347,7 +347,7 @@ code graph implementation or agent provider.
 
 ### 10.1 Local-first deployment
 
-For the initial product, the Work Layer and its store can live on the
+For the initial product, Bifröst and its store can live on the
 developer's machine. The system can observe local agents, shells, and repository
 activity without requiring a remote dependency for core operation.
 
@@ -361,7 +361,7 @@ the user-facing operational context.
 ### 10.3 Syncable store
 
 A syncable representation can later support multi-machine workflows and cloud
-agents. This is an extension of the same Work Layer model, not a requirement for
+agents. This is an extension of the same Bifröst model, not a requirement for
 proving the core interaction.
 
 ## 11. Product and Business Boundary
@@ -372,7 +372,7 @@ situational awareness.
 
 | Core product | Optional service |
 |---|---|
-| Local Work Layer store | Hosted extraction |
+| Local Bifröst store | Hosted extraction |
 | Place-based delivery | Hosted embeddings |
 | Local agent/tool integration | Metered model execution |
 | Presence and activity | Cloud sync |
@@ -406,7 +406,7 @@ performance, no extraction system can rescue the core hypothesis.
 
 - One repository and a small number of concurrent agents.
 - A base map sufficient to identify files and optionally symbols.
-- A local Work Layer store.
+- A local Bifröst store.
 - Manually authored findings.
 - Presence state.
 - A file-touch trigger that injects relevant findings.
@@ -416,7 +416,7 @@ performance, no extraction system can rescue the core hypothesis.
 
 | Condition A | Condition B |
 |---|---|
-| Agent receives normal repository state and task context. | Same, plus correct Work Layer context delivered at relevant places. |
+| Agent receives normal repository state and task context. | Same, plus correct Bifröst context delivered at relevant places. |
 | No place-triggered finding. | Top 2–3 relevant findings, bounded to ~150 tokens. |
 
 ### 13.4 Success criteria
@@ -462,8 +462,8 @@ incrementally.
 
 ## 16. Closing Model
 
-The Work Layer is best understood as a persistent operational layer over a living
-codebase. The code map describes the structure. The Work Layer records the work
+Bifröst is best understood as a persistent operational layer over a living
+codebase. The code map describes the structure. Bifröst records the work
 that moves through that structure: who was there, what they touched, what they
 learned, what they decided, what remains unresolved, and what has since changed.
 

@@ -1,4 +1,4 @@
-# Work Layer
+# Bifröst
 
 **A local-first, temporal, multi-agent work layer anchored to code locations and
 delivered contextually as agents move through the codebase.**
@@ -9,12 +9,12 @@ working, instead of having to stop and search for it. When an agent touches
 session already tried the obvious fix and why it failed. It should not need to
 know that a memory system exists.
 
-Full concept: [`docs/work-layer-architecture.md`](./docs/work-layer-architecture.md).
+Full concept: [`docs/architecture.md`](./docs/architecture.md).
 
-> **Branch note.** This branch starts the Work Layer direction. `main` holds the
-> previous approach, Bifröst (formerly the Agent Context Gateway: federated search over native
-> agent histories), and its README, spec and plans remain in this tree for
-> reference until they are retired or reused.
+> **Branch note.** This branch is the new direction for Bifröst. `main` holds
+> the previous approach (federated search over native agent histories,
+> originally named Agent Context Gateway); its code, spec and plans remain in
+> this tree for reference until they are retired or reused.
 
 ## Status: pre-MVP
 
@@ -27,7 +27,7 @@ and the project stops.
 - [ ] Pick one small repository and design a set of *trap tasks*, where earlier
       work holds a warning or decision that a fresh agent would otherwise miss
 - [ ] Hand-author findings for it (typed, anchored, ≤ 280 chars)
-- [ ] Local Work Layer store: findings, presence, activity
+- [ ] Local Bifröst store: findings, presence, activity
 - [ ] File-touch trigger that injects the top 2–3 relevant findings (~150 tokens max), or stays silent
 - [ ] A/B harness: baseline agent vs. the same agent with place-triggered findings
 - [ ] Decide: ≥ 15% faster or cheaper, or materially better trap-task completion, or stop
@@ -37,7 +37,7 @@ and the project stops.
 Two layers, kept separate:
 
 ```text
-                         WORK LAYER
+                          BIFRÖST
        ┌─────────────────────────────────────┐
        │ activity   presence   findings      │   continuous, realtime
        │ tasks      trails     timelines     │
@@ -50,7 +50,7 @@ Two layers, kept separate:
        └─────────────────────────────────────┘
 ```
 
-The code map is the road map. The Work Layer is the traffic, traces, warnings
+The code map is the road map. Bifröst is the traffic, traces, warnings
 and recent events moving across it.
 
 | Kind | Answers | Character |
@@ -94,7 +94,7 @@ are never the user-facing representation.
 
 ## Deployment boundary
 
-**Core (local):** Work Layer store, place-based delivery, agent/tool integration,
+**Core (local):** Bifröst store, place-based delivery, agent/tool integration,
 presence and activity, code-map integration. Nothing needs a remote dependency.
 
 **Optional service:** hosted extraction and embeddings on open-weight models
@@ -114,13 +114,13 @@ the smallest useful finding schema, conflict display, staleness detection, what
 counts as "new", presence expiry, when to summarize activity into findings, and
 how much semantics place resolution really needs.
 
-## Inherited from Bifröst
+## Inherited from the search approach
 
-The Bifröst code in `src/` stays in place. It is not the
-product on this branch. Parts of it may serve the Work Layer, but each is
+The history-search code in `src/` from the previous approach stays in place.
+It is not the product on this branch. Parts of it may be reused, but each is
 unproven here and stays unused until the experiment calls for it:
 
-| Bifröst piece | Possible Work Layer role |
+| Existing piece | Possible role |
 |---|---|
 | `src/adapters/` (Claude Code, Codex, Cursor, OpenCode, git) | Activity capture and offline extraction input |
 | `src/temporal/` (bi-temporal invalidation, `asOf`) | Supersession and validity intervals for findings |
@@ -128,5 +128,6 @@ unproven here and stays unused until the experiment calls for it:
 | `src/collaboration/live.ts` | Starting point for presence |
 | `src/artifacts/graph.ts` | A rough file-level code map |
 | `src/transports/mcp.ts`, `src/git/hooks.ts`, session hooks | Integration points for triggers and ingestion |
+| `src/search/` | Candidate backend for `where(topic)` and extraction |
 
-Running Bifröst: `npm install && npx tsx src/cli.ts --help`.
+Running the existing search CLI: `npm install && npx tsx src/cli.ts --help`.
