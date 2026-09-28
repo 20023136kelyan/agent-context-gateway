@@ -240,6 +240,7 @@ npm run exp:run -- --agent codex --tasks refresh-rotation --arms control,hand-pu
 | `--model` | agent default | Pinned model; use the same for every arm |
 | `--budget-usd` | none | Per-run spending cap (Claude Code `--max-budget-usd`; ignored by OpenCode) |
 | `--timeout-min` | 20 | Per-run wall-clock limit |
+| `--idle-min` | 6 | Stop a run after this long with no agent output (a stalled model); it is marked invalid. `0` turns it off |
 | `--concurrency` | 2 | Parallel runs |
 | `--setting-sources` | `project` | Which Claude Code settings load. `project` keeps your user hooks and CLAUDE.md out of the runs. |
 | `--resume` | off | With `--out <dir>`: keep that batch's valid runs, re-run the missing and invalid ones |

@@ -72,6 +72,8 @@ export interface RunOptions {
   agentCmd?: string;
   budgetUsd?: number;
   timeoutMs: number;
+  /** Stop a run after this long with no agent output (stream formats only). */
+  idleMs?: number;
   settingSources: string;
   extraArgs: string[];
   keep: boolean;
@@ -242,22 +244,33 @@ function openCodeCommand(task: TaskSpec, arm: Arm, opts: RunOptions, paths: { ws
   return { cmd: "opencode", args, shell: false };
 }
 
-function runProcess(cmd: string, args: string[], opts: { cwd: string; env: NodeJS.ProcessEnv; shell: boolean; timeoutMs: number; stdoutFile: string; stderrFile: string }): Promise<{ code: number | null; timedOut: boolean }> {
+function runProcess(cmd: string, args: string[], opts: { cwd: string; env: NodeJS.ProcessEnv; shell: boolean; timeoutMs: number; idleMs?: number; stdoutFile: string; stderrFile: string }): Promise<{ code: number | null; timedOut: boolean }> {
   return new Promise((resolvePromise) => {
     const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env, shell: opts.shell, stdio: ["ignore", "pipe", "pipe"] });
     let timedOut = false;
-    const timer = setTimeout(() => {
+    const stop = () => {
       timedOut = true;
       child.kill("SIGTERM");
       setTimeout(() => child.kill("SIGKILL"), 5000).unref();
-    }, opts.timeoutMs);
-    child.stdout.on("data", (d) => appendFileSync(opts.stdoutFile, d));
+    };
+    const timer = setTimeout(stop, opts.timeoutMs);
+    // Stop a run whose agent has printed nothing for idleMs: a stalled model connection.
+    // invalidReason() then marks it invalid from the trace timestamps.
+    let idle = opts.idleMs ? setTimeout(stop, opts.idleMs) : undefined;
+    child.stdout.on("data", (d) => {
+      appendFileSync(opts.stdoutFile, d);
+      if (idle) {
+        clearTimeout(idle);
+        idle = setTimeout(stop, opts.idleMs);
+      }
+    });
     child.stderr.on("data", (d) => appendFileSync(opts.stderrFile, d));
     child.on("error", (err) => {
       appendFileSync(opts.stderrFile, `spawn error: ${err.message}\n`);
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      if (idle) clearTimeout(idle);
       resolvePromise({ code, timedOut });
     });
   });
@@ -429,6 +442,7 @@ export async function runOne(task: TaskSpec, arm: Arm, rep: number, opts: RunOpt
     env: { ...process.env, ...env },
     shell,
     timeoutMs: opts.timeoutMs,
+    idleMs: opts.idleMs,
     stdoutFile: traceFile,
     stderrFile: join(runDir, "agent.stderr.log"),
   });
@@ -523,7 +537,7 @@ async function main(argv: string[]) {
   const arms = (arg(argv, "arms") ?? "control,hand").split(",").filter(Boolean).map(resolveArm);
   if (tasks.length === 0) {
     console.error(`usage: run.ts --tasks <id,...> [--arms control,hand] [--reps 10] [--agent claude|opencode|codex|command] [--model M]
-  [--budget-usd 3] [--timeout-min 20] [--concurrency 2] [--out <dir>] [--resume] [--setting-sources project] [--keep]
+  [--budget-usd 3] [--timeout-min 20] [--idle-min 6] [--concurrency 2] [--out <dir>] [--resume] [--setting-sources project] [--keep]
   [--agent-cmd "<shell command with {workspace} {promptFile} {runDir}>"] [-- <extra agent args>]`);
     process.exit(2);
   }
@@ -534,6 +548,7 @@ async function main(argv: string[]) {
     agentCmd: arg(argv, "agent-cmd"),
     budgetUsd: arg(argv, "budget-usd") ? Number(arg(argv, "budget-usd")) : undefined,
     timeoutMs: Number(arg(argv, "timeout-min", "20")) * 60_000,
+    idleMs: Number(arg(argv, "idle-min", "6")) * 60_000 || undefined,
     settingSources: arg(argv, "setting-sources", "project") ?? "project",
     extraArgs: dashdash >= 0 ? argv.slice(dashdash + 1) : [],
     keep: argv.includes("--keep"),
