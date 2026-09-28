@@ -215,9 +215,10 @@ npm run exp:run -- --agent codex --tasks refresh-rotation --arms control,hand-pu
 - **Agents with unrestricted file access could find the task files.** A thorough
   agent could search the filesystem and find `experiments/`. Check `readPaths` in
   `result.json` if a result looks too good.
-- **Not yet run against real agents from here.** This container has no logged-in
-  agent to spend with. The plumbing is tested with the scripted agent, and the
-  first real step is the one-rep smoke test above.
+- **Not yet run against real agents.** The plumbing is tested with the scripted
+  agent only. The first real step is the one-rep smoke test above, run on your
+  own machine: in the cloud dev container the runs execute as root, Claude Code
+  refuses `bypassPermissions` there, and the headless runs need it.
 - **The Codex runner is untested.** Its flags follow `codex exec` as documented;
   verify on first use. Push delivery is not offered for Codex (see the study,
   §7.1 of `docs/study/bifrost-on-maps.md`).
