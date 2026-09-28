@@ -83,14 +83,19 @@ supersede what they're shown.
 
 ## How knowledge gets in
 
-| Path | Strength | Trade-off |
-|---|---|---|
-| Session-end note by the agent | Cheapest, highest local context | Depends on agent cooperation |
-| Offline extraction over a finished task | No special behavior needed | May miss implicit knowledge |
-| Agent-authored correction or vote | Continuous maintenance | Needs good UX and trust signals |
+Bifröst is built by the service from agents' work history. Agents don't have
+to write anything, and the user's own model is never used to maintain it.
 
-Extraction is scrubbed and constrained to the finding schema. Full transcripts
-are never the user-facing representation.
+```text
+agent traces + git ─► events (scrubbed, local) ─► placed on the map ─► episodes
+  ─► classified (rules first, hosted models for flagged candidates)
+  ─► reconciled against the log: add · update · supersede · dismiss
+```
+
+Agents can confirm, dispute or correct what they are shown. Those corrections
+go through the same reconciliation step and are a secondary channel. Raw
+transcripts stay local, and the service keeps no episode content after
+classification. Design: [`docs/study/bifrost-on-maps.md`](./docs/study/bifrost-on-maps.md).
 
 ## Deployment boundary
 

@@ -279,18 +279,36 @@ without taking control away from the agent.
 
 ## 8. How Knowledge Enters the Layer
 
-There are three complementary ingestion paths. They trade immediacy against cost
-and extraction quality.
+Bifröst is built and maintained by the service from agents' work history. It
+does not rely on agents choosing to write to it, and it never uses the user's
+own model or tokens.
 
-| Path | When | Strength | Trade-off |
-|---|---|---|---|
-| Session-end note | Agent leaves a note while it still remembers why. | Cheapest semantic source; high local context. | Depends on agent cooperation. |
-| Offline extraction | One pass over a finished task: request + reply + edits + failures. | Works without requiring special behavior during the task. | Requires extraction; may miss implicit knowledge. |
-| Agent-authored correction | Agent adds, edits, or votes on an existing finding. | Creates continuous maintenance and correction. | Needs good UX and trust signals. |
+1. **Streamline.** The traces agent tools already write (Claude Code, Codex,
+   Cursor and others) and git history are read locally and normalized into a
+   stream of typed work events: reads, edits, commands, tests, commits,
+   reverts. They are scrubbed before anything leaves the machine.
+2. **Place.** Each event is resolved to places on the system map.
+3. **Classify.** Events are grouped into episodes, one attempt at one thing.
+   Cheap rules classify first (struggles, fixes, reverts, verified work,
+   unfinished work, decision language). Hosted open-weight models handle only
+   the candidates the rules flag.
+4. **Reconcile.** Each classified episode is compared with the entries already
+   at its places, and either **adds** an entry, **updates** one (reinforce,
+   refine, change task state, supersede), or is **dismissed**.
+5. **Re-validate.** Later work, code changes and reverts flow through the same
+   pipeline, so entries are confirmed, flagged stale or superseded without
+   manual curation.
 
-Extraction should be scrubbed and constrained to the structured finding schema.
-The system is not attempting to preserve full private transcripts as the
-user-facing knowledge representation.
+| Path | Role |
+|---|---|
+| Work-history pipeline (above) | Primary. Builds and updates the layer continuously. |
+| Agent corrections (confirm, dispute, correct) | Secondary. Enter the reconciliation step as high-trust events. |
+
+Extraction is constrained to the structured finding schema. Raw transcripts
+stay on the user's machine. The service keeps no episode content after
+classification, and full transcripts are never the user-facing representation.
+
+The detailed design is in [`study/bifrost-on-maps.md`](./study/bifrost-on-maps.md).
 
 ## 9. Lifecycle and Decay
 

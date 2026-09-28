@@ -1,255 +1,288 @@
 # Bifröst on a system map: design from the study
 
-This document turns the Graphify and Graphiti studies into design decisions, one section per question:
+This document turns the Graphify and Graphiti studies into a design for Bifröst ([Graphify](./graphify.md), [Graphiti](./graphiti.md)).
 
-1. how to add a layer to a map;
-2. how agents discover and use maps;
-3. how maps update;
-4. the map as a spatial anchor;
-5. serving the layer to agents.
+**The model:**
 
-Every claim about the tools points to the detailed studies ([Graphify](./graphify.md), [Graphiti](./graphiti.md)).
+- A **system map** such as Graphify describes the codebase. It is the terrain every agent works across.
+- **Bifröst** is a shared log laid over that map. It records what agents learned, tried, decided and are doing at each place. Every agent, in every agent system, can read it at any time.
+- **Built by a service, not by the user's agents.** The log is built and maintained from the agents' work history. Agents don't have to write anything, and the user's own model and tokens are never used to maintain it.
+- **Agents can correct entries,** but that is a secondary channel.
+
+Contents:
+
+1. How Bifröst is built and updated
+2. The event pipeline in detail
+3. Reconciliation: add, update, supersede, dismiss
+4. The map as the anchor
+5. Keeping up with the map and the code
+6. Serving the log to agents
+7. Deployment boundary
+8. What to build first
 
 ---
 
-## 1. Adding a layer to a map
+## 1. How Bifröst is built and updated
 
-**Graphify is the map.** Graphiti is a memory engine and plays no part in the anchoring.
-
-**Rules for the coupling:**
-
-1. **Read, never write.** Bifröst reads `graphify-out/graph.json`. It never adds fields or nodes to it: the file is rebuilt, guarded against shrinking, sorted, and merged by Graphify's own git driver.
-2. **Keep a separate store.** Bifröst keeps its records (findings, tasks, presence, activity) in its own local store, keyed by Bifröst anchors (§4).
-3. **Join when displaying.** Map nodes and Bifröst records are joined only when something is rendered. Graphify's own overlay works the same way: a sidecar keyed by node ID, merged in at render time.
-4. **Hide the map behind an adapter.** A small interface, so Graphify is the first map rather than the only one:
-
-```ts
-interface MapAdapter {
-  id: "graphify" | string;
-  // Freshness
-  version(): { builtAtCommit?: string; mtimeMs: number };   // reload when changed
-  isFreshFor(path: string): boolean;                         // file mtime <= map mtime
-  // Place resolution
-  symbolsIn(path: string): MapSymbol[];                      // ordered by start line
-  nodeFor(path: string, symbol?: string): MapSymbol | null;
-  // Neighbourhood
-  neighbors(nodeId: string, opts: { relations?: string[]; hops?: 1 | 2 }): MapEdge[];
-  dependents(nodeId: string, depth?: number): MapSymbol[];   // like `graphify affected`
-  area(nodeId: string): { label: string; members: string[] } | null;
-}
-interface MapSymbol { nodeId: string; label: string; path: string; startLine: number; endLine: number; kind: string }
-interface MapEdge { from: string; to: string; relation: string; confidence: "EXTRACTED" | "INFERRED" | "AMBIGUOUS"; line?: number }
+```text
+ agent work history            events                 classification              the log
+ ─────────────────             ──────                 ──────────────              ───────
+ Claude Code JSONL  ┐
+ Codex session logs ├─► adapters ─► normalize ─► place on map ─► episodes ─► classify ─► reconcile ─► entries
+ Cursor state DB    │   (local)     + scrub      (Graphify)       (group)     (rules,     (add /        (anchored,
+ OpenCode, …        │                                                         then       update /      typed,
+ git (commits,      ┘                                                         service    supersede /   temporal)
+ reverts, checkouts)                                                          models)    dismiss)
+                                                        │                                                    │
+                                                        └──────► activity + presence (mechanical) ───────────┤
+                                                                                                             ▼
+                                                                           delivery to every agent, at the place
 ```
 
-The Graphify adapter loads `graph.json` once and indexes it by path and by node ID. It re-reads the file when `(mtime, size)` changes, as `graphify.serve` does (a reload took 56 ms here). `endLine` is derived: the next symbol's start line minus one, within the same file.
+1. **Streamline.** Work history that already exists is turned into a stream of typed events. Agent tools write full traces of their sessions anyway, and git records what landed. Nothing extra is asked of the agent.
+2. **Place.** Each event is resolved to places on the system map: files, symbols, line ranges.
+3. **Classify.** Events are grouped into episodes (one attempt at one thing) and classified. Cheap rules run first, then the service's own models only where rules can't decide.
+4. **Reconcile.** Each classified episode is compared with what the log already holds at those places. It either **adds** an entry, **updates** one (reinforces, refines, changes a task's state, or supersedes it), or is **dismissed**.
+5. **Deliver.** Whenever any agent reaches a place, the current entries there are available to it.
+6. **Re-validate.** Code changes, reverts and later work keep flowing through the same pipeline, so entries are confirmed, flagged stale, or superseded without anyone curating them.
+
+Agents' direct edits (confirm, down-vote, correct) enter at step 4 as high-trust events. They do not bypass the pipeline.
 
 ---
 
-## 2. How agents discover and use maps, and what Bifröst takes from it
+## 2. The event pipeline in detail
 
-| Mechanism | Graphify | Graphiti | Bifröst |
-|---|---|---|---|
-| Skill | Yes, 20+ platforms | No | Yes: a short skill explaining notes, `at`, `note`, `vote` |
-| Always-on instructions (`CLAUDE.md`, `AGENTS.md`, Cursor rules) | Yes | No | Yes: needed on Codex and Cursor |
-| `PreToolUse` hook | Yes: a generic nudge, 65 ms | No | **Yes: the primary channel, with place-specific content** |
-| MCP tools | Yes | Yes | Yes |
-| Application injects results into the prompt | No | Zep's model | Not applicable |
+### 2.1 Sources
 
-The lesson from Graphify: **instructions and tool descriptions alone don't make an agent use a map.** That is why Graphify added hooks, and then a strict mode that blocks the first read. Its hooks still only *remind*. Bifröst's advantage is that its hook can carry the content itself, so the agent never has to decide to ask.
+| Source | What it gives | Existing code |
+|---|---|---|
+| Claude Code session JSONL | Prompts, replies, every tool call with inputs and results | `src/adapters/claude.ts` |
+| Codex session logs | Same | `src/adapters/codex.ts` |
+| Cursor state database | Same, less structured | `src/adapters/cursor.ts` |
+| OpenCode, SWE-style trajectories | Same | `src/adapters/opencode.ts`, `trajectories.ts` |
+| git | Commits, reverts, branch switches, renames, merged diffs | `src/adapters/git.ts`, `src/git/hooks.ts` |
+| Live hooks (optional) | The same tool events seconds earlier than the traces, for presence | `src/setup.ts` hook installer |
+| Test and CI output (later) | Pass/fail per test, over time | none |
+
+The adapters read the harnesses' native files incrementally, using byte offsets and cursors, as the search product already does.
+
+### 2.2 Event schema
+
+```ts
+interface WorkEvent {
+  id: string;
+  at: string;                        // when it happened
+  session: string; agentSystem: "claude-code" | "codex" | "cursor" | string;
+  repo: string; commit?: string;     // HEAD at the time
+  kind:
+    | "read" | "search" | "edit" | "create" | "delete" | "rename"
+    | "run" | "test"                 // shell command, test command
+    | "prompt" | "reply"             // natural-language turns (scrubbed)
+    | "commit" | "revert" | "checkout";
+  places: Place[];                   // resolved on the map (§4)
+  outcome?: "ok" | "error" | "fail" | "pass" | "interrupted";
+  digest: string;                    // short scrubbed summary: command, error signature, edit hunk header
+  ref: { source: string; offset: number };  // back to the native trace; never uploaded
+}
+```
+
+Notes:
+
+- **Scrubbing happens locally, at normalization.** Secrets, tokens, keys and paths outside the repo are removed before anything leaves the machine (§7).
+- **`places` come from the map.** An edit's hunk becomes the symbols it overlaps. A test command becomes the test file and, through the map, the code under test. A stack trace becomes the frames' symbols. A `grep` result becomes the files hit.
+- **Activity and presence need nothing more.** They come straight from placed events: "who touched `refreshSession` in the last 10 minutes" is a query over events. No model is involved.
+
+### 2.3 Episodes
+
+Single events are too small to learn from. Events are grouped into **episodes**, each one attempt at one thing:
+
+- **boundaries:** a new user prompt, an idle gap, a commit, or a switch to a different area of the map;
+- **each episode keeps:** its prompt (the intent), its places, the edits made, the commands run and their outcomes, and how it ended (committed, reverted, abandoned, still open).
+
+### 2.4 Classification
+
+Two tiers, so the service's models run only where they add something.
+
+**Tier 1: rules, with no model.** These alone cover task state, a large share of warnings, and all activity:
+
+| Signal | Classification |
+|---|---|
+| Edit followed by the same failing test or command, several times at the same place | candidate `warning` or `known-issue` (a struggle) |
+| Error that went away after an edit | candidate `discovery` (fix found), linked to the error signature |
+| `git revert` of a commit | the task on that commit's places becomes **reverted**; related entries are candidates for supersede |
+| Tests pass after a failing run, then commit | task becomes **verified** |
+| Session ended with uncommitted edits | `in-progress` or `open-thread` at those places |
+| Conclusion language in replies ("we'll go with…", "decided…", "because…") | candidate `decision`; the cue lists in `src/decisions/` already do this |
+| Reads and searches only, no outcome | activity only, **dismissed** as knowledge |
+
+**Tier 2: service models, only for candidates from tier 1.** A hosted open-weight model gets the scrubbed episode digest (not the full transcript) and returns, constrained to the schema:
+
+- keep or drop;
+- type;
+- a one-line text of at most 280 characters;
+- confidence;
+- which places the finding really belongs to, chosen from the episode's placed events.
+
+This is the step where extraction happens, and it runs in the service, metered, with no retention.
 
 ---
 
-## 3. How maps update, and how Bifröst keeps up
+## 3. Reconciliation: add, update, supersede, dismiss
 
-**What Graphify does:**
+Every classified candidate is compared with the live entries at its places, including one hop out on the map.
 
-- rebuilds in the background on commit and branch switch (3–4 s here);
-- needs a manual `update` after a pull;
-- can watch files, with a 3 s debounce;
-- misses uncommitted work unless `watch` runs;
-- rebuilds communities on every change, and they move a lot (263 nodes renumbered by one added function).
+| Outcome | When | Effect |
+|---|---|---|
+| **Add** | Nothing at those places covers it | New entry: `validFrom = episode time`, evidence = this episode |
+| **Reinforce** | An entry says the same thing | Add the episode as evidence; raise confidence; update `lastSeen`. The text is unchanged. |
+| **Refine** | Same topic, more precise or with new detail | New text; the old text is kept in the entry's history |
+| **Change state** | A task-state signal (verified, failing, reverted) | Update the task; supersede `in-progress` notes that it settles |
+| **Supersede** | The new evidence contradicts the entry | Old entry gets `validUntil` and `supersededBy`, and is kept but no longer served as current |
+| **Dismiss** | Noise, duplicate with nothing new, or below the confidence floor | Nothing written. The episode stays as activity. |
 
-**What Bifröst does:**
+Rules decide first:
 
-1. **Watch the map file.** When `graph.json` changes, rebuild the anchor-binding cache (§4.3). No separate git hook is needed for the map.
-2. **Watch git for renames.** On `HEAD` change, run `git diff -M --name-status <old> <new>` and carry path anchors across renames *before* the map rebuild lands. This catches the case where Graphify replaced all 13 node IDs in a renamed file.
-3. **Never block on the map.** When the map is stale for a file (the file's mtime is later than `graph.json`), resolve by path and line against the working file. Mark map-derived context as possibly behind.
-4. **Detect staleness from the code, not the map.** Hash each anchored symbol's text on disk when the note is written, and again at delivery time (§4.4). This works even when the map is behind.
+- a revert supersedes the finding that described the reverted change;
+- a fix supersedes the `known-issue` it fixes;
+- an exact duplicate reinforces.
+
+A model is asked only for the ambiguous remainder: "does this contradict, refine, or repeat the entry?". This is the same question Graphiti asks in its `resolve_edge` step, but run by the service and applied only to candidates the rules could not settle.
+
+**Agent edits** are events of kind `vote`, `correct` or `supersede`. They run through the same table with high trust. A down-vote threshold dismisses an entry. A correction refines it.
+
+**Provenance.** Every entry keeps its evidence list, as links to episodes. Graphiti's model is the same: facts point back to the episodes that produced them. When evidence is removed (a session deleted, a branch dropped), entries that depended only on it are withdrawn.
 
 ---
 
-## 4. The map as a spatial anchor
+## 4. The map as the anchor
 
 ### 4.1 Anchor record
 
 ```ts
 interface Anchor {
-  repo: string;                 // remote URL or repo ID
+  repo: string;
   path: string;                 // repo-relative, as of `commit`
-  symbol?: string;              // "SearchService.search"; language-agnostic dotted path
+  symbol?: string;              // "SearchService.search"
   lineStart?: number; lineEnd?: number;
-  commit: string;               // HEAD when anchored
-  spanHash?: string;            // hash of the normalized symbol text (or line range)
-  // Derived cache: rebuilt from the map and never trusted without re-checking
-  binding?: { map: "graphify"; nodeId: string; builtAtCommit?: string };
+  commit: string;
+  spanHash?: string;            // hash of the normalized symbol text
+  binding?: { map: "graphify"; nodeId: string; builtAtCommit?: string };  // cache only
 }
 ```
 
-Levels of precision, finest first:
+Precision, finest first: symbol, then line range, then file, then directory, then repository.
 
-1. symbol (preferred);
-2. line range, when there is no symbol, such as config files;
-3. file;
-4. directory.
+The Graphify node ID is stored only as a cache. File renames replaced every ID in the file during the study, and communities reshuffle on small edits. Areas shown to agents use a smoothed community label, never a community ID.
 
-The repository itself is the coarsest level: a note on the repo appears only at session start.
+### 4.2 Map adapter
 
-### 4.2 Resolution: from an agent's action to places
+The map sits behind an interface, so Graphify is the first map and not the only one:
 
-Input: a tool event such as `Read src/search/search.ts` (optionally with a line range), an `Edit` with an old string, or a `Grep` hit list.
+```ts
+interface MapAdapter {
+  version(): { builtAtCommit?: string; mtimeMs: number };
+  isFreshFor(path: string): boolean;
+  symbolsIn(path: string): MapSymbol[];               // ordered; endLine derived from next start
+  nodeFor(path: string, symbol?: string): MapSymbol | null;
+  neighbors(nodeId: string, opts: { relations?: string[]; hops?: 1 | 2 }): MapEdge[];
+  dependents(nodeId: string, depth?: number): MapSymbol[];
+  area(nodeId: string): { label: string } | null;
+}
+```
 
-1. **Path:** normalize to repo-relative. Ignore anything outside the repo.
-2. **Symbols touched:**
-   - *Edit:* the symbols whose span contains the changed lines.
-   - *Read with an offset:* the symbols overlapping the range.
-   - *Whole-file read:* the file itself.
-   - Spans come from `MapAdapter.symbolsIn(path)` when the map is fresh for the file. Otherwise from a cheap local tree-sitter or regex pass over the current file.
-3. **Candidate notes:**
-   - **direct:** anchors on the same symbol, on the file, or with an overlapping line range;
-   - **near:** anchors one hop away through `calls`, `imports`, `inherits` or `implements`, where the edge is `EXTRACTED` or `INFERRED` with score ≥ 0.8;
-   - **dependents:** for an `Edit`, the callers of the edited symbol (like `graphify affected`, depth 1). This is where "someone else relies on this behaviour" warnings come from.
-4. Pass the candidates to the surfacing rules (§5.4).
+The Graphify adapter reads `graphify-out/graph.json` and re-reads it when its `(mtime, size)` changes. It never writes to it.
 
-### 4.3 Binding and re-binding when the map changes
+### 4.3 Placing an event
 
-- When the map changes, recompute `binding.nodeId` for each anchor from `path` and `symbol`.
-- If `path` no longer exists, follow the git rename map from §3.2.
-- If `symbol` is gone from the file, try, in order:
-  1. the same label elsewhere in the file (moved);
-  2. the same label with the same caller and callee labels anywhere in the repo (moved file, missed by git);
-  3. otherwise mark the anchor **orphaned**. It is then shown only through `where(topic)` and in session-start orientation, labelled "place no longer exists".
-- **Never bind to communities.** For "area" labels, use a smoothed area: the most frequent community *label* for the symbol over the last N builds, shown for orientation only.
-
-### 4.4 Staleness
-
-| Check | When | Result |
-|---|---|---|
-| `spanHash` unchanged | Delivery | Show normally |
-| `spanHash` changed | Delivery | Show with "code changed since this note (<age>)". Lower rank for `how-to` and `decision`; keep full rank for `warning` and `known-issue`. |
-| Anchor orphaned | Map rebuild | Remove from place-based delivery |
-| Newer note of the same type on the same anchor | Write | Mark superseded (explicit, §4.5) |
-
-Graphify flags entries stale per file. Here, appending one comment line flagged every entry in the file. A per-span hash avoids that.
-
-### 4.5 Time and supersession (taken from Graphiti, made explicit)
-
-- Every record carries:
-  - `validFrom`: when the observation was true;
-  - `recordedAt`: when it was written;
-  - `validUntil`, `supersededBy`, `supersededAt`.
-- Supersession happens only through an explicit act:
-  - an agent's `supersede(noteId, newNote)`;
-  - a `vote(-1)` threshold;
-  - a rule, such as a `reverted` task state superseding the `in-progress` note on the same anchor.
-- An LLM may *suggest* a supersession during offline extraction. It becomes real only after confirmation.
-- Delivery defaults to "true now". This is the opposite of Graphiti's search default, which returned the superseded warning in the test.
+1. **Path:** normalize to repo-relative; drop anything outside the repo.
+2. **Lines touched:** from the edit hunk, the read range, the stack frame, or the grep hit.
+3. **Symbols:** those whose span overlaps the lines, from the map when it is fresh for the file. Otherwise a local parse of the file as it was at that moment.
+4. **Links:** callers, callees and tests from the map's `calls`, `imports` and `implements` edges. These are stored on the event, so later retrieval can surface "someone struggled with what you are about to call".
 
 ---
 
-## 5. Serving the layer to agents
+## 5. Keeping up with the map and the code
 
-### 5.1 Process layout
+- **Map rebuilt** (`graph.json` changed): re-bind every anchor from `path` and `symbol`.
+  - If a symbol moved within its file, follow it by label.
+  - If its file was renamed, follow git's rename detection (`git diff -M`) from the commit events already in the stream.
+  - If it is gone, the anchor is **orphaned**: it is served only in session-start orientation and topic lookups, as "place no longer exists".
+- **Code changed at an anchor** (a commit event whose hunk overlaps the span, or the `spanHash` differs): the entry is flagged "code changed since". The next episode at that place re-confirms it (reinforce), refines it, or supersedes it through normal reconciliation. Nobody curates by hand.
+- **Map behind the working tree:** events are placed from the file as it was at the time. The binding catches up on the next map build.
+- **Decay:** activity ages out of place-based delivery quickly. A finding stays current until it is superseded, voted down, or has sat flagged stale long enough without re-confirmation. The age limits are an open parameter.
 
-```text
-agent tool call ──► hook shim (tiny binary or node script, <5 ms start)
-                        │  unix socket / localhost
-                        ▼
-                 bifrost daemon (long-running)
-                   ├─ store (sqlite)
-                   ├─ MapAdapter(graphify) ── watches graphify-out/graph.json
-                   ├─ git watcher (HEAD, renames)
-                   └─ per-session state (what was shown, presence)
-```
+---
 
-Graphify's guard starts a Python process on every tool call (65 ms here). **Bifröst's budget is 30 ms end to end at p95**: a small shim talking to a warm daemon. If the daemon doesn't answer within about 50 ms, the shim prints nothing. It fails open, like Graphify's guard.
+## 6. Serving the log to agents
 
-### 5.2 Channels, by platform
+### 6.1 Channels by platform
 
-| Platform | Place-triggered delivery | Session start | Pull (MCP) | Writes |
-|---|---|---|---|---|
-| Claude Code | `PreToolUse` on `Read\|Edit\|Write\|MultiEdit\|Grep` → `additionalContext` | `SessionStart` hook | Yes | `PostToolUse` (activity, presence); `Stop`/`SessionEnd` (note prompt) |
-| Gemini CLI | `BeforeTool` → `additionalContext`, always allow | Instructions | Yes | Instructions |
-| Codex | **Not possible:** Codex Desktop rejects `additionalContext` on `PreToolUse` | `AGENTS.md` block | Yes | `AGENTS.md` asks for `bifrost.note` at the end |
-| Cursor | Not possible | `.cursor/rules/bifrost.mdc` (`alwaysApply`) | Yes | Rules |
-| Others | By the hook capability of each | Instruction file | Yes | Instruction file |
+| Platform | Delivered at the place | Session start | Pull (MCP) |
+|---|---|---|---|
+| Claude Code | `PreToolUse` on `Read\|Edit\|Write\|MultiEdit\|Grep` → `additionalContext` | `SessionStart` hook | Yes |
+| Gemini CLI | `BeforeTool` → `additionalContext` | Instruction file | Yes |
+| Codex | Not possible: Codex Desktop rejects `additionalContext` on `PreToolUse` | `AGENTS.md` | Yes |
+| Cursor | Not possible | `.cursor/rules` (`alwaysApply`) | Yes |
 
-On Codex and Cursor the instruction line is: "Before editing a file, call `bifrost.at` with its path." Measure this weaker channel separately in the experiment.
+These are the channels Graphify already relies on. Its hooks inject a fixed reminder, while Bifröst injects the entries for the place being touched.
 
-### 5.3 What the agent sees
+### 6.2 Latency
 
-Match Graphify's line style so the two read as one map in the transcript:
+- A tiny hook shim talks to a warm local daemon over a socket, with a 30 ms p95 budget.
+- The daemon serves from a local replica of the log for this repository. The service pushes updates to that replica; it is not queried on the hot path.
+- If the daemon doesn't answer in time, the shim prints nothing and never blocks the agent.
+
+For comparison, Graphify's guard starts a new process per call (65 ms here) and carries no content.
+
+### 6.3 What the agent sees
 
 ```text
 BIFRÖST src/auth/refresh.ts › refreshSession
-  WARNING   3d · codex · ✓2      Retrying inside refreshSession() loops on 401s; the fix was reverted in a1b2c3d.
+  WARNING   3d · codex · seen 3×      Retrying inside refreshSession() loops on 401s; the retry was reverted in a1b2c3d.
   TASK      failing · claude-code · live 4m   Token rotation under concurrent refresh
-  near › callers: SessionGuard.renew
-  DECISION  9d · claude-code      Refresh must fail fast; SessionGuard owns retries.   [code changed since]
+  DECISION  9d · claude-code          Refresh fails fast; SessionGuard owns retries.   [code changed since]
 ```
 
-Limits:
+Rules:
 
-- at most 3 records, and at most 150 tokens including the header;
-- one line per record: type, age, author system, votes, then the text of up to 280 characters.
+- **Limits:** at most 3 entries and 150 tokens. Print nothing when nothing is relevant.
+- **Once per session:** each entry is shown once per session, unless it changed or its code changed since.
+- **Order:** direct place before neighbours. `warning` and `known-issue`, then live `in-progress`, then `decision`, `open-thread`, `how-to`. Then evidence count, then recency.
+- **Current only:** superseded entries are never shown as current. Graphiti's default search returns superseded facts; Bifröst's default excludes them.
+- **Sanitized:** every line is sanitized before it enters model context.
 
-Every line from the store passes through a label sanitizer (strip control characters, cap length), because Bifröst text goes straight into model context. Graphify does the same with `sanitize_label`.
+### 6.4 Pull tools and corrections
 
-### 5.4 Surfacing rules: when to speak, when to stay silent
-
-1. **Nothing relevant means print nothing.** No header, no "no notes".
-2. **Show each record once per session**, unless it changed or its code changed since it was shown. Per-session state is kept by `session_id`, which Claude Code sends in the hook input.
-3. **Ranking:**
-   1. direct before near before dependents;
-   2. `warning` and `known-issue`, then `in-progress` from live presence, then `decision`, `open-thread`, `how-to`;
-   3. votes;
-   4. recency.
-4. **Budget:** cut to 3 records or 150 tokens, whichever comes first. Graphify's renderer does the same, with seeds first and cutting by hop distance.
-5. **Reads repeat, edits matter more.** Read triggers stay silent once the place has been shown this session. Edit triggers re-show `warning` and `known-issue` records on the edited symbol even if already shown.
-6. **Never block.** No `permissionDecision`, ever. Tell users not to combine Bifröst with Graphify's `--strict` mode, because a denied read also hides Bifröst's note for that read.
-
-### 5.5 Pull tools (MCP)
-
-| Tool | Returns |
+| Tool | Purpose |
 |---|---|
-| `bifrost.at(path, symbol?, lines?)` | Same content as the hook, larger budget (≤ 400 tokens) |
-| `bifrost.where(topic)` | Places (path › symbol) with their top records. Lexical plus embedding match over notes, then grouped by anchor. **Not** transcripts. |
-| `bifrost.note(anchor, type, text)` | Writes a finding (≤ 280 characters). The anchor defaults to the last edited symbol. |
-| `bifrost.vote(id, +1\|-1)`, `bifrost.supersede(id, text)` | Corrections |
-| `bifrost.task(anchor, state, text)` | Task state changes |
-
-Optionally, a **Graphify proxy**: an MCP server that forwards Graphify's tools and appends Bifröst lines to `get_node`, `get_neighbors` and `query_graph` results for the returned nodes, inside the same token budget. Graphify reloads per call and returns plain text, so appending is simple. The longer-term option is to propose an overlay-provider hook upstream. Graphify's own learning overlay shows the insertion point: `_subgraph_to_text`, where `learning=` is added.
-
-### 5.6 Presence
-
-- `PostToolUse` events update `{session, agentSystem, place, since}` records. Graphify has none of this; its `prs` command only maps worktrees and branches to PRs.
-- A presence record expires 10 minutes after the session's last event.
-- A place counts as "live" when another session touched the same symbol or file in that window.
-- Presence shows only for other sessions, and only on direct places.
+| `bifrost.at(path, symbol?)` | The entries for a place, with a larger budget |
+| `bifrost.where(topic)` | Places where the log has entries on a topic. Returns places, not transcripts. |
+| `bifrost.confirm(id)`, `bifrost.dispute(id, reason?)`, `bifrost.correct(id, text)` | Correction events into §3 |
 
 ---
 
-## 6. What to build first, for the upper-bound experiment
+## 7. Deployment boundary
 
-1. **Graphify adapter**: load, index, derive spans, watch mtime. Test it on this repository's graph: 1,144 nodes, and the ID and rename cases from the study.
-2. **Anchor resolver and span hashing**, with the git rename carry-over. Replay the rename test from the study (13 nodes in `rank.ts` → `ranking.ts`) and check that every anchor follows.
-3. **Daemon, store and Claude Code `PreToolUse` shim.** Measure p95 latency against the 30 ms budget.
-4. **Hand-authored findings** on the trap tasks, delivered through 3, with Graphify installed in both arms, so the only difference is Bifröst.
-5. **Codex arm** through `AGENTS.md` and MCP, to measure the pull-only channel.
+| Runs locally | Runs in the service |
+|---|---|
+| Harness and git adapters | Tier-2 classification on open-weight models |
+| Normalization and scrubbing | Reconciliation questions the rules can't settle |
+| Placement on the map (reads `graph.json`) | The shared log for teams and machines, and sync |
+| Tier-1 rules, activity, presence | Metering |
+| Local replica of the log, daemon, hook shim | |
 
-Deferred until the experiment passes:
+- **What crosses the boundary:** scrubbed episode digests going up (commands, error signatures, hunk headers, placed symbols, short excerpts of intent), and log entries coming down.
+- **What stays local:** raw transcripts. The service holds no episode content after classification. That is the no-retention contract in the architecture doc.
+- **What the user's model does:** nothing. Bifröst never spends the user's LLM tokens to build or maintain the log. Their agents only read it, plus the occasional correction.
 
-- offline extraction;
-- `where(topic)` embeddings;
-- the Graphify MCP proxy;
-- a Graphiti export;
-- community smoothing.
+---
+
+## 8. What to build first
+
+The upper-bound experiment still comes first. It uses **hand-written** entries to test whether delivery at the place helps at all. If that passes, the pipeline is built in this order:
+
+1. Graphify adapter, and placement of events from the Claude Code and Codex adapters. Measure how many edit and test events resolve to a symbol.
+2. Episode segmentation and tier-1 rules. Measure how many real sessions yield a candidate, and how many of those a person judges worth keeping.
+3. Reconciliation with rules only: revert, fix and duplicate handling.
+4. Tier-2 classification on a hosted open-weight model, over candidates only. Measure cost per session.
+5. Daemon, local replica, and the Claude Code `PreToolUse` shim, within the 30 ms budget.

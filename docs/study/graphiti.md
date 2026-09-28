@@ -222,8 +222,11 @@ Defects and gaps found:
    - Keep `valid_at`, `invalid_at` and `expired_at` separately.
    - Keep provenance episodes.
    - Supersede and never delete.
-   - Bifröst's supersession should be **explicit** (an agent or a rule says "this replaces that") and *suggested* by an LLM only when needed. A hand-written note in the experiment must never be silently invalidated by a model's guess.
+   - Bifröst's reconciliation runs rules first (reverts, fixes, duplicates) and asks the service's models only about the ambiguous rest. Graphiti asks an LLM about every new fact that has neighbours.
 3. **Default to "true now" when serving.** The opposite of Graphiti's default: superseded notes appear only when asked for, or as "superseded by…".
-4. **Keep writes cheap.** A session-end note must be a local write in milliseconds, with no mandatory LLM. Extraction, if any, runs offline.
+4. **The pipeline shape is close; where it runs differs.** Graphiti's loop (episode → extract → resolve against existing facts → supersede) matches Bifröst's (work events → episodes → classify → reconcile). The differences:
+   - In Bifröst, episodes are built from structured tool events placed on the map, so rules can settle much of it before any model runs.
+   - Bifröst's models run in its service, not on the user's model.
+   - Cost per session is a service pricing question. Graphiti charges 3–4 calls per episode to whoever runs it.
 5. **Graphiti as a later integration.** Teams already on Zep or Graphiti could receive Bifröst findings as triplets (file or symbol entity → typed fact → entity), with one `group_id` per repository. `src/adapters/zep.ts` already reads Zep.
 6. **Competitive position.** Zep and Graphiti own "temporal memory for agents" in general. What they don't do: knowing *where in the code* a fact applies, and delivering it when the agent gets there. That remains Bifröst's ground.

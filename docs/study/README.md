@@ -8,7 +8,7 @@ Method: read both codebases end to end, run Graphify on this repository, and run
 |---|---|
 | [graphify.md](./graphify.md) | Pipeline, graph format, ID scheme, extraction quality, communities, agent discovery (skill, instructions, hooks, MCP), query engine, updates, the work-memory overlay, measurements |
 | [graphiti.md](./graphiti.md) | Data model, episode ingestion, the temporal model and supersession, search and rerankers, drivers, MCP and REST, measurements, defects |
-| [bifrost-on-maps.md](./bifrost-on-maps.md) | The design that follows: the map adapter, anchor record, resolution and re-binding, staleness, time model, daemon and hook layout, per-platform channels, output format, surfacing rules, first build steps |
+| [bifrost-on-maps.md](./bifrost-on-maps.md) | The design that follows: how Bifröst is built and updated from work history (events → placement → classification → add, update or dismiss), the map adapter and anchors, keeping up with map and code changes, serving, the local/service boundary, first build steps |
 | [probes/](./probes/) | The scripts used for the measurements |
 
 ## Findings
@@ -21,7 +21,7 @@ Method: read both codebases end to end, run Graphify on this repository, and run
 6. **Codex and Cursor can't take injected context on tool calls.** On those platforms Bifröst depends on instruction files and MCP pull, and the experiment should measure that path separately.
 7. **Graphiti's temporal model is worth copying.** Keep separate validity and system times, and supersede instead of deleting. Two parts should not be copied:
    - its default search returns superseded facts;
-   - supersession is decided by an LLM.
+   - it asks an LLM about every new fact; Bifröst settles most cases with rules and runs its models in the service.
 8. **Graphiti needs a database server.** Its only embedded driver (Kuzu) is deprecated, and broken on current main in two ways found here. Every episode costs 3–4 LLM calls or more. Telemetry is on by default.
 
 ## Reproducing
