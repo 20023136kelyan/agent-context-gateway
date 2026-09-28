@@ -136,9 +136,18 @@ ephemeral and seconds-fresh.
 |---|---|
 | Agent/session | Codex session 17 |
 | Location | `src/auth/refresh.ts → refreshSession()` |
-| Task | Investigating disk-restored sessions |
-| State | active |
+| Objective | Goal: make token refresh safe under concurrent requests; step: lock around `refreshSession` |
+| Mode | debugging |
+| State | working (or waiting-permission, waiting-user, idle, ended, gone) |
 | Updated | seconds ago |
+
+Whether a session is working *now* can't be read from events alone. It combines
+lifecycle hooks, transcript tailing, a local process watcher and, for cloud
+agents, provider APIs. The objective is taken from what the agent tools already
+record (the opening prompt, the agent's own plan and todos, the session title,
+the branch), with inference only where those are missing. Live objectives are
+compared by meaning and by map proximity, to warn about overlapping work before
+it collides. Details: [`study/bifrost-on-maps.md`](./study/bifrost-on-maps.md) §6.
 
 ### 4.3 Findings — compact semantic knowledge
 

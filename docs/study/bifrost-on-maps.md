@@ -16,9 +16,10 @@ Contents:
 3. Reconciliation: add, update, supersede, dismiss
 4. The map as the anchor
 5. Keeping up with the map and the code
-6. Serving the log to agents
-7. Deployment boundary
-8. What to build first
+6. Presence and objectives
+7. Serving the log to agents
+8. Deployment boundary
+9. What to build first
 
 ---
 
@@ -34,7 +35,7 @@ Contents:
  git (commits,      ┘                                                         service    supersede /   temporal)
  reverts, checkouts)                                                          models)    dismiss)
                                                         │                                                    │
-                                                        └──────► activity + presence (mechanical) ───────────┤
+                                                        └──────► activity + presence (§6) ───────────────────┤
                                                                                                              ▼
                                                                            delivery to every agent, at the place
 ```
@@ -90,7 +91,7 @@ Notes:
 
 - **Scrubbing happens locally, at normalization.** Secrets, tokens, keys and paths outside the repo are removed before anything leaves the machine (§7).
 - **`places` come from the map.** An edit's hunk becomes the symbols it overlaps. A test command becomes the test file and, through the map, the code under test. A stack trace becomes the frames' symbols. A `grep` result becomes the files hit.
-- **Activity and presence need nothing more.** They come straight from placed events: "who touched `refreshSession` in the last 10 minutes" is a query over events. No model is involved.
+- **Activity comes straight from placed events.** "Who touched `refreshSession` in the last 10 minutes" is a query over events, with no model. Presence needs more: whether the session is working *now*, and what it is trying to do. That is §6.
 
 ### 2.3 Episodes
 
@@ -213,9 +214,145 @@ The Graphify adapter reads `graphify-out/graph.json` and re-reads it when its `(
 
 ---
 
-## 6. Serving the log to agents
+## 6. Presence and objectives
 
-### 6.1 Channels by platform
+Presence is the live part of Bifröst. Two questions have to be answered for every agent session, continuously:
+
+- **Is it working right now?** Events alone can't say. An agent's last edit may be two minutes old because it is thinking, running a long test, waiting for the user's approval, or because the terminal was closed.
+- **What is it trying to do?** Not only which files and symbols it touches, but its objective in plain terms: the goal, the current step, and how it is going about it.
+
+Presence is ephemeral state, kept apart from the log. It feeds the log only through reconciliation. An objective left unfinished when a session ends becomes an `open-thread` entry, for example.
+
+### 6.1 Liveness: is the session working now?
+
+Each session has a state:
+
+| State | Meaning |
+|---|---|
+| `working` | A turn is in progress: the model is generating, or a tool is running |
+| `waiting-permission` | Blocked on the user approving a tool call |
+| `waiting-user` | The turn finished; the session is open and waiting for the next prompt |
+| `idle` | Open, but nothing has happened for a while |
+| `ended` | Closed cleanly |
+| `gone` | The process disappeared without a clean end: a crash, a closed terminal, a killed container |
+
+Traces alone are not enough, so liveness combines several signal sources. The strongest available one wins, and each state expires on a timeout when its source goes quiet.
+
+| Source | What it gives | Where available |
+|---|---|---|
+| **Lifecycle hooks** | Exact transitions: `UserPromptSubmit` → working; `PreToolUse`/`PostToolUse` → heartbeat and current tool; `Notification` → waiting for permission or idle; `Stop` → turn finished; `SessionEnd` → ended | Claude Code (all of these); Gemini CLI (similar); others to verify per tool |
+| **Trace tailing** | How fast the transcript grows, and what its last record is. A tool call with no result yet means a tool is running; a final assistant message means the turn has ended. Codex logs turn start and end events (`event_msg`). | Every tool whose trace we read |
+| **Process probe** | Whether the agent process exists, its working directory (which repo and worktree), CPU use, and child processes. A running `pytest` or `npm test` child means working even with a quiet transcript. Detects `gone`. | Local agents on any OS: `/proc` on Linux, `proc_pidinfo`/`lsof` on macOS, the process API on Windows |
+| **Working tree** | Uncommitted changes in the session's worktree: work in flight even while the agent is idle | Any git checkout |
+| **Remote agent APIs** | Status of cloud sessions that have no local process | Per provider, through its API or webhooks; later |
+
+This is where Bifröst needs tools beyond the traces:
+
+- a small **hook set** installed per agent tool;
+- a **process watcher** in the local daemon;
+- later, **connectors** for cloud agents.
+
+Hooks give precise, instant transitions where they exist. The process watcher covers every local agent, including tools without hooks, and is the only way to see a crash. Trace tailing fills in the rest.
+
+**Heartbeat and expiry.** Each signal refreshes the session's state. Without a refresh, a state decays:
+
+- `working` → `idle` after about 2 minutes with no hook, trace growth or busy child process;
+- `waiting-user` → `idle` after about 15 minutes;
+- `idle` → `ended` after about an hour, or immediately on `SessionEnd`;
+- `gone` as soon as the process is missing without an end signal.
+
+The thresholds are parameters to tune.
+
+**Subagents.** Child sessions (Claude Code's Task tool, Codex's multi-agent mode) are linked to their parent. The session-topology code already exists in `src/topology/`. A parent waiting on its subagents counts as `working`.
+
+### 6.2 Objective: what is it trying to do?
+
+An objective is described at three levels:
+
+| Level | Example |
+|---|---|
+| **Goal**: why the session exists | "Make token refresh safe under concurrent requests" |
+| **Step**: what it is doing now | "Adding a lock around `refreshSession`" |
+| **Mode**: the kind of work, from the event mix | exploring, implementing, testing, debugging, reviewing, stuck, blocked on user |
+
+Plus two sets of places:
+
+- the **working set**: the places it has touched, from events;
+- the **intended set**: the places named in its plan, before it touches them.
+
+**Declared sources come first.** They are free and need no model, because the agent tools already record intent in their traces:
+
+| Source | Gives | Where it comes from |
+|---|---|---|
+| The prompt that opened the episode | Goal | First user turn, or `UserPromptSubmit`; scrubbed |
+| The agent's own plan | Steps; the in-progress item is the current step | Claude Code todo and plan tools (plan mode's approved plan); Codex's plan-update tool calls (steps with status); Cursor todos |
+| Session title | Goal summary | Claude Code writes `ai-title` and `custom-title` records to its transcript; Cursor names each composer |
+| Git context | Goal hint | Branch name; worktree; linked PR or issue title where a connector is available; commit messages as they land |
+| Event mix | Mode | Rules: mostly reads and searches → exploring; edits → implementing; test runs → testing; repeated failures at one place → debugging or stuck; a pending permission → blocked |
+
+**Inference fills the gaps.** When declared signals are missing or vague, the service's models compress them, plus recent scrubbed event digests, into:
+
+- a goal of at most 120 characters;
+- a step of at most 80 characters;
+- topic tags;
+- an **embedding** of the objective.
+
+This runs only when something meaningful changes: a new prompt, a plan update, a new step marked in progress, or the working set moving to a different area of the map. It never runs per event. It is the same tiered approach as classification (§2.4): rules and declared signals first, models only where needed.
+
+**Record:**
+
+```ts
+interface Presence {
+  session: string; agentSystem: string; parent?: string;       // subagent link
+  user: string; machine: string; repo: string; branch?: string; worktree?: string;
+  state: "working" | "waiting-permission" | "waiting-user" | "idle" | "ended" | "gone";
+  stateSince: string; lastSignal: { source: "hook" | "trace" | "process" | "api"; at: string };
+  currentTool?: string;                                         // e.g. "Bash: npm test"
+}
+interface Objective {
+  session: string;
+  goal: string; step?: string; approach?: string;
+  mode: "exploring" | "implementing" | "testing" | "debugging" | "reviewing" | "stuck" | "blocked";
+  topics: string[]; embedding: number[];
+  workingSet: Place[]; intendedSet: Place[];
+  sources: { kind: "prompt" | "plan" | "title" | "branch" | "pr" | "inferred"; ref: string }[];
+  confidence: number; updatedAt: string;
+}
+```
+
+### 6.3 What presence and objectives are used for
+
+1. **Live lines at a place.** When an agent reaches a place another live session is working on, it sees who is there and why:
+   ```text
+   LIVE  claude-code · working 4m · debugging   Make token refresh safe under concurrent requests — step: lock around refreshSession
+   ```
+2. **Overlap before collision.** Live objectives are compared pairwise on two axes:
+   - **semantic similarity** of their embeddings;
+   - **map proximity**: the same symbols, neighbours on the map, the same area.
+
+   Two sessions scoring high on both are told early, even when neither has touched the other's files yet: "another agent is also changing retry behaviour, in `SessionGuard`". File-level presence can't see this. It is where the semantic objective earns its cost.
+3. **Intended places.** A plan that names `SessionGuard` before the agent opens it lets Bifröst warn the *other* session working in `SessionGuard` now, not after the edit.
+4. **Session-start orientation.** A new session sees the live objectives in its repo, grouped by area of the map, in two or three lines.
+5. **Handoff into the log.** When a session ends or is `gone` with its objective unfinished, the objective, last step and working set go through reconciliation. The usual result is an `open-thread` or `in-progress` entry at those places. The next agent to arrive knows what was being attempted and where it stopped.
+6. **Context for entries.** Each log entry keeps the objective of the episode that produced it. "Retry loops on 401s" reads differently when the goal was "make refresh safe under concurrency" than when it was "speed up login".
+
+### 6.4 Visibility and privacy
+
+- Objective text is derived from prompts, so it goes through the same scrubbing as events. It is visible only to the people and agents who share the repository's Bifröst space.
+- A user can mark a session private. Its presence then shows as "an agent is working here", with no objective.
+- Presence and objectives are not retained as knowledge. They expire with the session, and only what reconciliation writes into the log remains.
+
+### 6.5 To verify
+
+- Which lifecycle hooks Codex and Cursor expose today, and whether they can run a local command on turn start and end.
+- How reliably the process probe maps a process to a session when several sessions of one tool run in the same repo. Transcript file handles held open by the process may settle it.
+- Cloud agents (Claude Code on the web, Codex cloud and similar): which status APIs or webhooks exist.
+
+---
+
+## 7. Serving the log to agents
+
+### 7.1 Channels by platform
 
 | Platform | Delivered at the place | Session start | Pull (MCP) |
 |---|---|---|---|
@@ -226,7 +363,7 @@ The Graphify adapter reads `graphify-out/graph.json` and re-reads it when its `(
 
 These are the channels Graphify already relies on. Its hooks inject a fixed reminder, while Bifröst injects the entries for the place being touched.
 
-### 6.2 Latency
+### 7.2 Latency
 
 - A tiny hook shim talks to a warm local daemon over a socket, with a 30 ms p95 budget.
 - The daemon serves from a local replica of the log for this repository. The service pushes updates to that replica; it is not queried on the hot path.
@@ -234,7 +371,7 @@ These are the channels Graphify already relies on. Its hooks inject a fixed remi
 
 For comparison, Graphify's guard starts a new process per call (65 ms here) and carries no content.
 
-### 6.3 What the agent sees
+### 7.3 What the agent sees
 
 ```text
 BIFRÖST src/auth/refresh.ts › refreshSession
@@ -251,7 +388,7 @@ Rules:
 - **Current only:** superseded entries are never shown as current. Graphiti's default search returns superseded facts; Bifröst's default excludes them.
 - **Sanitized:** every line is sanitized before it enters model context.
 
-### 6.4 Pull tools and corrections
+### 7.4 Pull tools and corrections
 
 | Tool | Purpose |
 |---|---|
@@ -261,15 +398,17 @@ Rules:
 
 ---
 
-## 7. Deployment boundary
+## 8. Deployment boundary
 
 | Runs locally | Runs in the service |
 |---|---|
 | Harness and git adapters | Tier-2 classification on open-weight models |
 | Normalization and scrubbing | Reconciliation questions the rules can't settle |
 | Placement on the map (reads `graph.json`) | The shared log for teams and machines, and sync |
-| Tier-1 rules, activity, presence | Metering |
-| Local replica of the log, daemon, hook shim | |
+| Tier-1 rules, activity | Objective inference when declared signals fall short |
+| Liveness: lifecycle hooks, trace tailing, process watcher | Presence relay between machines and team members (ephemeral, not stored) |
+| Declared objectives (prompt, plan, title, branch) | Overlap detection across live sessions |
+| Local replica of the log, daemon, hook shim | Metering |
 
 - **What crosses the boundary:** scrubbed episode digests going up (commands, error signatures, hunk headers, placed symbols, short excerpts of intent), and log entries coming down.
 - **What stays local:** raw transcripts. The service holds no episode content after classification. That is the no-retention contract in the architecture doc.
@@ -277,7 +416,7 @@ Rules:
 
 ---
 
-## 8. What to build first
+## 9. What to build first
 
 The upper-bound experiment still comes first. It uses **hand-written** entries to test whether delivery at the place helps at all. If that passes, the pipeline is built in this order:
 
@@ -286,3 +425,5 @@ The upper-bound experiment still comes first. It uses **hand-written** entries t
 3. Reconciliation with rules only: revert, fix and duplicate handling.
 4. Tier-2 classification on a hosted open-weight model, over candidates only. Measure cost per session.
 5. Daemon, local replica, and the Claude Code `PreToolUse` shim, within the 30 ms budget.
+6. Liveness: Claude Code lifecycle hooks, trace tailing, and the process watcher. Check the state machine against real sessions, including killed terminals.
+7. Declared objectives from prompts, plans and titles. Then inference where they are missing, and overlap detection between live sessions. Measure how often overlap alerts are correct before showing them to agents.
