@@ -12,7 +12,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseTrace, touchedPaths } from "./trace.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -60,7 +60,7 @@ export interface TaskSpec {
 }
 
 export interface RunOptions {
-  agent: "claude" | "codex" | "command";
+  agent: "claude" | "codex" | "opencode" | "command";
   model?: string;
   agentCmd?: string;
   budgetUsd?: number;
@@ -151,6 +151,7 @@ export function buildAgentCommand(
       env: { BIFROST_NOTES: paths.notesFile ?? "", BIFROST_LOG: paths.env.BIFROST_LOG, BIFROST_ROOT: paths.ws },
     };
   }
+  if (opts.agent === "opencode") return openCodeCommand(task, arm, opts, paths);
   if (opts.agent === "claude") {
     const settingsFile = join(paths.runDir, "settings.json");
     writeFileSync(settingsFile, JSON.stringify(arm.push === "off" ? {} : hookSettings(), null, 2));
@@ -187,6 +188,47 @@ export function buildAgentCommand(
   }
   args.push(...opts.extraArgs, task.prompt);
   return { cmd: "codex", args, shell: false };
+}
+
+/**
+ * OpenCode (`opencode run --format json`). Config goes in through OPENCODE_CONFIG_CONTENT,
+ * merged over your own OpenCode config (providers, keys, default model), so nothing is
+ * written into the workspace:
+ *  - push arms load kit/opencode-plugin.mjs, which appends notes to tool results;
+ *  - pull arms get the bifrost MCP server and the pull instruction as an instructions file;
+ *  - edits and shell are allowed without prompts, files outside the workspace are denied.
+ * OpenCode has no spending cap, so --budget-usd is ignored; --timeout-min still applies.
+ */
+function openCodeCommand(task: TaskSpec, arm: Arm, opts: RunOptions, paths: { ws: string; runDir: string; notesFile?: string; env: Record<string, string> }) {
+  const config: Record<string, unknown> = {
+    $schema: "https://opencode.ai/config.json",
+    share: "disabled",
+    autoupdate: false,
+    permission: { edit: "allow", bash: "allow", webfetch: "allow", external_directory: "deny" },
+  };
+  if (arm.push !== "off") config.plugin = [pathToFileURL(join(KIT, "opencode-plugin.mjs")).href];
+  if (arm.pull) {
+    config.mcp = {
+      bifrost: {
+        type: "local",
+        command: ["node", join(KIT, "mcp-server.mjs")],
+        environment: { BIFROST_NOTES: paths.notesFile ?? "", BIFROST_LOG: paths.env.BIFROST_LOG, BIFROST_ROOT: paths.ws },
+        enabled: true,
+      },
+    };
+    const instructions = join(paths.runDir, "bifrost-instructions.md");
+    writeFileSync(instructions, `${PULL_INSTRUCTION}\n`);
+    config.instructions = [instructions];
+  }
+  // Read by runOne and passed to the agent's environment only.
+  paths.env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config);
+  // Keep ~/.claude (CLAUDE.md, skills) out of the runs, as --setting-sources project does for Claude Code.
+  paths.env.OPENCODE_DISABLE_CLAUDE_CODE = "1";
+  paths.env.OPENCODE_DISABLE_AUTOUPDATE = "1";
+  const args = ["run", "--format", "json", "--dir", paths.ws];
+  if (opts.model) args.push("--model", opts.model);
+  args.push(...opts.extraArgs, task.prompt);
+  return { cmd: "opencode", args, shell: false };
 }
 
 function runProcess(cmd: string, args: string[], opts: { cwd: string; env: NodeJS.ProcessEnv; shell: boolean; timeoutMs: number; stdoutFile: string; stderrFile: string }): Promise<{ code: number | null; timedOut: boolean }> {
@@ -243,8 +285,34 @@ interface ClaudeResult {
   usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
 }
 
+interface OpenCodeStep {
+  cost?: number;
+  tokens?: { input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } };
+}
+
+/** OpenCode reports cost and tokens per step (`step_finish`), not once per run. */
+function openCodeTotals(traceText: string): ClaudeResult | undefined {
+  let steps = 0;
+  const t = { cost: 0, input: 0, output: 0, read: 0, write: 0 };
+  for (const line of traceText.split("\n")) {
+    if (!line.includes("step_finish")) continue;
+    try {
+      const o = JSON.parse(line) as { type?: string; part?: OpenCodeStep };
+      if (o.type !== "step_finish" || !o.part) continue;
+      steps += 1;
+      t.cost += o.part.cost ?? 0;
+      t.input += o.part.tokens?.input ?? 0;
+      t.output += (o.part.tokens?.output ?? 0) + (o.part.tokens?.reasoning ?? 0);
+      t.read += o.part.tokens?.cache?.read ?? 0;
+      t.write += o.part.tokens?.cache?.write ?? 0;
+    } catch { /* ignore */ }
+  }
+  if (!steps) return undefined;
+  return { total_cost_usd: t.cost, num_turns: steps, usage: { input_tokens: t.input, output_tokens: t.output, cache_read_input_tokens: t.read, cache_creation_input_tokens: t.write } };
+}
+
 export function metricsFromTrace(traceText: string, ws: string) {
-  let result: ClaudeResult | undefined;
+  let result: ClaudeResult | undefined = openCodeTotals(traceText);
   for (const line of traceText.split("\n")) {
     if (!line.includes('"type":"result"') && !line.includes('"type": "result"')) continue;
     try {
@@ -375,7 +443,7 @@ async function main(argv: string[]) {
   const tasks = (arg(argv, "tasks") ?? "").split(",").filter(Boolean);
   const arms = (arg(argv, "arms") ?? "control,hand").split(",").filter(Boolean).map(resolveArm);
   if (tasks.length === 0) {
-    console.error(`usage: run.ts --tasks <id,...> [--arms control,hand] [--reps 10] [--agent claude|codex|command] [--model M]
+    console.error(`usage: run.ts --tasks <id,...> [--arms control,hand] [--reps 10] [--agent claude|opencode|codex|command] [--model M]
   [--budget-usd 3] [--timeout-min 20] [--concurrency 2] [--out <dir>] [--setting-sources project] [--keep]
   [--agent-cmd "<shell command with {workspace} {promptFile} {runDir}>"] [-- <extra agent args>]`);
     process.exit(2);

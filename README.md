@@ -31,6 +31,7 @@ The experiment kit is in [`experiments/upper-bound/`](./experiments/upper-bound/
 - [x] Delivery: file-touch hook that injects the top notes or stays silent, and a one-tool MCP server for pull-only agents
 - [x] Notes generator: seed trace plus graded outcome → model → notes (strong model, open-weight model, digest-only input)
 - [x] A/B harness: isolated runs per arm, grading, cost and time metrics, report with bootstrap intervals
+- [x] Runners for Claude Code and OpenCode (OpenCode checked end to end with a scripted mock model)
 - [ ] Run it with real agents: smoke test, then control vs hand-written notes (≥ 10 runs per arm)
 - [ ] Design 10+ trap tasks across kinds of knowledge (vendor constraints, past decisions, flaky areas, work in progress)
 - [ ] Decide: ≥ 15% faster or cheaper, or materially better trap-task completion, or stop

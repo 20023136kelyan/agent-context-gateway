@@ -4,10 +4,12 @@ import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } f
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 // @ts-expect-error plain ESM module without type declarations
-import { formatNotes, matchNotes, placesFromToolCall, sanitize, loadNotes } from "../experiments/upper-bound/kit/notes-lib.mjs";
+import { formatNotes, matchNotes, placesFromToolCall, sanitize, loadNotes, fromOpenCodeCall } from "../experiments/upper-bound/kit/notes-lib.mjs";
+// @ts-expect-error plain ESM module without type declarations
+import { BifrostPlugin } from "../experiments/upper-bound/kit/opencode-plugin.mjs";
 import { parseTrace, renderDigest, renderFull, scrub } from "../experiments/upper-bound/harness/trace.js";
 import { generateNotes, validateNotes, listRepoFiles } from "../experiments/upper-bound/harness/generate.js";
-import { buildAgentCommand, loadTask, resolveArm, runOne, outcomeText, type RunOptions } from "../experiments/upper-bound/harness/run.js";
+import { buildAgentCommand, loadTask, metricsFromTrace, resolveArm, runOne, outcomeText, type RunOptions } from "../experiments/upper-bound/harness/run.js";
 import { buildReport, bootstrapDiff } from "../experiments/upper-bound/harness/report.js";
 
 const EXP = resolve(__dirname, "../experiments/upper-bound");
@@ -23,6 +25,12 @@ afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 describe("notes-lib", () => {
   const root = "/repo";
+  it("maps OpenCode tool calls to the kit's names", () => {
+    expect(fromOpenCodeCall("read", { filePath: "/repo/src/a.js" })).toMatchObject({ tool: "Read", input: { file_path: "/repo/src/a.js" } });
+    expect(fromOpenCodeCall("apply_patch", { patchText: "*** src/a.js" })).toMatchObject({ tool: "apply_patch", input: { patch: "*** src/a.js" } });
+    expect(fromOpenCodeCall("bifrost_bifrost_at", { path: "x" }).tool).toBe("bifrost_bifrost_at");
+  });
+
   it("resolves places from Claude Code tool calls", () => {
     expect(placesFromToolCall("Read", { file_path: "/repo/src/a.js", offset: 10, limit: 5 }, root)).toEqual([{ path: "src/a.js", lines: [10, 15] }]);
     expect(placesFromToolCall("Edit", { file_path: "src/a.js" }, root)).toEqual([{ path: "src/a.js", lines: undefined }]);
@@ -54,6 +62,33 @@ describe("notes-lib", () => {
   it("sanitizes control characters and caps length", () => {
     expect(sanitize("a\u001b[31mb‮c", 280)).toBe("a[31mbc");
     expect(sanitize("x".repeat(400)).length).toBe(280);
+  });
+});
+
+describe("opencode plugin", () => {
+  it("appends notes to the tool result once, repeats warnings on edit, stays silent in control", async () => {
+    const state = join(tmp, "oc-state");
+    const env = { ...process.env };
+    process.env.BIFROST_NOTES = HAND;
+    process.env.BIFROST_STATE = state;
+    process.env.BIFROST_LOG = join(tmp, "oc.jsonl");
+    try {
+      const hooks = await BifrostPlugin({ directory: "/ws", worktree: "/ws" });
+      const call = async (tool: string, sessionID = "s1") => {
+        const out = { title: "", output: "result", metadata: {} };
+        await hooks["tool.execute.after"]({ tool, sessionID, callID: "c", args: { filePath: "/ws/src/authClient.js" } }, out);
+        return out.output;
+      };
+      expect(await call("read")).toMatch(/^result\n\nBIFRÖST src\/authClient\.js[\s\S]*WARNING[\s\S]*HOW-TO/);
+      expect(await call("read")).toBe("result");
+      const edit = await call("edit");
+      expect(edit).toContain("WARNING");
+      expect(edit).not.toContain("HOW-TO");
+      process.env.BIFROST_MODE = "noop";
+      expect(await call("read", "s2")).toBe("result");
+    } finally {
+      process.env = env;
+    }
   });
 });
 
@@ -212,6 +247,43 @@ describe("harness", () => {
     expect(mcp.mcpServers.bifrost.env).toMatchObject({ BIFROST_NOTES: "/n.json", BIFROST_ROOT: "/ws" });
     const settings = JSON.parse(readFileSync(join(runDir, "settings.json"), "utf8"));
     expect(settings.hooks.PreToolUse[0].hooks[0].command).toContain("hook.mjs");
+  });
+
+  it("builds an OpenCode command with config in the environment, not the workspace", () => {
+    const runDir = join(tmp, "cmd3");
+    mkdirSync(runDir, { recursive: true });
+    const env: Record<string, string> = { BIFROST_LOG: "/l" };
+    const { cmd, args } = buildAgentCommand(task, resolveArm("hand-pull"), { ...base, agent: "opencode", model: "openrouter/qwen" }, { ws: "/ws", runDir, notesFile: "/n.json", env });
+    expect(cmd).toBe("opencode");
+    expect(args.slice(0, 5)).toEqual(["run", "--format", "json", "--dir", "/ws"]);
+    expect(args).toEqual(expect.arrayContaining(["--model", "openrouter/qwen", task.prompt]));
+    const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT);
+    expect(config.plugin[0]).toMatch(/^file:.*opencode-plugin\.mjs$/);
+    expect(config.mcp.bifrost.environment).toMatchObject({ BIFROST_NOTES: "/n.json", BIFROST_ROOT: "/ws" });
+    expect(readFileSync(config.instructions[0], "utf8")).toContain("bifrost_at");
+    expect(config.permission.external_directory).toBe("deny");
+    const off = { BIFROST_LOG: "/l" } as Record<string, string>;
+    buildAgentCommand(task, resolveArm("none"), { ...base, agent: "opencode" }, { ws: "/ws", runDir, env: off });
+    expect(JSON.parse(off.OPENCODE_CONFIG_CONTENT).plugin).toBeUndefined();
+  });
+
+  it("reads OpenCode traces: steps, paths, summed cost and tokens", () => {
+    const ev = (type: string, part: object) => JSON.stringify({ type, timestamp: 1, sessionID: "ses_1", part });
+    const text = [
+      ev("step_start", { type: "step-start" }),
+      ev("tool_use", { type: "tool", tool: "read", callID: "c1", state: { status: "completed", input: { filePath: "/ws/src/authClient.js" }, output: "body" } }),
+      ev("step_finish", { type: "step-finish", cost: 0.01, tokens: { input: 100, output: 10, reasoning: 5, cache: { read: 50, write: 0 } } }),
+      ev("tool_use", { type: "tool", tool: "edit", callID: "c2", state: { status: "error", input: { filePath: "/ws/src/authClient.js", oldString: "a", newString: "b" }, error: "no match" } }),
+      ev("text", { type: "text", text: "Done." }),
+      ev("step_finish", { type: "step-finish", cost: 0.02, tokens: { input: 200, output: 20, reasoning: 0, cache: { read: 0, write: 0 } } }),
+    ].join("\n");
+    const steps = parseTrace(text);
+    expect(steps.map((s) => s.kind)).toEqual(["tool_call", "tool_result", "tool_call", "tool_result", "assistant"]);
+    expect(steps[2]).toMatchObject({ tool: "Edit", input: { file_path: "/ws/src/authClient.js", old_string: "a" } });
+    expect(steps[3]).toMatchObject({ isError: true, text: "no match" });
+    const m = metricsFromTrace(text, "/ws");
+    expect(m).toMatchObject({ numTurns: 2, inputTokens: 300, outputTokens: 35, cacheReadTokens: 50, toolCalls: 2, readPaths: ["src/authClient.js"] });
+    expect(m.costUsd).toBeCloseTo(0.03);
   });
 
   it("refuses push arms for codex", () => {

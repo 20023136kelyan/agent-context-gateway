@@ -54,6 +54,7 @@ experiments/upper-bound/
 ├── kit/                     what agents touch
 │   ├── notes-lib.mjs        matching, ranking, budget, formatting
 │   ├── hook.mjs             PreToolUse hook (push); ~70 ms, fails open, never blocks
+│   ├── opencode-plugin.mjs  the same push logic for OpenCode (appends to tool results)
 │   └── mcp-server.mjs       one tool, bifrost_at(path) (pull)
 ├── harness/
 │   ├── run.ts               arms × tasks × reps; isolates, runs, grades, measures
@@ -102,9 +103,52 @@ the naive fix is a `trapHit`, and the correct fix passes (`tests/experiment-kit.
 
 ## Protocol
 
-Run on a machine with Claude Code installed and logged in (Codex too, for the
-pull arms). Runs use your own account and cost real money; `--budget-usd` caps
-each run.
+Two runners are verified: **Claude Code** and **OpenCode**. OpenCode is the cheap
+path: it runs on whatever provider and model you already use (OpenRouter, DeepSeek,
+a local server…), so a run costs what that model costs. Use the same model in every arm.
+
+### With OpenCode
+
+The OpenCode runner has been checked end to end against the real `opencode` binary
+(1.18) with a scripted mock model. That covered:
+
+- the plugin loading;
+- notes reaching the model;
+- the MCP pull tool;
+- the trace, cost and grading.
+
+It has not yet been run with a real model.
+
+- **Push arms** load `kit/opencode-plugin.mjs`, which appends the notes to the
+  result of the tool call that touched the place. OpenCode can't add context
+  *before* a tool runs, so the agent sees a warning just after reading the file.
+  That is early enough, because agents read before they edit.
+- **Pull arms** get the `bifrost_at` MCP tool and one instruction line.
+- **Config** goes in through `OPENCODE_CONFIG_CONTENT`, on top of your own
+  OpenCode config (providers, keys). Nothing is written into the workspace.
+- **Permissions:** edits and shell are allowed without prompts, and files outside
+  the workspace are denied.
+- **No per-run spending cap.** OpenCode has no `--max-budget-usd`, so only
+  `--timeout-min` limits a run. Check the smoke test's cost before a batch.
+
+```bash
+# 1. smoke test, one run per arm (model is provider/model, as in `opencode models`)
+npm run exp:run -- --agent opencode --model <provider/model> --tasks refresh-rotation --arms control,hand --reps 1 --keep
+# 2. the ceiling
+npm run exp:run -- --agent opencode --model <provider/model> --tasks refresh-rotation --arms control,hand,wrong --reps 10
+npm run exp:report -- experiments/upper-bound/results/<stamp>
+```
+
+The generator also works with OpenRouter or any OpenAI-compatible provider:
+`OPENAI_BASE_URL=https://openrouter.ai/api/v1 OPENAI_API_KEY=… npm run exp:generate -- --provider openai --model <model> …`.
+
+The steps below use Claude Code. Add `--agent opencode --model <provider/model>` to
+run any of them with OpenCode.
+
+### With Claude Code
+
+Claude Code must be installed and logged in (Codex too, for its pull arms). Runs
+use your own account and cost real money; `--budget-usd` caps each run.
 
 **1. Smoke test with a real agent (one rep).** Check that the hook fires and the
 grader runs:
@@ -174,9 +218,9 @@ npm run exp:run -- --agent codex --tasks refresh-rotation --arms control,hand-pu
 | `--tasks` | required | Comma-separated task ids |
 | `--arms` | `control,hand` | Built-in arms, `gen:<file>` or `pull:<file>` |
 | `--reps` | 10 | Runs per task and arm |
-| `--agent` | `claude` | `claude`, `codex` (unverified) or `command` |
+| `--agent` | `claude` | `claude`, `opencode`, `codex` (unverified) or `command` |
 | `--model` | agent default | Pinned model; use the same for every arm |
-| `--budget-usd` | none | Per-run spending cap (Claude Code `--max-budget-usd`) |
+| `--budget-usd` | none | Per-run spending cap (Claude Code `--max-budget-usd`; ignored by OpenCode) |
 | `--timeout-min` | 20 | Per-run wall-clock limit |
 | `--concurrency` | 2 | Parallel runs |
 | `--setting-sources` | `project` | Which Claude Code settings load. `project` keeps your user hooks and CLAUDE.md out of the runs. |
@@ -216,11 +260,15 @@ npm run exp:run -- --agent codex --tasks refresh-rotation --arms control,hand-pu
   agent could search the filesystem and find `experiments/`. Check `readPaths` in
   `result.json` if a result looks too good.
 - **Not yet run against real agents.** The plumbing is tested with the scripted
-  agent only. The first real step is the one-rep smoke test above, run on your
+  agent, and with real OpenCode driven by a scripted mock model. The first real step is the one-rep smoke test above, run on your
   own machine: in the cloud dev container the runs execute as root, Claude Code
   refuses `bypassPermissions` there, and the headless runs need it.
 - **The Codex runner is untested.** Its flags follow `codex exec` as documented;
   verify on first use. Push delivery is not offered for Codex (see the study,
   §7.1 of `docs/study/bifrost-on-maps.md`).
-- **Running as root:** Claude Code may refuse `bypassPermissions` for root. Run as
+- **Running as root:** Claude Code refuses `bypassPermissions` for root. Run as
   a normal user.
+- **Your global agent config loads in every arm.** Claude Code runs load project
+  settings only. OpenCode runs still load your global OpenCode config (for providers
+  and keys), including any global AGENTS.md or plugins; they skip `~/.claude`. That's
+  the same in every arm, but keep your global instructions short while running it.

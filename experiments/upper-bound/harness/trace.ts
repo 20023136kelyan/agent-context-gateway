@@ -4,6 +4,7 @@
  * Supported inputs (one JSON object per line):
  *  - Claude Code `-p --output-format stream-json --verbose` output
  *  - Claude Code session files (~/.claude/projects/<slug>/<id>.jsonl): same message shape
+ *  - OpenCode `run --format json` events (tool_use, text, step_finish)
  *  - Codex `exec --json` events (best effort; the format is not verified here)
  *  - `{ "type": "bifrost.outcome", ... }` lines the harness appends after grading a seed run
  */
@@ -81,6 +82,36 @@ function fromCodexEvent(obj: Json, steps: Step[]): boolean {
   }
 }
 
+/** OpenCode tool names and argument keys → Claude Code's (same mapping as kit/notes-lib.mjs). */
+const OPENCODE_TOOLS: Record<string, string> = { read: "Read", edit: "Edit", write: "Write", multiedit: "MultiEdit", bash: "Bash", grep: "Grep", glob: "Glob", list: "LS", patch: "apply_patch", apply_patch: "apply_patch" };
+function fromOpenCodeInput(a: Json): Json {
+  const input: Json = { ...a };
+  if (typeof a.filePath === "string") input.file_path = a.filePath;
+  if (typeof a.oldString === "string") input.old_string = a.oldString;
+  if (typeof a.newString === "string") input.new_string = a.newString;
+  if (typeof a.patchText === "string") input.patch = a.patchText;
+  return input;
+}
+
+function fromOpenCodeEvent(obj: Json, steps: Step[]): boolean {
+  const part = obj.part as Json | undefined;
+  if (!part || typeof part !== "object" || typeof obj.sessionID !== "string") return false;
+  if (obj.type === "text" && typeof part.text === "string") {
+    if (part.text.trim()) steps.push({ kind: "assistant", text: part.text });
+    return true;
+  }
+  if (obj.type === "tool_use") {
+    const state = (part.state ?? {}) as Json;
+    const tool = String(part.tool ?? "tool");
+    const id = String(part.callID ?? part.id ?? "");
+    steps.push({ kind: "tool_call", id, tool: OPENCODE_TOOLS[tool] ?? tool, input: fromOpenCodeInput((state.input as Json) ?? {}) });
+    const isError = state.status === "error";
+    steps.push({ kind: "tool_result", id, text: String((isError ? state.error : state.output) ?? ""), isError });
+    return true;
+  }
+  return true; // step_start, step_finish, reasoning, error: nothing to render
+}
+
 export function parseTrace(text: string, prompt?: string): Step[] {
   const steps: Step[] = [];
   if (prompt) steps.push({ kind: "prompt", text: prompt });
@@ -97,6 +128,7 @@ export function parseTrace(text: string, prompt?: string): Step[] {
       continue;
     }
     if (fromClaudeMessage(obj, steps)) continue;
+    if (fromOpenCodeEvent(obj, steps)) continue;
     fromCodexEvent(obj, steps);
   }
   // A prompt given explicitly and repeated as the first user message is kept once.

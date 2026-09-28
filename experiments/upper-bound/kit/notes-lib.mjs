@@ -33,6 +33,21 @@ export function toRepoPath(p, root) {
  * The places a tool call touches: repo-relative paths, plus the line range when known.
  * Handles Claude Code (Read/Edit/Write/MultiEdit/Grep/Glob/Bash) and generic { path } inputs.
  */
+/**
+ * OpenCode tool calls → the Claude Code names and argument keys the rest of the kit uses.
+ * OpenCode: read/edit/write/multiedit {filePath,…}, patch/apply_patch {patchText}, bash, grep, glob, list.
+ */
+const OPENCODE_TOOLS = { read: "Read", edit: "Edit", write: "Write", multiedit: "MultiEdit", bash: "Bash", grep: "Grep", glob: "Glob", list: "LS", patch: "apply_patch", apply_patch: "apply_patch" };
+export function fromOpenCodeCall(tool, args) {
+  const a = args && typeof args === "object" ? args : {};
+  const input = { ...a };
+  if (typeof a.filePath === "string") input.file_path = a.filePath;
+  if (typeof a.oldString === "string") input.old_string = a.oldString;
+  if (typeof a.newString === "string") input.new_string = a.newString;
+  if (typeof a.patchText === "string") input.patch = a.patchText;
+  return { tool: OPENCODE_TOOLS[tool] ?? tool, input };
+}
+
 export function placesFromToolCall(toolName, input, root, knownPaths = []) {
   const out = [];
   const add = (p, lines) => {

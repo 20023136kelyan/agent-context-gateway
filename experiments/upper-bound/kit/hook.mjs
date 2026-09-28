@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
  * Bifröst experiment hook: PreToolUse for Claude Code (and BeforeTool-style callers).
+ * OpenCode uses the same logic through opencode-plugin.mjs.
  *
  * Reads the tool call as JSON on stdin. When the call touches a place with notes,
  * prints { hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext } }.
@@ -35,8 +36,8 @@ function saveState(dir, session, state) {
 
 const safe = (s) => String(s || "no-session").replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
 
-function log(entry) {
-  const file = process.env.BIFROST_LOG;
+function log(entry, env = process.env) {
+  const file = env.BIFROST_LOG;
   if (!file) return;
   try { appendFileSync(file, JSON.stringify({ ts: new Date().toISOString(), channel: "push", ...entry }) + "\n"); } catch { /* fail open */ }
 }
@@ -69,21 +70,28 @@ export function decide(event, env = process.env) {
     shownOnEdit: isEdit ? [...new Set([...state.shownOnEdit, ...shown])] : state.shownOnEdit,
   };
   const output = JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: text } });
-  return { output, logEntry: { ...base, shown, chars: text.length }, state: next };
+  return { output, text, logEntry: { ...base, shown, chars: text.length }, state: next };
+}
+
+/** decide(), then persist what was shown and log the call. Returns the notes text ("" for none). Never throws. */
+export function handle(event, env = process.env) {
+  try {
+    const { text, logEntry, state } = decide(event, env);
+    if (state) saveState(env.BIFROST_STATE, logEntry.session, state);
+    log(logEntry, env);
+    return text ?? "";
+  } catch (err) {
+    log({ error: String(err?.message ?? err) }, env);
+    return "";
+  }
 }
 
 function main() {
   let event;
   try { event = JSON.parse(readStdin() || "{}"); } catch { return; }
   if (!event || typeof event !== "object") return;
-  try {
-    const { output, logEntry, state } = decide(event);
-    if (state) saveState(process.env.BIFROST_STATE, logEntry.session, state);
-    log(logEntry);
-    if (output) process.stdout.write(output + "\n");
-  } catch (err) {
-    log({ error: String(err?.message ?? err) });
-  }
+  const text = handle(event);
+  if (text) process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: text } }) + "\n");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
