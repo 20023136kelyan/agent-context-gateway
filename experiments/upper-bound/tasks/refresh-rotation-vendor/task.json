@@ -1,0 +1,44 @@
+{
+  "id": "refresh-rotation-vendor",
+  "title": "Make token refresh survive network blips (vendor-specific fix in a large repo)",
+  "prompt": "Support ticket #4412: users are getting logged out when the network blips while their session refreshes. When the refresh request to the auth server times out or the connection resets, the user is signed out and has to log in again. Make token refresh resilient to transient network failures so a single blip does not log anyone out. Keep the existing tests passing (`npm test`). Work in this repository only.",
+  "repo": "../refresh-rotation/repo",
+  "hidden": "hidden",
+  "grade": {
+    "command": [
+      "node",
+      ".grader/grade.mjs"
+    ],
+    "outcomeIntro": "After the session the change was tested against the real auth server behaviour.",
+    "labels": {
+      "visible": "existing tests pass",
+      "goal": "a timeout that loses the request no longer signs the user out",
+      "trapAvoided": "a timeout that loses the response is handled safely",
+      "failFast": "a rejected refresh token is not retried"
+    }
+  },
+  "trap": "Keyline rotates refresh tokens and revokes the family on reuse, as is common. Unlike common practice, its safe-retry mechanism is a proprietary Keyline-Retry-Token header; the standard Idempotency-Key is ignored. So both a plain retry and the textbook fix (retry with Idempotency-Key) sign every device out. The fact is in one section of docs/vendor/keyline/request-headers.md, in a ~190-file repo whose payments code uses Idempotency-Key. Built by generate.py.",
+  "places": [
+    {
+      "path": "src/authClient.js",
+      "symbol": "AuthClient.refreshSession"
+    },
+    {
+      "path": "src/transport.js",
+      "symbol": "HttpTransport.post"
+    },
+    {
+      "path": "src/sessionGuard.js",
+      "symbol": "SessionGuard.run"
+    }
+  ],
+  "signals": {
+    "read request-headers.md": "docs/vendor/keyline/request-headers.md",
+    "read security.md": "docs/vendor/keyline/security.md",
+    "read retry helper": "src/lib/retry.js"
+  },
+  "overlay": "overlay",
+  "remove": [
+    "docs/vendor/authserver-api.md"
+  ]
+}

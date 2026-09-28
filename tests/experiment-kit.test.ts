@@ -124,9 +124,9 @@ describe("hook", () => {
   });
 });
 
-describe.each(["refresh-rotation", "refresh-rotation-undocumented", "refresh-rotation-buried"])("%s task", (id) => {
+describe.each(["refresh-rotation", "refresh-rotation-undocumented", "refresh-rotation-buried", "refresh-rotation-vendor"])("%s task", (id) => {
   const dir = join(EXP, "tasks", id);
-  const gradeWith = (variant: "original" | "naive" | "correct") => {
+  const gradeWith = (variant: "original" | "naive" | "correct" | "generic") => {
     const ws = prepareWorkspace(loadTask(id));
     try {
       if (variant !== "original") cpSync(join(dir, "reference", variant, "src/authClient.js"), join(ws, "src/authClient.js"));
@@ -144,6 +144,8 @@ describe.each(["refresh-rotation", "refresh-rotation-undocumented", "refresh-rot
     expect(naive.details.trapAvoided).toContain("revoked the whole token family");
     const correct = gradeWith("correct");
     expect(correct).toMatchObject({ visible: true, goal: true, trapAvoided: true, failFast: true, pass: true, trapHit: false });
+    // The vendor task's server ignores the standard header: the textbook fix is a trap too.
+    if (existsSync(join(dir, "reference/generic"))) expect(gradeWith("generic")).toMatchObject({ goal: true, trapAvoided: false, trapHit: true });
   });
 
   it("keeps notes within 280 characters, anchored to files the agent gets", () => {
@@ -165,7 +167,7 @@ it("the undocumented variant has no trace of the trap in the repo; the buried on
   const scan = (id: string) => {
     const ws = prepareWorkspace(loadTask(id));
     try {
-      const out = spawnSync("grep", ["-rliE", "reuse detection|token famil|rotates the refresh", ".", "--exclude-dir=.git"], { cwd: ws, encoding: "utf8" }).stdout;
+      const out = spawnSync("grep", ["-rliE", "reuse detection|token famil|rotates the refresh|keyline-retry-token", ".", "--exclude-dir=.git"], { cwd: ws, encoding: "utf8" }).stdout;
       return out.split("\n").filter(Boolean).map((p) => p.replace(/^\.\//, "")).sort();
     } finally {
       rmSync(ws, { recursive: true, force: true });
@@ -173,6 +175,7 @@ it("the undocumented variant has no trace of the trap in the repo; the buried on
   };
   expect(scan("refresh-rotation-undocumented")).toEqual([]);
   // Idempotency-Key also appears in the payments code and docs, on purpose: it reads as a payments-only thing.
+  expect(scan("refresh-rotation-vendor")).toEqual(["docs/vendor/keyline/changelog.md", "docs/vendor/keyline/request-headers.md", "docs/vendor/keyline/security.md"]);
   expect(scan("refresh-rotation-buried")).toEqual(["docs/vendor/keyline/changelog.md", "docs/vendor/keyline/request-headers.md", "docs/vendor/keyline/security.md"]);
 });
 

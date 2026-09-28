@@ -113,6 +113,14 @@ problem in different ways:
 | `refresh-rotation-undocumented` | The repo's copy of the vendor doc is v3.1, from before reuse detection and idempotency keys. The transport has no named idempotency option. Nothing in the repo says a retry is dangerous. | Do notes carry knowledge that exists only in past work? Control should fail almost always, by construction. |
 | `refresh-rotation-buried` | A ~48-file repo. The vendor docs are split into 13 pages; rotation is one section of `security.md`, the header one entry in `request-headers.md`. Two lures point at a plain retry: the `withRetry` helper and ADR 0003. `Idempotency-Key` appears in the payments code, so it reads as a payments thing. | Do notes at the place beat an agent searching on its own? A careful agent can still find the answer. |
 
+**First results (Muse Spark 1.3, free, `xhigh`):** the buried variant did not separate the arms.
+The model read ~40 of its 48 files and already knew refresh-token rotation from training, so control
+passed every time. Hence a third variant:
+
+| Task | What changes | What it tests |
+|---|---|---|
+| `refresh-rotation-vendor` | ~186 files (built by its `generate.py`). Keyline's safe retry is a proprietary `Keyline-Retry-Token` header and the standard `Idempotency-Key` is ignored, so the textbook fix is a trap too. The fact is in one section of `request-headers.md`; payments code uses `Idempotency-Key`. | Notes against search when the model's training points the wrong way, in a repo too large to read end to end. |
+
 A task can point `repo` and `hidden` at another task and add `overlay` (files
 copied over the repo) and `remove` (paths deleted), so variants don't copy the
 grader. The kit tests check that each grader separates no fix, the naive retry

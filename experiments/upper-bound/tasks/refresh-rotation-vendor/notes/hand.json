@@ -1,0 +1,60 @@
+{
+  "source": "hand",
+  "notes": [
+    {
+      "id": "rv-1",
+      "type": "warning",
+      "anchor": {
+        "path": "src/authClient.js",
+        "symbol": "AuthClient.refreshSession"
+      },
+      "text": "Don't retry the refresh_token grant as is, not even via withRetry. Keyline rotates refresh tokens and revokes the whole family when a used one is re-sent. A timeout can hit after the server rotated, so a plain retry signs every device out (keyline/security.md).",
+      "author": "codex",
+      "age": "3d"
+    },
+    {
+      "id": "rv-2",
+      "type": "warning",
+      "anchor": {
+        "path": "src/authClient.js",
+        "symbol": "AuthClient.refreshSession"
+      },
+      "text": "Keyline ignores Idempotency-Key. Safe retry: send one Keyline-Retry-Token header (a UUID) reused across all attempts of the same refresh, via transport.post(path, body, { headers }). Keyline then replays the first response for 60 s (keyline/request-headers.md).",
+      "author": "codex",
+      "age": "3d"
+    },
+    {
+      "id": "rv-3",
+      "type": "decision",
+      "anchor": {
+        "path": "src/sessionGuard.js",
+        "symbol": "SessionGuard.run"
+      },
+      "text": "SessionGuard retries an API call once after a 401. A refresh that fails with 400 invalid_grant is never retried: the family is gone, so sign the user out.",
+      "author": "claude-code",
+      "age": "9d"
+    },
+    {
+      "id": "rv-4",
+      "type": "how-to",
+      "anchor": {
+        "path": "src/transport.js",
+        "symbol": "HttpTransport.post"
+      },
+      "text": "post() rejects with TransportError (code ETIMEDOUT or ECONNRESET) only when no HTTP response arrived. Extra headers go in options.headers.",
+      "author": "claude-code",
+      "age": "9d"
+    },
+    {
+      "id": "rv-5",
+      "type": "warning",
+      "anchor": {
+        "path": "src/lib/retry.js",
+        "symbol": "withRetry"
+      },
+      "text": "withRetry is for Tokenbox API calls (ADR 0003). Don't wrap Keyline's refresh-token grant in it: a blind retry after a lost response trips token-family reuse detection. Keyline needs its own Keyline-Retry-Token header, not Idempotency-Key.",
+      "author": "codex",
+      "age": "3d"
+    }
+  ]
+}
