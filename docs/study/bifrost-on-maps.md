@@ -358,10 +358,10 @@ interface Objective {
 |---|---|---|---|
 | Claude Code | `PreToolUse` on `Read\|Edit\|Write\|MultiEdit\|Grep` → `additionalContext` | `SessionStart` hook | Yes |
 | Gemini CLI | `BeforeTool` → `additionalContext` | Instruction file | Yes |
-| Codex | Not possible: Codex Desktop rejects `additionalContext` on `PreToolUse` | `AGENTS.md` | Yes |
-| Cursor | Not possible | `.cursor/rules` (`alwaysApply`) | Yes |
+| Codex | **Unconfirmed.** Codex runs `PreToolUse` hooks from `.codex/hooks.json`, but Graphify reports that Codex Desktop rejects `additionalContext` there (its changelog #651, #2165), so Graphify leaves that hook empty. Whether the Codex CLI accepts it, or another hook event carries context, is untested. | `AGENTS.md` | Yes |
+| Cursor | **Unconfirmed.** Graphify integrates through an always-applied rules file only, which says nothing about whether Cursor has hooks of its own. Untested. | `.cursor/rules` (`alwaysApply`) | Yes |
 
-These are the channels Graphify already relies on. Its hooks inject a fixed reminder, while Bifröst injects the entries for the place being touched.
+These are the channels Graphify already relies on. Graphify itself works on all of these platforms. The open question is only whether per-tool-call context injection is available outside Claude Code and Gemini. Where it isn't, Bifröst falls back to instruction files, MCP pull and session start, as Graphify does. Its hooks inject a fixed reminder, while Bifröst injects the entries for the place being touched.
 
 ### 7.2 Latency
 
