@@ -242,6 +242,7 @@ npm run exp:run -- --agent codex --tasks refresh-rotation --arms control,hand-pu
 | `--timeout-min` | 20 | Per-run wall-clock limit |
 | `--concurrency` | 2 | Parallel runs |
 | `--setting-sources` | `project` | Which Claude Code settings load. `project` keeps your user hooks and CLAUDE.md out of the runs. |
+| `--resume` | off | With `--out <dir>`: keep that batch's valid runs, re-run the missing and invalid ones |
 | `--keep` | off | Keep each run's workspace for inspection |
 | `-- <args>` | | Extra arguments passed to the agent |
 
@@ -277,6 +278,9 @@ npm run exp:run -- --agent codex --tasks refresh-rotation --arms control,hand-pu
 - **Agents with unrestricted file access could find the task files.** A thorough
   agent could search the filesystem and find `experiments/`. Check `readPaths` in
   `result.json` if a result looks too good.
+- **Invalid runs.** A run is invalid, not failed, when the agent never started (network, auth, model
+  name) or when it hit the timeout after going silent for 5+ minutes (a stalled model connection;
+  free hosted models do this). The report leaves invalid runs out; `--resume` re-runs them.
 - **Not yet run against real agents.** The plumbing is tested with the scripted
   agent, and with real OpenCode driven by a scripted mock model. The first real step is the one-rep smoke test above, run on your
   own machine: in the cloud dev container the runs execute as root, Claude Code

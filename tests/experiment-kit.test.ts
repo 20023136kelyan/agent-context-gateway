@@ -317,6 +317,12 @@ describe("harness", () => {
     expect(invalidReason("", 1, 0)).toMatch(/exited with code 1/);
     expect(invalidReason(blocked, 1, 3)).toBeUndefined();
     expect(invalidReason("", 0, 0)).toBeUndefined();
+    const t0 = 1_790_000_000_000;
+    const at = (ms: number) => JSON.stringify({ type: "tool_use", timestamp: t0 + ms, sessionID: "s", part: {} });
+    const run = { timedOut: true, startMs: t0, durationMs: 20 * 60_000 };
+    expect(invalidReason(at(60_000), null, 1, run)).toMatch(/stalled: no agent event for the last 19 min/);
+    expect(invalidReason(at(18 * 60_000), null, 1, run)).toBeUndefined();
+    expect(invalidReason("", null, 0, run)).toMatch(/no response from the model/);
     const row = { task: "t", arm: "control", rep: 1, pass: false, trapHit: false, goal: false, durationMs: 1, notesShown: [], pullCalls: 0, readPaths: [] } as unknown as Parameters<typeof buildReport>[0][number];
     const report = buildReport([row, { ...row, rep: 2, invalid: "agent error: Forbidden" }]);
     expect(report).toContain("1 invalid run(s) left out");

@@ -348,7 +348,27 @@ export function metricsFromTrace(traceText: string, ws: string) {
  * Why a run is not a data point, or undefined when it is. A run whose agent made no tool
  * call and exited with an error (or reported a fatal error event) never attempted the task.
  */
-export function invalidReason(traceText: string, exitCode: number | null, toolCalls: number): string | undefined {
+export const STALL_MS = 5 * 60_000;
+
+export function invalidReason(
+  traceText: string,
+  exitCode: number | null,
+  toolCalls: number,
+  run?: { timedOut: boolean; startMs: number; durationMs: number },
+): string | undefined {
+  if (run?.timedOut) {
+    // A run that hit the timeout after going silent for minutes is a stalled model
+    // connection, not an agent that ran out of time. Needs timestamped events (OpenCode).
+    let last: number | undefined;
+    for (const line of traceText.split("\n")) {
+      const m = /"timestamp":(\d{12,})/.exec(line);
+      if (m && !line.includes('"bifrost.outcome"')) last = Number(m[1]);
+    }
+    const end = run.startMs + run.durationMs;
+    if (last === undefined && toolCalls === 0) return `no response from the model before the ${Math.round(run.durationMs / 60_000)} min timeout`;
+    if (last !== undefined && end - last > STALL_MS) return `stalled: no agent event for the last ${Math.round((end - last) / 60_000)} min before the timeout`;
+    return undefined;
+  }
   if (toolCalls > 0) return undefined;
   for (const line of traceText.split("\n")) {
     if (!line.includes('"error"') && !line.includes('"is_error"')) continue;
@@ -421,7 +441,7 @@ export async function runOne(task: TaskSpec, arm: Arm, rep: number, opts: RunOpt
 
   const traceText = readFileSync(traceFile, "utf8");
   const metrics = metricsFromTrace(traceText, ws);
-  const invalid = timedOut ? undefined : invalidReason(traceText, code, metrics.toolCalls);
+  const invalid = invalidReason(traceText, code, metrics.toolCalls, { timedOut, startMs: t0, durationMs });
   const result: RunResult = {
     task: task.id,
     arm: arm.id,
@@ -471,12 +491,39 @@ function toolVersion(cmd: string): string | undefined {
   return r.status === 0 ? r.stdout.trim() : undefined;
 }
 
+/**
+ * For --resume: re-checks every recorded run against the current invalid-run rules
+ * (reading its trace), rewrites results.jsonl with only the valid runs, and returns
+ * their keys. Invalid runs are dropped from the file and run again.
+ */
+export function reclassify(resultsFile: string): Set<string> {
+  const keep = new Map<string, RunResult>();
+  if (!existsSync(resultsFile)) return new Set();
+  for (const line of readFileSync(resultsFile, "utf8").split("\n")) {
+    if (!line.trim()) continue;
+    const r = JSON.parse(line) as RunResult;
+    const trace = join(r.runDir, "trace.jsonl");
+    if (existsSync(trace)) {
+      const invalid = invalidReason(readFileSync(trace, "utf8"), r.exitCode, r.toolCalls, { timedOut: r.timedOut, startMs: Date.parse(r.startedAt), durationMs: r.durationMs });
+      if (invalid) r.invalid = invalid;
+      else delete r.invalid;
+    }
+    const key = `${r.task}|${r.arm}|${r.rep}`;
+    if (r.invalid) {
+      console.log(`re-running ${key}: ${r.invalid}`);
+      keep.delete(key);
+    } else keep.set(key, r);
+  }
+  writeFileSync(resultsFile, [...keep.values()].map((r) => JSON.stringify(r)).join("\n") + (keep.size ? "\n" : ""));
+  return new Set(keep.keys());
+}
+
 async function main(argv: string[]) {
   const tasks = (arg(argv, "tasks") ?? "").split(",").filter(Boolean);
   const arms = (arg(argv, "arms") ?? "control,hand").split(",").filter(Boolean).map(resolveArm);
   if (tasks.length === 0) {
     console.error(`usage: run.ts --tasks <id,...> [--arms control,hand] [--reps 10] [--agent claude|opencode|codex|command] [--model M]
-  [--budget-usd 3] [--timeout-min 20] [--concurrency 2] [--out <dir>] [--setting-sources project] [--keep]
+  [--budget-usd 3] [--timeout-min 20] [--concurrency 2] [--out <dir>] [--resume] [--setting-sources project] [--keep]
   [--agent-cmd "<shell command with {workspace} {promptFile} {runDir}>"] [-- <extra agent args>]`);
     process.exit(2);
   }
@@ -497,6 +544,7 @@ async function main(argv: string[]) {
   const outDir = resolve(arg(argv, "out") ?? join(ROOT, "results", stamp));
   mkdirSync(outDir, { recursive: true });
   const specs = tasks.map(loadTask);
+  const done = argv.includes("--resume") ? reclassify(join(outDir, "results.jsonl")) : new Set<string>();
 
   writeFileSync(
     join(outDir, "manifest.json"),
@@ -521,7 +569,8 @@ async function main(argv: string[]) {
   const jobs: (() => Promise<RunResult>)[] = [];
   for (let rep = 1; rep <= reps; rep++)
     for (const task of specs)
-      for (const arm of arms)
+      for (const arm of arms) {
+        if (done.has(`${task.id}|${arm.id}|${rep}`)) continue;
         jobs.push(async () => {
           const r = await runOne(task, arm, rep, opts, outDir);
           appendFileSync(join(outDir, "results.jsonl"), JSON.stringify(r) + "\n");
@@ -529,6 +578,8 @@ async function main(argv: string[]) {
           console.log(`${task.id} ${arm.id} rep ${rep}: ${r.invalid ? "INVALID" : r.pass ? "PASS" : r.trapHit ? "TRAP" : "FAIL"} ${(r.durationMs / 1000).toFixed(0)}s${cost} notes=${r.notesShown.join("|") || "-"}${r.invalid ? ` (${r.invalid})` : ""}`);
           return r;
         });
+      }
+  if (done.size) console.log(`Resuming: ${done.size} valid runs kept, ${jobs.length} to run.`);
   await pool(jobs, concurrency);
   console.log(`\nResults: ${join(outDir, "results.jsonl")}\nReport:  tsx experiments/upper-bound/harness/report.ts ${outDir}`);
 }
