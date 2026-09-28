@@ -54,8 +54,15 @@ export interface TaskSpec {
   id: string;
   title: string;
   prompt: string;
+  /** Paths are relative to the task directory, so a variant can point at another task's files. */
   repo: string;
+  /** Copied over the repo: a variant's changed and added files. */
+  overlay?: string;
+  /** Repo-relative paths deleted after the overlay. */
+  remove?: string[];
   hidden: string;
+  /** Directory of notes files (default "notes"). */
+  notesDir?: string;
   grade: { command: string[]; outcomeIntro?: string; labels?: Record<string, string> };
 }
 
@@ -113,6 +120,8 @@ function git(cwd: string, ...args: string[]) {
 export function prepareWorkspace(task: TaskSpec): string {
   const ws = mkdtempSync(join(tmpdir(), `bifrost-exp-${task.id}-`));
   cpSync(join(TASKS, task.id, task.repo), ws, { recursive: true });
+  if (task.overlay) cpSync(join(TASKS, task.id, task.overlay), ws, { recursive: true });
+  for (const p of task.remove ?? []) rmSync(join(ws, p), { recursive: true, force: true });
   git(ws, "init", "-q");
   git(ws, "add", "-A");
   git(ws, "commit", "-q", "-m", "initial");
@@ -377,7 +386,7 @@ export async function runOne(task: TaskSpec, arm: Arm, rep: number, opts: RunOpt
   const ws = prepareWorkspace(task);
   let notesFile: string | undefined;
   if (arm.notes) {
-    const src = join(TASKS, task.id, "notes", `${arm.notes}.json`);
+    const src = join(TASKS, task.id, task.notesDir ?? "notes", `${arm.notes}.json`);
     if (!existsSync(src)) throw new Error(`notes file not found: ${src}`);
     notesFile = join(runDir, "notes.json");
     cpSync(src, notesFile);

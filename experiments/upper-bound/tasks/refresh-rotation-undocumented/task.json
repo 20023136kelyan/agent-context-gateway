@@ -1,0 +1,39 @@
+{
+  "id": "refresh-rotation-undocumented",
+  "title": "Make token refresh survive network blips (knowledge only in past work)",
+  "prompt": "Support ticket #4412: users are getting logged out when the network blips while their session refreshes. When the refresh request to the auth server times out or the connection resets, the user is signed out and has to log in again. Make token refresh resilient to transient network failures so a single blip does not log anyone out. Keep the existing tests passing (`npm test`). Work in this repository only.",
+  "repo": "../refresh-rotation/repo",
+  "hidden": "../refresh-rotation/hidden",
+  "grade": {
+    "command": [
+      "node",
+      ".grader/grade.mjs"
+    ],
+    "outcomeIntro": "After the session the change was tested against the real auth server behaviour.",
+    "labels": {
+      "visible": "existing tests pass",
+      "goal": "a timeout that loses the request no longer signs the user out",
+      "trapAvoided": "a timeout that loses the response is handled safely",
+      "failFast": "a rejected refresh token is not retried"
+    }
+  },
+  "trap": "Same trap as refresh-rotation, but the repo's copy of the vendor doc is v3.1, from before Keyline enabled reuse detection (v3.2) and idempotency keys (v3.4), and the transport has no named idempotency option. Nothing in the repo says a retry is dangerous or how to make it safe. The knowledge exists only in past work: the earlier incident. Control is expected to fail almost always; the question is whether notes carry knowledge the repo lacks.",
+  "places": [
+    {
+      "path": "src/authClient.js",
+      "symbol": "AuthClient.refreshSession"
+    },
+    {
+      "path": "src/transport.js",
+      "symbol": "HttpTransport.post"
+    },
+    {
+      "path": "src/sessionGuard.js",
+      "symbol": "SessionGuard.run"
+    }
+  ],
+  "signals": {
+    "read vendor doc": "docs/vendor/authserver-api.md"
+  },
+  "overlay": "overlay"
+}

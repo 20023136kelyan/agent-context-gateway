@@ -101,6 +101,24 @@ that lose either the request or the response. It reports:
 The grader has been checked against both reference fixes: no fix fails `goal`,
 the naive fix is a `trapHit`, and the correct fix passes (`tests/experiment-kit.test.ts`).
 
+## Variants of the first task
+
+The smoke test showed `refresh-rotation` is too easy: the repo is 5 files, so an
+agent reads everything, including the vendor doc, and finds the answer unaided
+(Muse Spark passed without notes). Two variants share its grader and fix the
+problem in different ways:
+
+| Task | What changes | What it tests |
+|---|---|---|
+| `refresh-rotation-undocumented` | The repo's copy of the vendor doc is v3.1, from before reuse detection and idempotency keys. The transport has no named idempotency option. Nothing in the repo says a retry is dangerous. | Do notes carry knowledge that exists only in past work? Control should fail almost always, by construction. |
+| `refresh-rotation-buried` | A ~48-file repo. The vendor docs are split into 13 pages; rotation is one section of `security.md`, the header one entry in `request-headers.md`. Two lures point at a plain retry: the `withRetry` helper and ADR 0003. `Idempotency-Key` appears in the payments code, so it reads as a payments thing. | Do notes at the place beat an agent searching on its own? A careful agent can still find the answer. |
+
+A task can point `repo` and `hidden` at another task and add `overlay` (files
+copied over the repo) and `remove` (paths deleted), so variants don't copy the
+grader. The kit tests check that each grader separates no fix, the naive retry
+and the correct fix. They also check that nothing in the undocumented repo
+mentions the trap.
+
 ## Protocol
 
 Two runners are verified: **Claude Code** and **OpenCode**. OpenCode is the cheap

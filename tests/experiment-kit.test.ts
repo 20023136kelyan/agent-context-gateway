@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 // @ts-expect-error plain ESM module without type declarations
@@ -9,7 +9,7 @@ import { formatNotes, matchNotes, placesFromToolCall, sanitize, loadNotes, fromO
 import { BifrostPlugin } from "../experiments/upper-bound/kit/opencode-plugin.mjs";
 import { parseTrace, renderDigest, renderFull, scrub } from "../experiments/upper-bound/harness/trace.js";
 import { generateNotes, validateNotes, listRepoFiles } from "../experiments/upper-bound/harness/generate.js";
-import { buildAgentCommand, invalidReason, loadTask, metricsFromTrace, resolveArm, runOne, outcomeText, type RunOptions } from "../experiments/upper-bound/harness/run.js";
+import { buildAgentCommand, grade, invalidReason, loadTask, prepareWorkspace, metricsFromTrace, resolveArm, runOne, outcomeText, type RunOptions } from "../experiments/upper-bound/harness/run.js";
 import { buildReport, bootstrapDiff } from "../experiments/upper-bound/harness/report.js";
 
 const EXP = resolve(__dirname, "../experiments/upper-bound");
@@ -124,14 +124,16 @@ describe("hook", () => {
   });
 });
 
-describe("refresh-rotation task", () => {
+describe.each(["refresh-rotation", "refresh-rotation-undocumented", "refresh-rotation-buried"])("%s task", (id) => {
+  const dir = join(EXP, "tasks", id);
   const gradeWith = (variant: "original" | "naive" | "correct") => {
-    const ws = join(tmp, `grade-${variant}`);
-    cpSync(join(TASK, "repo"), ws, { recursive: true });
-    if (variant !== "original") cpSync(join(TASK, "reference", variant, "src/authClient.js"), join(ws, "src/authClient.js"));
-    cpSync(join(TASK, "hidden"), join(ws, ".grader"), { recursive: true });
-    const r = spawnSync(process.execPath, [".grader/grade.mjs"], { cwd: ws, encoding: "utf8" });
-    return JSON.parse(r.stdout.trim().split("\n").pop()!);
+    const ws = prepareWorkspace(loadTask(id));
+    try {
+      if (variant !== "original") cpSync(join(dir, "reference", variant, "src/authClient.js"), join(ws, "src/authClient.js"));
+      return grade(loadTask(id), ws) as Record<string, unknown> & { details: Record<string, string> };
+    } finally {
+      rmSync(ws, { recursive: true, force: true });
+    }
   };
 
   it("the grader separates no fix, the naive retry and the correct fix", () => {
@@ -144,11 +146,34 @@ describe("refresh-rotation task", () => {
     expect(correct).toMatchObject({ visible: true, goal: true, trapAvoided: true, failFast: true, pass: true, trapHit: false });
   });
 
-  it("keeps notes within 280 characters", () => {
-    for (const f of ["hand", "wrong"]) {
-      for (const n of loadNotes(join(TASK, `notes/${f}.json`))) expect(n.text.length).toBeLessThanOrEqual(280);
+  it("keeps notes within 280 characters, anchored to files the agent gets", () => {
+    const ws = prepareWorkspace(loadTask(id));
+    try {
+      for (const f of ["hand", "wrong"]) {
+        for (const n of loadNotes(join(dir, `notes/${f}.json`))) {
+          expect(n.text.length).toBeLessThanOrEqual(280);
+          expect(existsSync(join(ws, n.anchor.path))).toBe(true);
+        }
+      }
+    } finally {
+      rmSync(ws, { recursive: true, force: true });
     }
   });
+});
+
+it("the undocumented variant has no trace of the trap in the repo; the buried one has it only in the vendor pages", () => {
+  const scan = (id: string) => {
+    const ws = prepareWorkspace(loadTask(id));
+    try {
+      const out = spawnSync("grep", ["-rliE", "reuse detection|token famil|rotates the refresh", ".", "--exclude-dir=.git"], { cwd: ws, encoding: "utf8" }).stdout;
+      return out.split("\n").filter(Boolean).map((p) => p.replace(/^\.\//, "")).sort();
+    } finally {
+      rmSync(ws, { recursive: true, force: true });
+    }
+  };
+  expect(scan("refresh-rotation-undocumented")).toEqual([]);
+  // Idempotency-Key also appears in the payments code and docs, on purpose: it reads as a payments-only thing.
+  expect(scan("refresh-rotation-buried")).toEqual(["docs/vendor/keyline/changelog.md", "docs/vendor/keyline/request-headers.md", "docs/vendor/keyline/security.md"]);
 });
 
 const SAMPLE_TRACE = [

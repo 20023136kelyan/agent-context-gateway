@@ -1,0 +1,49 @@
+{
+  "source": "hand",
+  "notes": [
+    {
+      "id": "ru-1",
+      "type": "warning",
+      "anchor": {
+        "path": "src/authClient.js",
+        "symbol": "AuthClient.refreshSession"
+      },
+      "text": "Don't retry the refresh_token grant as is. Since v3.2 Keyline rotates refresh tokens and revokes the whole token family when a used one is re-sent. A timeout can hit after the server rotated, so a plain retry signs every device out. Our vendor doc copy is v3.1 and predates this.",
+      "author": "codex",
+      "age": "3d"
+    },
+    {
+      "id": "ru-2",
+      "type": "how-to",
+      "anchor": {
+        "path": "src/authClient.js",
+        "symbol": "AuthClient.refreshSession"
+      },
+      "text": "Safe retry: send one Idempotency-Key header, reused across all attempts of the same refresh (transport.post(path, body, { headers })). Keyline (v3.4+) replays the first response for 60 s and skips reuse detection. Never reuse the key for a different refresh token.",
+      "author": "codex",
+      "age": "3d"
+    },
+    {
+      "id": "ru-3",
+      "type": "decision",
+      "anchor": {
+        "path": "src/sessionGuard.js",
+        "symbol": "SessionGuard.run"
+      },
+      "text": "SessionGuard retries an API call once after a 401. A refresh that fails with 400 invalid_grant is never retried: the family is gone, so sign the user out.",
+      "author": "claude-code",
+      "age": "9d"
+    },
+    {
+      "id": "ru-4",
+      "type": "how-to",
+      "anchor": {
+        "path": "src/transport.js",
+        "symbol": "HttpTransport.post"
+      },
+      "text": "post() rejects with TransportError (code ETIMEDOUT or ECONNRESET) only when no HTTP response arrived. Extra headers such as Idempotency-Key go in options.headers.",
+      "author": "claude-code",
+      "age": "9d"
+    }
+  ]
+}

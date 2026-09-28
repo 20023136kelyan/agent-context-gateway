@@ -1,0 +1,44 @@
+{
+  "id": "refresh-rotation-buried",
+  "title": "Make token refresh survive network blips (knowledge buried in a larger repo)",
+  "prompt": "Support ticket #4412: users are getting logged out when the network blips while their session refreshes. When the refresh request to the auth server times out or the connection resets, the user is signed out and has to log in again. Make token refresh resilient to transient network failures so a single blip does not log anyone out. Keep the existing tests passing (`npm test`). Work in this repository only.",
+  "repo": "../refresh-rotation/repo",
+  "hidden": "../refresh-rotation/hidden",
+  "grade": {
+    "command": [
+      "node",
+      ".grader/grade.mjs"
+    ],
+    "outcomeIntro": "After the session the change was tested against the real auth server behaviour.",
+    "labels": {
+      "visible": "existing tests pass",
+      "goal": "a timeout that loses the request no longer signs the user out",
+      "trapAvoided": "a timeout that loses the response is handled safely",
+      "failFast": "a rejected refresh token is not retried"
+    }
+  },
+  "trap": "Same trap as refresh-rotation, in a ~40-file repo. The vendor docs are split into 13 pages: rotation and family revocation sit in one section of security.md, the Idempotency-Key header in the middle of request-headers.md, and grants.md (the obvious page for refresh) says nothing about either. Two lures point at a plain retry: the shared withRetry helper and ADR 0003 ('all transient failures are retried'). The transport has no named idempotency option. A careful agent can still find the answer; the question is whether notes at the place beat searching.",
+  "places": [
+    {
+      "path": "src/authClient.js",
+      "symbol": "AuthClient.refreshSession"
+    },
+    {
+      "path": "src/transport.js",
+      "symbol": "HttpTransport.post"
+    },
+    {
+      "path": "src/sessionGuard.js",
+      "symbol": "SessionGuard.run"
+    }
+  ],
+  "signals": {
+    "read security.md": "docs/vendor/keyline/security.md",
+    "read request-headers.md": "docs/vendor/keyline/request-headers.md",
+    "read retry helper": "src/lib/retry.js"
+  },
+  "overlay": "overlay",
+  "remove": [
+    "docs/vendor/authserver-api.md"
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "source": "hand",
+  "notes": [
+    {
+      "id": "rb-1",
+      "type": "warning",
+      "anchor": {
+        "path": "src/authClient.js",
+        "symbol": "AuthClient.refreshSession"
+      },
+      "text": "Don't retry the refresh_token grant as is, not even via withRetry. Keyline rotates refresh tokens and revokes the whole family when a used one is re-sent. A timeout can hit after the server rotated, so a plain retry signs every device out (keyline/security.md, Token families).",
+      "author": "codex",
+      "age": "3d"
+    },
+    {
+      "id": "rb-2",
+      "type": "how-to",
+      "anchor": {
+        "path": "src/authClient.js",
+        "symbol": "AuthClient.refreshSession"
+      },
+      "text": "Safe retry: one Idempotency-Key header reused across all attempts of the same refresh (transport.post(path, body, { headers })). Keyline replays the first response for 60 s and skips reuse detection (keyline/request-headers.md). New key per refresh token.",
+      "author": "codex",
+      "age": "3d"
+    },
+    {
+      "id": "rb-3",
+      "type": "decision",
+      "anchor": {
+        "path": "src/sessionGuard.js",
+        "symbol": "SessionGuard.run"
+      },
+      "text": "SessionGuard retries an API call once after a 401. A refresh that fails with 400 invalid_grant is never retried: the family is gone, so sign the user out.",
+      "author": "claude-code",
+      "age": "9d"
+    },
+    {
+      "id": "rb-4",
+      "type": "how-to",
+      "anchor": {
+        "path": "src/transport.js",
+        "symbol": "HttpTransport.post"
+      },
+      "text": "post() rejects with TransportError (code ETIMEDOUT or ECONNRESET) only when no HTTP response arrived. Extra headers such as Idempotency-Key go in options.headers.",
+      "author": "claude-code",
+      "age": "9d"
+    },
+    {
+      "id": "rb-5",
+      "type": "warning",
+      "anchor": {
+        "path": "src/lib/retry.js",
+        "symbol": "withRetry"
+      },
+      "text": "withRetry is for Tokenbox API calls (ADR 0003). Don't wrap Keyline's refresh-token grant in it without an Idempotency-Key: a blind retry after a lost response trips token-family reuse detection and signs every device out.",
+      "author": "codex",
+      "age": "3d"
+    }
+  ]
+}

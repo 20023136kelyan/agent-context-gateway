@@ -87,7 +87,8 @@ export class FakeKeyline {
   transport() {
     return {
       post: async (path, body, options = {}) => {
-        const key = options.idempotencyKey ?? options.headers?.["idempotency-key"] ?? options.headers?.["Idempotency-Key"];
+        const headerKey = Object.entries(options.headers ?? {}).find(([k]) => k.toLowerCase() === "idempotency-key")?.[1];
+        const key = options.idempotencyKey ?? headerKey;
         this.calls.push({ path, body, key });
         const fault = this.faults.shift();
         if (fault === "before") throw new this.TransportError("ETIMEDOUT");

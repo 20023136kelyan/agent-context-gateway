@@ -1,0 +1,27 @@
+{
+  "source": "wrong",
+  "notes": [
+    {
+      "id": "rw-1",
+      "type": "decision",
+      "anchor": {
+        "path": "src/authClient.js",
+        "symbol": "AuthClient.refreshSession"
+      },
+      "text": "The token endpoint is idempotent for the same refresh token, so a failed refresh can simply be re-sent with the same body. We settled on 3 attempts with exponential backoff.",
+      "author": "codex",
+      "age": "3d"
+    },
+    {
+      "id": "rw-2",
+      "type": "how-to",
+      "anchor": {
+        "path": "src/transport.js",
+        "symbol": "HttpTransport.post"
+      },
+      "text": "Idempotency-Key headers are for the payments API only; the auth server ignores them.",
+      "author": "claude-code",
+      "age": "9d"
+    }
+  ]
+}
