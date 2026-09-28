@@ -126,7 +126,10 @@ export function buildReport(all: RunResult[], baseline = "control"): string {
       if (passD.high < 0) verdict.push("worse completion");
       if (costD.point <= -0.15 && costD.high < 0) verdict.push("≥15% cheaper");
       if (timeD.point <= -0.15 && timeD.high < 0) verdict.push("≥15% faster");
-      const meets = verdict.some((v) => v === "better completion" || v.startsWith("≥15%")) && !verdict.includes("worse completion");
+      // Finishing sooner or cheaper only counts when the arm gets the work done: an arm that always fails fast is not a saving.
+      const passes = rs.some((r) => r.pass);
+      if (!passes && verdict.some((v) => v.startsWith("≥15%"))) verdict.push("but never passes");
+      const meets = (verdict.includes("better completion") || (passes && verdict.some((v) => v.startsWith("≥15%")))) && !verdict.includes("worse completion");
       lines.push(
         `| ${arm} | ${pp(passD.point)} ${ci(passD, pp)} | ${signedPct(costD.point)} ${ci(costD, signedPct)} | ${signedPct(timeD.point)} ${ci(timeD, signedPct)} | ${meets ? "**meets the bar**" : verdict.length ? verdict.join(", ") : "inconclusive"} |`,
       );

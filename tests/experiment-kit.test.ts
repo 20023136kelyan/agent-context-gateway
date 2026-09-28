@@ -367,6 +367,15 @@ describe("report statistics", () => {
     expect(d.high).toBeLessThanOrEqual(1);
   });
 
+  it("does not credit an arm for failing faster", () => {
+    const row = (arm: string, rep: number, pass: boolean, durationMs: number) =>
+      ({ task: "t", arm, rep, pass, trapHit: false, goal: pass, durationMs, notesShown: [], pullCalls: 0, readPaths: [] }) as unknown as Parameters<typeof buildReport>[0][number];
+    const reps = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    const report = buildReport([...reps.map((i) => row("control", i, false, 200_000 + i)), ...reps.map((i) => row("wrong", i, false, 100_000 + i))]);
+    expect(report).toContain("≥15% faster, but never passes");
+    expect(report).not.toContain("meets the bar");
+  });
+
   it("writes nothing it cannot compute", () => {
     writeFileSync(join(tmp, "empty.jsonl"), "");
     expect(buildReport([], "control")).toContain("Runs: 0.");

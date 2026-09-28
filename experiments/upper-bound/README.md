@@ -113,7 +113,23 @@ problem in different ways:
 | `refresh-rotation-undocumented` | The repo's copy of the vendor doc is v3.1, from before reuse detection and idempotency keys. The transport has no named idempotency option. Nothing in the repo says a retry is dangerous. | Do notes carry knowledge that exists only in past work? Control should fail almost always, by construction. |
 | `refresh-rotation-buried` | A ~48-file repo. The vendor docs are split into 13 pages; rotation is one section of `security.md`, the header one entry in `request-headers.md`. Two lures point at a plain retry: the `withRetry` helper and ADR 0003. `Idempotency-Key` appears in the payments code, so it reads as a payments thing. | Do notes at the place beat an agent searching on its own? A careful agent can still find the answer. |
 
-**First results (Muse Spark 1.3, free, `xhigh`):** the buried variant did not separate the arms.
+**Results, undocumented (Muse Spark 1.3, free, `xhigh`, 10 valid runs per arm):**
+
+| Arm | Pass | Trap hit | Median time |
+|---|---|---|---|
+| control (no notes) | 0/10 | 5/10 | 177s |
+| hand (correct notes) | 10/10 | 0/10 | 148s |
+| wrong (misleading notes) | 0/10 | 0/10 | 111s |
+
+Correct notes turn a task the model never solves into one it always solves.
+Wrong notes are not neutral: the model follows them and fails every time. The
+wrong arm is faster only because it fails sooner, so the report does not count
+time or cost savings for an arm that never passes. Timings are rough: the free
+model is rate-limited, and 5 runs that got no response were left out and re-run.
+This variant separates the arms by construction, so it shows the most notes can
+do, not how often an agent needs them.
+
+**Buried variant:** it did not separate the arms (all 10 runs passed, across the 3 arms).
 The model read ~40 of its 48 files and already knew refresh-token rotation from training, so control
 passed every time. Hence a third variant:
 
