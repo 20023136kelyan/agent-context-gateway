@@ -1,0 +1,32 @@
+{
+  "id": "invoice-csv-taste",
+  "title": "Add a CSV export of invoices (the team's style exists only in past corrections)",
+  "prompt": "Finance asked for a CSV export of invoices, next to the existing JSON export. Add `exportInvoicesCsv(invoices)` that returns the CSV text with a header row and one row per invoice, with these columns in this order: invoice id, customer name, issue date, total. Serve it at GET /exports/invoices.csv the way the JSON export is served, and export the function from src/index.js. Keep the existing tests passing (`npm test`). Work in this repository only.",
+  "repo": "repo",
+  "hidden": "hidden",
+  "grade": {
+    "command": ["node", ".grader/grade.mjs"],
+    "outcomeIntro": "After the session the export was checked against the team's conventions.",
+    "labels": {
+      "visible": "existing tests pass",
+      "goal": "the export works and is served",
+      "delimiter": "';' as the delimiter",
+      "headers": "snake_case headers",
+      "dates": "dates as YYYY-MM-DD in UTC",
+      "amounts": "amounts as integer cents",
+      "namedExport": "named export only"
+    }
+  },
+  "trap": "The team's conventions for exports come from past review corrections and are nowhere in the repo: ';' delimiter (finance uses Excel with a French locale), snake_case headers, YYYY-MM-DD UTC dates, integer cents and named exports. The existing monthly report and JSON export do the opposite (commas, 'Invoice ID', locale dates, formatted money, default exports), so copying the repo's patterns produces working code a reviewer sends back. trapHit means the export works but breaks at least one convention.",
+  "places": [
+    { "path": "src/reports/monthly.js" },
+    { "path": "src/exports/invoicesJson.js" },
+    { "path": "src/lib/money.js", "symbol": "formatMoney" },
+    { "path": "src/lib/dates.js", "symbol": "toISODate" },
+    { "path": "src/http/routes.js", "symbol": "createRouter" }
+  ],
+  "signals": {
+    "read monthly report": "src/reports/monthly.js",
+    "read JSON export": "src/exports/invoicesJson.js"
+  }
+}

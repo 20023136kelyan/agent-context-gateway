@@ -1,0 +1,21 @@
+{
+  "source": "wrong",
+  "notes": [
+    {
+      "id": "tw-1",
+      "type": "decision",
+      "anchor": { "path": "src/reports/monthly.js" },
+      "text": "All CSV files follow monthly.js: comma-separated, readable headers like 'Invoice ID', dates via formatDate and amounts via formatMoney so finance sees the currency.",
+      "author": "claude-code",
+      "age": "12d"
+    },
+    {
+      "id": "tw-2",
+      "type": "decision",
+      "anchor": { "path": "src/exports/invoicesJson.js" },
+      "text": "Export modules use a default export, like this one; routes.js and index.js import them that way.",
+      "author": "codex",
+      "age": "12d"
+    }
+  ]
+}

@@ -163,6 +163,51 @@ describe.each(["refresh-rotation", "refresh-rotation-undocumented", "refresh-rot
   });
 });
 
+describe("invoice-csv-taste task", () => {
+  const dir = join(EXP, "tasks", "invoice-csv-taste");
+  const gradeWith = (variant: "original" | "naive" | "correct") => {
+    const ws = prepareWorkspace(loadTask("invoice-csv-taste"));
+    try {
+      if (variant !== "original") cpSync(join(dir, "reference", variant), ws, { recursive: true });
+      return grade(loadTask("invoice-csv-taste"), ws) as Record<string, unknown> & { details: Record<string, string> };
+    } finally {
+      rmSync(ws, { recursive: true, force: true });
+    }
+  };
+
+  it("the grader separates no export, the repo's style and the team's style", () => {
+    expect(gradeWith("original")).toMatchObject({ visible: true, goal: false, pass: false, trapHit: false });
+    const naive = gradeWith("naive");
+    expect(naive).toMatchObject({ visible: true, goal: true, pass: false, trapHit: true, styleFollowed: 0 });
+    expect(naive.details.dates).toContain("2026-03-31");
+    expect(gradeWith("correct")).toMatchObject({ visible: true, goal: true, pass: true, trapHit: false, styleFollowed: 5 });
+  });
+
+  it("keeps notes within 280 characters, anchored to files the agent gets", () => {
+    const ws = prepareWorkspace(loadTask("invoice-csv-taste"));
+    try {
+      for (const f of ["hand", "wrong"]) {
+        for (const n of loadNotes(join(dir, `notes/${f}.json`))) {
+          expect(n.text.length).toBeLessThanOrEqual(280);
+          expect(existsSync(join(ws, n.anchor.path))).toBe(true);
+        }
+      }
+    } finally {
+      rmSync(ws, { recursive: true, force: true });
+    }
+  });
+
+  it("the repo says nothing about the team's conventions", () => {
+    const ws = prepareWorkspace(loadTask("invoice-csv-taste"));
+    try {
+      const out = spawnSync("grep", ["-rliE", "semicolon|snake.?case|french|total_cents|issued_on|named export|join\\(\";\"\\)", ".", "--exclude-dir=.git"], { cwd: ws, encoding: "utf8" }).stdout;
+      expect(out).toBe("");
+    } finally {
+      rmSync(ws, { recursive: true, force: true });
+    }
+  });
+});
+
 it("the undocumented variant has no trace of the trap in the repo; the buried one has it only in the vendor pages", () => {
   const scan = (id: string) => {
     const ws = prepareWorkspace(loadTask(id));

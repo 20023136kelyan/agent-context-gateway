@@ -65,10 +65,9 @@ const ci = (r: { low: number; high: number }, f: (x: number) => string) => (Numb
 const money = (x: number) => (Number.isFinite(x) ? `$${x.toFixed(2)}` : "n/a");
 const secs = (ms: number) => (Number.isFinite(ms) ? `${Math.round(ms / 1000)}s` : "n/a");
 
-function loadSignals(task: string): Record<string, string> {
+function loadSpec(task: string): { signals?: Record<string, string>; grade?: { labels?: Record<string, string> } } {
   const f = resolve(HERE, "..", "tasks", task, "task.json");
-  if (!existsSync(f)) return {};
-  return (JSON.parse(readFileSync(f, "utf8")) as { signals?: Record<string, string> }).signals ?? {};
+  return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : {};
 }
 
 export function buildReport(all: RunResult[], baseline = "control"): string {
@@ -85,7 +84,8 @@ export function buildReport(all: RunResult[], baseline = "control"): string {
   lines.push(`Runs: ${results.length}. Tasks: ${tasks.join(", ")}. Arms: ${armsOrder.join(", ")}. Baseline: ${baseline}.`, "");
 
   for (const task of tasks) {
-    const signals = loadSignals(task);
+    const spec = loadSpec(task);
+    const signals = spec.signals ?? {};
     const rows = results.filter((r) => r.task === task);
     lines.push(`## ${task}`, "");
     const sigCols = Object.keys(signals);
@@ -105,6 +105,17 @@ export function buildReport(all: RunResult[], baseline = "control"): string {
     }
     lines.push("");
     if (sigCols.length) lines.push(`Signal columns: share of runs that read ${sigCols.map((k) => `\`${signals[k]}\` (${k})`).join(", ")}.`, "");
+
+    // Each grader check on its own: which part of the job each arm gets right.
+    const checks = Object.entries(spec.grade?.labels ?? {}).filter(([k]) => k !== "visible" && k !== "goal" && rows.some((r) => typeof r.grade?.[k] === "boolean"));
+    if (checks.length) {
+      lines.push(`| Arm | ${checks.map(([, label]) => label).join(" | ")} |`, `|---|${checks.map(() => "---|").join("")}`);
+      for (const arm of armsOrder) {
+        const rs = rows.filter((r) => r.arm === arm);
+        if (rs.length) lines.push(`| ${arm} | ${checks.map(([k]) => pct(mean(rs.map((r) => (r.grade?.[k] === true ? 1 : 0))))).join(" | ")} |`);
+      }
+      lines.push("");
+    }
 
     const base = rows.filter((r) => r.arm === baseline);
     if (!base.length) {

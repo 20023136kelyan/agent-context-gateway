@@ -137,6 +137,24 @@ passed every time. Hence a third variant:
 |---|---|---|
 | `refresh-rotation-vendor` | ~186 files (built by its `generate.py`). Keyline's safe retry is a proprietary `Keyline-Retry-Token` header and the standard `Idempotency-Key` is ignored, so the textbook fix is a trap too. The fact is in one section of `request-headers.md`; payments code uses `Idempotency-Key`. | Notes against search when the model's training points the wrong way, in a repo too large to read end to end. |
 
+## Knowledge that isn't in the code: `invoice-csv-taste`
+
+Search can't find a team's taste. The task asks for a CSV export of invoices next
+to the existing JSON export. The team's conventions came from past review
+corrections: `;` delimiter (finance uses Excel with a French locale), snake_case
+headers, `YYYY-MM-DD` UTC dates, integer cents, named exports only. The repo's
+older code does the opposite (`monthly.js`: commas, `Invoice ID`, locale dates,
+`formatMoney`; default exports), so copying its patterns gives working code a
+reviewer sends back. The grader checks each convention separately:
+
+- `pass` means everything is right.
+- `trapHit` means the code works but breaks a convention, the case where the user
+  has to step in.
+- The report shows each check per arm.
+
+The grader runs in `Asia/Tokyo`, so a locale date of a late-evening UTC time
+lands on the wrong day.
+
 A task can point `repo` and `hidden` at another task and add `overlay` (files
 copied over the repo) and `remove` (paths deleted), so variants don't copy the
 grader. The kit tests check that each grader separates no fix, the naive retry
