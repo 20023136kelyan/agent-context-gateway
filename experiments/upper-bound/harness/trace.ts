@@ -223,7 +223,8 @@ export function touchedPaths(steps: Step[], root?: string): string[] {
     if (typeof p !== "string") continue;
     let rel = p;
     if (root && rel.startsWith(root)) rel = rel.slice(root.length).replace(/^\/+/, "");
-    set.add(rel.replace(/^\.\//, ""));
+    rel = rel.replace(/^\.\//, "");
+    if (rel) set.add(rel);
   }
   return [...set];
 }
