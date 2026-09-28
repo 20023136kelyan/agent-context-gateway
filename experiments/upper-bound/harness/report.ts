@@ -71,8 +71,15 @@ function loadSignals(task: string): Record<string, string> {
   return (JSON.parse(readFileSync(f, "utf8")) as { signals?: Record<string, string> }).signals ?? {};
 }
 
-export function buildReport(results: RunResult[], baseline = "control"): string {
+export function buildReport(all: RunResult[], baseline = "control"): string {
   const lines: string[] = ["# Upper-bound experiment report", ""];
+  const results = all.filter((r) => !r.invalid);
+  const invalid = all.filter((r) => r.invalid);
+  if (invalid.length) {
+    lines.push(`**${invalid.length} invalid run(s) left out**: the agent failed before attempting the task. Fix the cause and re-run them.`, "");
+    for (const r of invalid) lines.push(`- ${r.task} / ${r.arm} / rep ${r.rep}: ${r.invalid}`);
+    lines.push("");
+  }
   const tasks = [...new Set(results.map((r) => r.task))];
   const armsOrder = [...new Set(results.map((r) => r.arm))];
   lines.push(`Runs: ${results.length}. Tasks: ${tasks.join(", ")}. Arms: ${armsOrder.join(", ")}. Baseline: ${baseline}.`, "");

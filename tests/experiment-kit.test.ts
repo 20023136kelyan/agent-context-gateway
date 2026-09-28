@@ -9,7 +9,7 @@ import { formatNotes, matchNotes, placesFromToolCall, sanitize, loadNotes, fromO
 import { BifrostPlugin } from "../experiments/upper-bound/kit/opencode-plugin.mjs";
 import { parseTrace, renderDigest, renderFull, scrub } from "../experiments/upper-bound/harness/trace.js";
 import { generateNotes, validateNotes, listRepoFiles } from "../experiments/upper-bound/harness/generate.js";
-import { buildAgentCommand, loadTask, metricsFromTrace, resolveArm, runOne, outcomeText, type RunOptions } from "../experiments/upper-bound/harness/run.js";
+import { buildAgentCommand, invalidReason, loadTask, metricsFromTrace, resolveArm, runOne, outcomeText, type RunOptions } from "../experiments/upper-bound/harness/run.js";
 import { buildReport, bootstrapDiff } from "../experiments/upper-bound/harness/report.js";
 
 const EXP = resolve(__dirname, "../experiments/upper-bound");
@@ -284,6 +284,18 @@ describe("harness", () => {
     const m = metricsFromTrace(text, "/ws");
     expect(m).toMatchObject({ numTurns: 2, inputTokens: 300, outputTokens: 35, cacheReadTokens: 50, toolCalls: 2, readPaths: ["src/authClient.js"] });
     expect(m.costUsd).toBeCloseTo(0.03);
+  });
+
+  it("marks runs where the agent never started as invalid, and the report leaves them out", () => {
+    const blocked = JSON.stringify({ type: "error", sessionID: "s", error: { name: "APIError", data: { message: "Forbidden: host not allowed" } } });
+    expect(invalidReason(blocked, 1, 0)).toBe("agent error: Forbidden: host not allowed");
+    expect(invalidReason("", 1, 0)).toMatch(/exited with code 1/);
+    expect(invalidReason(blocked, 1, 3)).toBeUndefined();
+    expect(invalidReason("", 0, 0)).toBeUndefined();
+    const row = { task: "t", arm: "control", rep: 1, pass: false, trapHit: false, goal: false, durationMs: 1, notesShown: [], pullCalls: 0, readPaths: [] } as unknown as Parameters<typeof buildReport>[0][number];
+    const report = buildReport([row, { ...row, rep: 2, invalid: "agent error: Forbidden" }]);
+    expect(report).toContain("1 invalid run(s) left out");
+    expect(report).toContain("| control | 1 |");
   });
 
   it("refuses push arms for codex", () => {

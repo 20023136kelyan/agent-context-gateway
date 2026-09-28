@@ -95,6 +95,8 @@ export interface RunResult {
   pass: boolean;
   trapHit: boolean;
   goal: boolean;
+  /** Set when the agent failed before doing any work (auth, network, bad model name): not a data point. */
+  invalid?: string;
   runDir: string;
 }
 
@@ -333,6 +335,24 @@ export function metricsFromTrace(traceText: string, ws: string) {
   };
 }
 
+/**
+ * Why a run is not a data point, or undefined when it is. A run whose agent made no tool
+ * call and exited with an error (or reported a fatal error event) never attempted the task.
+ */
+export function invalidReason(traceText: string, exitCode: number | null, toolCalls: number): string | undefined {
+  if (toolCalls > 0) return undefined;
+  for (const line of traceText.split("\n")) {
+    if (!line.includes('"error"') && !line.includes('"is_error"')) continue;
+    try {
+      const o = JSON.parse(line) as { type?: string; is_error?: boolean; result?: string; error?: { name?: string; message?: string; data?: { message?: string } } };
+      if (o.type === "error") return `agent error: ${o.error?.data?.message ?? o.error?.message ?? o.error?.name ?? "unknown"}`.slice(0, 300);
+      if (o.type === "result" && o.is_error) return `agent error: ${String(o.result ?? "unknown")}`.slice(0, 300);
+    } catch { /* ignore */ }
+  }
+  if (exitCode !== 0) return `agent exited with code ${exitCode} before any tool call`;
+  return undefined;
+}
+
 export function deliveriesFrom(logFile: string) {
   const out = { pushDeliveries: 0, notesShown: new Set<string>(), pullCalls: 0 };
   if (!existsSync(logFile)) return { pushDeliveries: 0, notesShown: [] as string[], pullCalls: 0 };
@@ -391,6 +411,8 @@ export async function runOne(task: TaskSpec, arm: Arm, rep: number, opts: RunOpt
   appendFileSync(traceFile, JSON.stringify({ type: "bifrost.outcome", grade: g, text: outcomeText(g, task.grade) }) + "\n");
 
   const traceText = readFileSync(traceFile, "utf8");
+  const metrics = metricsFromTrace(traceText, ws);
+  const invalid = timedOut ? undefined : invalidReason(traceText, code, metrics.toolCalls);
   const result: RunResult = {
     task: task.id,
     arm: arm.id,
@@ -401,12 +423,13 @@ export async function runOne(task: TaskSpec, arm: Arm, rep: number, opts: RunOpt
     durationMs,
     exitCode: code,
     timedOut,
-    ...metricsFromTrace(traceText, ws),
+    ...metrics,
     ...deliveriesFrom(env.BIFROST_LOG),
     grade: g,
     pass: g?.pass === true,
     trapHit: g?.trapHit === true,
     goal: g?.goal === true,
+    ...(invalid ? { invalid } : {}),
     runDir,
   };
   writeFileSync(join(runDir, "result.json"), JSON.stringify(result, null, 2));
@@ -494,7 +517,7 @@ async function main(argv: string[]) {
           const r = await runOne(task, arm, rep, opts, outDir);
           appendFileSync(join(outDir, "results.jsonl"), JSON.stringify(r) + "\n");
           const cost = r.costUsd !== undefined ? ` $${r.costUsd.toFixed(2)}` : "";
-          console.log(`${task.id} ${arm.id} rep ${rep}: ${r.pass ? "PASS" : r.trapHit ? "TRAP" : "FAIL"} ${(r.durationMs / 1000).toFixed(0)}s${cost} notes=${r.notesShown.join("|") || "-"}`);
+          console.log(`${task.id} ${arm.id} rep ${rep}: ${r.invalid ? "INVALID" : r.pass ? "PASS" : r.trapHit ? "TRAP" : "FAIL"} ${(r.durationMs / 1000).toFixed(0)}s${cost} notes=${r.notesShown.join("|") || "-"}${r.invalid ? ` (${r.invalid})` : ""}`);
           return r;
         });
   await pool(jobs, concurrency);
