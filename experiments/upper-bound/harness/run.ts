@@ -537,7 +537,7 @@ async function main(argv: string[]) {
   const arms = (arg(argv, "arms") ?? "control,hand").split(",").filter(Boolean).map(resolveArm);
   if (tasks.length === 0) {
     console.error(`usage: run.ts --tasks <id,...> [--arms control,hand] [--reps 10] [--agent claude|opencode|codex|command] [--model M]
-  [--budget-usd 3] [--timeout-min 20] [--idle-min 6] [--concurrency 2] [--out <dir>] [--resume] [--setting-sources project] [--keep]
+  [--budget-usd 3] [--timeout-min 20] [--idle-min 6] [--cooldown-sec 0] [--concurrency 2] [--out <dir>] [--resume] [--setting-sources project] [--keep]
   [--agent-cmd "<shell command with {workspace} {promptFile} {runDir}>"] [-- <extra agent args>]`);
     process.exit(2);
   }
@@ -555,6 +555,7 @@ async function main(argv: string[]) {
   };
   const reps = Number(arg(argv, "reps", "10"));
   const concurrency = Number(arg(argv, "concurrency", "2"));
+  const cooldownMs = Number(arg(argv, "cooldown-sec", "0")) * 1000;
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const outDir = resolve(arg(argv, "out") ?? join(ROOT, "results", stamp));
   mkdirSync(outDir, { recursive: true });
@@ -591,6 +592,8 @@ async function main(argv: string[]) {
           appendFileSync(join(outDir, "results.jsonl"), JSON.stringify(r) + "\n");
           const cost = r.costUsd !== undefined ? ` $${r.costUsd.toFixed(2)}` : "";
           console.log(`${task.id} ${arm.id} rep ${rep}: ${r.invalid ? "INVALID" : r.pass ? "PASS" : r.trapHit ? "TRAP" : "FAIL"} ${(r.durationMs / 1000).toFixed(0)}s${cost} notes=${r.notesShown.join("|") || "-"}${r.invalid ? ` (${r.invalid})` : ""}`);
+          // A rate-limited model stalls the next run too; pause before taking another job.
+          if (r.invalid && cooldownMs) await new Promise((res) => setTimeout(res, cooldownMs));
           return r;
         });
       }
