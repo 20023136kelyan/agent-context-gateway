@@ -125,7 +125,7 @@ Correct notes turn a task the model never solves into one it always solves.
 Wrong notes are not neutral: the model follows them and fails every time. The
 wrong arm is faster only because it fails sooner, so the report does not count
 time or cost savings for an arm that never passes. Timings are rough: the free
-model is rate-limited, and 5 runs that got no response were left out and re-run.
+model is rate-limited, and runs that got no response were left out and re-run.
 This variant separates the arms by construction, so it shows the most notes can
 do, not how often an agent needs them.
 
