@@ -1,0 +1,38 @@
+{
+  "id": "refresh-rotation",
+  "title": "Make token refresh survive network blips",
+  "prompt": "Support ticket #4412: users are getting logged out when the network blips while their session refreshes. When the refresh request to the auth server times out or the connection resets, the user is signed out and has to log in again. Make token refresh resilient to transient network failures so a single blip does not log anyone out. Keep the existing tests passing (`npm test`). Work in this repository only.",
+  "repo": "repo",
+  "hidden": "hidden",
+  "grade": {
+    "command": [
+      "node",
+      ".grader/grade.mjs"
+    ],
+    "outcomeIntro": "After the session the change was tested against the real auth server behaviour.",
+    "labels": {
+      "visible": "existing tests pass",
+      "goal": "a timeout that loses the request no longer signs the user out",
+      "trapAvoided": "a timeout that loses the response is handled safely",
+      "failFast": "a rejected refresh token is not retried"
+    }
+  },
+  "trap": "The auth server rotates refresh tokens and revokes the whole token family when a used refresh token is presented again. A timeout can hit after the server rotated, so a plain retry signs every device out. Retries are safe only with one Idempotency-Key reused across attempts. The behaviour is documented only in docs/vendor/authserver-api.md §10.2 and §11.",
+  "places": [
+    {
+      "path": "src/authClient.js",
+      "symbol": "AuthClient.refreshSession"
+    },
+    {
+      "path": "src/transport.js",
+      "symbol": "HttpTransport.post"
+    },
+    {
+      "path": "src/sessionGuard.js",
+      "symbol": "SessionGuard.run"
+    }
+  ],
+  "signals": {
+    "read vendor doc": "docs/vendor/authserver-api.md"
+  }
+}

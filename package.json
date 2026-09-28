@@ -14,7 +14,10 @@
     "sweep": "node --env-file-if-exists=.env --import tsx scripts/sweep.ts",
     "lint": "eslint src --ext .ts",
     "sync": "node --env-file-if-exists=.env --import tsx src/cli.ts sync",
-    "setup:native": "python3 scripts/fetch-native-binding.py"
+    "setup:native": "python3 scripts/fetch-native-binding.py",
+    "exp:run": "node --env-file-if-exists=.env --import tsx experiments/upper-bound/harness/run.ts",
+    "exp:generate": "node --env-file-if-exists=.env --import tsx experiments/upper-bound/harness/generate.ts",
+    "exp:report": "node --import tsx experiments/upper-bound/harness/report.ts"
   },
   "dependencies": {
     "@lancedb/lancedb": "^0.38.0",
@@ -28,11 +31,12 @@
     "zod": "^3.23.0"
   },
   "optionalDependencies": {
-    "@pngwasi/node-tantivy-binding-linux-x64-gnu": "^0.3.4",
     "@pngwasi/node-tantivy-binding-darwin-arm64": "^0.3.4",
-    "@pngwasi/node-tantivy-binding-darwin-x64": "^0.3.4"
+    "@pngwasi/node-tantivy-binding-darwin-x64": "^0.3.4",
+    "@pngwasi/node-tantivy-binding-linux-x64-gnu": "^0.3.4"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@types/node": "^24.13.4",
     "eslint": "^9.0.0",
     "tsx": "^4.7.0",

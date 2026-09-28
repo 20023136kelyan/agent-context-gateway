@@ -25,3 +25,6 @@ sweeps/*.sqlite
 # Trained weights (regenerable via experiments/training/)
 swe-models/
 *.local.md
+
+# Upper-bound experiment run output
+experiments/upper-bound/results/

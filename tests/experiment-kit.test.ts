@@ -1,0 +1,256 @@
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { spawnSync } from "node:child_process";
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+// @ts-expect-error plain ESM module without type declarations
+import { formatNotes, matchNotes, placesFromToolCall, sanitize, loadNotes } from "../experiments/upper-bound/kit/notes-lib.mjs";
+import { parseTrace, renderDigest, renderFull, scrub } from "../experiments/upper-bound/harness/trace.js";
+import { generateNotes, validateNotes, listRepoFiles } from "../experiments/upper-bound/harness/generate.js";
+import { buildAgentCommand, loadTask, resolveArm, runOne, outcomeText, type RunOptions } from "../experiments/upper-bound/harness/run.js";
+import { buildReport, bootstrapDiff } from "../experiments/upper-bound/harness/report.js";
+
+const EXP = resolve(__dirname, "../experiments/upper-bound");
+const TASK = join(EXP, "tasks/refresh-rotation");
+const HAND = join(TASK, "notes/hand.json");
+const HOOK = join(EXP, "kit/hook.mjs");
+
+let tmp: string;
+beforeAll(() => {
+  tmp = mkdtempSync(join(tmpdir(), "exp-kit-test-"));
+});
+afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+
+describe("notes-lib", () => {
+  const root = "/repo";
+  it("resolves places from Claude Code tool calls", () => {
+    expect(placesFromToolCall("Read", { file_path: "/repo/src/a.js", offset: 10, limit: 5 }, root)).toEqual([{ path: "src/a.js", lines: [10, 15] }]);
+    expect(placesFromToolCall("Edit", { file_path: "src/a.js" }, root)).toEqual([{ path: "src/a.js", lines: undefined }]);
+    expect(placesFromToolCall("Read", { file_path: "/elsewhere/a.js" }, root)).toEqual([]);
+    expect(placesFromToolCall("Bash", { command: "sed -n 1,20p src/a.js" }, root, ["src/a.js", "src/b.js"]).map((p: { path: string }) => p.path)).toEqual(["src/a.js"]);
+    expect(placesFromToolCall("Glob", { pattern: "**/*.js", path: "/repo" }, root)).toEqual([]);
+  });
+
+  it("matches by path and narrows by line range", () => {
+    const notes = [
+      { id: "a", type: "warning", anchor: { path: "src/a.js", lines: [40, 60] }, text: "x" },
+      { id: "b", type: "how-to", anchor: { path: "src/a.js" }, text: "y" },
+      { id: "c", type: "decision", anchor: { path: "src/b.js" }, text: "z" },
+    ];
+    expect(matchNotes(notes, [{ path: "src/a.js", lines: [1, 20] }]).map((n: { id: string }) => n.id)).toEqual(["b"]);
+    expect(matchNotes(notes, [{ path: "src/a.js" }]).map((n: { id: string }) => n.id)).toEqual(["a", "b"]);
+  });
+
+  it("formats within the note cap and character budget, warnings first", () => {
+    const notes = loadNotes(HAND);
+    const all = formatNotes(notes, { maxNotes: 3, budgetChars: 5000 });
+    expect(all.shown).toEqual(["rr-1", "rr-2", "rr-3"]);
+    expect(all.text.split("\n")[0]).toBe("BIFRÖST src/authClient.js › AuthClient.refreshSession");
+    const tight = formatNotes(notes, { maxNotes: 3, budgetChars: 350 });
+    expect(tight.shown).toEqual(["rr-1"]);
+    expect(tight.text.length).toBeLessThanOrEqual(350);
+  });
+
+  it("sanitizes control characters and caps length", () => {
+    expect(sanitize("a\u001b[31mb‮c", 280)).toBe("a[31mbc");
+    expect(sanitize("x".repeat(400)).length).toBe(280);
+  });
+});
+
+describe("hook", () => {
+  const run = (event: object, env: Record<string, string>) =>
+    spawnSync(process.execPath, [HOOK], { input: JSON.stringify(event), encoding: "utf8", env: { ...process.env, ...env } });
+
+  it("injects notes once per session, repeats warnings on edit, and logs", () => {
+    const dir = join(tmp, "hook1");
+    mkdirSync(dir, { recursive: true });
+    const env = { BIFROST_NOTES: HAND, BIFROST_LOG: join(dir, "log.jsonl"), BIFROST_STATE: join(dir, "state") };
+    const read = { session_id: "s", cwd: "/ws", tool_name: "Read", tool_input: { file_path: "/ws/src/authClient.js" } };
+    const first = run(read, env);
+    expect(first.status).toBe(0);
+    const ctx = JSON.parse(first.stdout).hookSpecificOutput;
+    expect(ctx.hookEventName).toBe("PreToolUse");
+    expect(ctx.additionalContext).toContain("WARNING");
+    expect(run(read, env).stdout).toBe("");
+    const edit = run({ ...read, tool_name: "Edit" }, env);
+    expect(JSON.parse(edit.stdout).hookSpecificOutput.additionalContext).toContain("rotates refresh tokens");
+    expect(run({ ...read, tool_name: "Edit" }, env).stdout).toBe("");
+    const log = readFileSync(env.BIFROST_LOG, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    expect(log.map((e) => e.shown)).toEqual([["rr-1", "rr-2"], [], ["rr-1"], []]);
+  });
+
+  it("stays silent in noop mode, without notes, and on bad input", () => {
+    const read = { session_id: "s2", cwd: "/ws", tool_name: "Read", tool_input: { file_path: "/ws/src/authClient.js" } };
+    expect(run(read, { BIFROST_NOTES: HAND, BIFROST_MODE: "noop" }).stdout).toBe("");
+    expect(run(read, {}).stdout).toBe("");
+    const bad = spawnSync(process.execPath, [HOOK], { input: "not json", encoding: "utf8" });
+    expect(bad.status).toBe(0);
+    expect(bad.stdout).toBe("");
+  });
+});
+
+describe("refresh-rotation task", () => {
+  const gradeWith = (variant: "original" | "naive" | "correct") => {
+    const ws = join(tmp, `grade-${variant}`);
+    cpSync(join(TASK, "repo"), ws, { recursive: true });
+    if (variant !== "original") cpSync(join(TASK, "reference", variant, "src/authClient.js"), join(ws, "src/authClient.js"));
+    cpSync(join(TASK, "hidden"), join(ws, ".grader"), { recursive: true });
+    const r = spawnSync(process.execPath, [".grader/grade.mjs"], { cwd: ws, encoding: "utf8" });
+    return JSON.parse(r.stdout.trim().split("\n").pop()!);
+  };
+
+  it("the grader separates no fix, the naive retry and the correct fix", () => {
+    const original = gradeWith("original");
+    expect(original).toMatchObject({ visible: true, goal: false, pass: false, trapHit: false });
+    const naive = gradeWith("naive");
+    expect(naive).toMatchObject({ visible: true, goal: true, trapAvoided: false, pass: false, trapHit: true });
+    expect(naive.details.trapAvoided).toContain("revoked the whole token family");
+    const correct = gradeWith("correct");
+    expect(correct).toMatchObject({ visible: true, goal: true, trapAvoided: true, failFast: true, pass: true, trapHit: false });
+  });
+
+  it("keeps notes within 280 characters", () => {
+    for (const f of ["hand", "wrong"]) {
+      for (const n of loadNotes(join(TASK, `notes/${f}.json`))) expect(n.text.length).toBeLessThanOrEqual(280);
+    }
+  });
+});
+
+const SAMPLE_TRACE = [
+  { type: "system", subtype: "init" },
+  { type: "user", message: { role: "user", content: "Fix the refresh bug" } },
+  { type: "assistant", message: { content: [{ type: "text", text: "Reading." }, { type: "tool_use", id: "t1", name: "Read", input: { file_path: "/ws/src/authClient.js" } }] } },
+  { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "export class AuthClient {}" }] } },
+  { type: "assistant", message: { content: [{ type: "tool_use", id: "t2", name: "Bash", input: { command: "API_KEY=sk-abcdefghijklmnopqrstuvwxyz npm test" } }] } },
+  { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t2", content: "Error: 1 failing\nat test", is_error: true }] } },
+  { type: "result", subtype: "success", total_cost_usd: 0.12, num_turns: 2 },
+  { type: "bifrost.outcome", text: "a timeout that loses the response is handled safely: NO (family revoked)." },
+]
+  .map((o) => JSON.stringify(o))
+  .join("\n");
+
+describe("trace", () => {
+  it("parses Claude stream-json with the appended outcome", () => {
+    const steps = parseTrace(SAMPLE_TRACE, "Fix the refresh bug");
+    expect(steps.map((s) => s.kind)).toEqual(["prompt", "assistant", "tool_call", "tool_result", "tool_call", "tool_result", "outcome"]);
+  });
+
+  it("renders full and digest forms with secrets removed", () => {
+    const steps = parseTrace(SAMPLE_TRACE);
+    const full = renderFull(steps);
+    const digest = renderDigest(steps);
+    for (const text of [full, digest]) {
+      expect(text).not.toContain("sk-abcdefghijklmnopqrstuvwxyz");
+      expect(text).toContain("family revoked");
+    }
+    expect(digest).toContain("- Bash: API_KEY=[secret] npm test → error: Error: 1 failing");
+    expect(full).toContain("RESULT: export class AuthClient {}");
+    expect(scrub("password: hunter2hunter2")).toBe("password: [secret]");
+  });
+});
+
+describe("generator", () => {
+  const repoFiles = listRepoFiles(join(TASK, "repo"));
+
+  it("lists repository files", () => {
+    expect(repoFiles).toContain("src/authClient.js");
+    expect(repoFiles).toContain("docs/vendor/authserver-api.md");
+  });
+
+  it("validates model output: drops unknown paths, cuts long text, caps at 5", () => {
+    const raw = {
+      notes: [
+        { type: "warning", path: "src/authClient.js", symbol: "AuthClient.refreshSession", text: "Keep the idempotency key across retries." },
+        { type: "decision", path: "src/nope.js", symbol: null, text: "x" },
+        { type: "how-to", path: "./src/transport.js", symbol: null, text: "y".repeat(300) },
+      ],
+    };
+    const { notes, dropped } = validateNotes(raw, repoFiles);
+    expect(notes.map((n) => n.anchor)).toEqual([{ path: "src/authClient.js", symbol: "AuthClient.refreshSession" }, { path: "src/transport.js" }]);
+    expect(notes[1].text.length).toBe(280);
+    expect(dropped.map((d) => d.reason)).toEqual(["path not in repository", "text cut to 280 characters"]);
+    expect(() => validateNotes({ notes: [{ type: "gossip", path: "a", text: "b" }] }, repoFiles)).toThrow(/schema/);
+  });
+
+  it("sends the rendered trace to the model and returns a notes file", async () => {
+    let seen = "";
+    const result = await generateNotes({
+      steps: parseTrace(SAMPLE_TRACE, "Fix the refresh bug"),
+      repoFiles,
+      input: "digest",
+      source: "gen:test",
+      call: async ({ user, schema }) => {
+        seen = user;
+        expect(schema.required).toEqual(["notes"]);
+        return { json: { notes: [{ type: "warning", path: "src/authClient.js", symbol: null, text: "Don't retry refresh without an idempotency key." }] } };
+      },
+    });
+    expect(seen).toContain("- src/authClient.js");
+    expect(seen).toContain("outcome: a timeout that loses the response");
+    expect(result.notes).toEqual([{ id: "gen-1", type: "warning", anchor: { path: "src/authClient.js" }, text: "Don't retry refresh without an idempotency key.", author: "generated", age: "" }]);
+  });
+});
+
+describe("harness", () => {
+  const task = loadTask("refresh-rotation");
+  const base: RunOptions = { agent: "claude", timeoutMs: 60_000, settingSources: "project", extraArgs: [], keep: false };
+
+  it("resolves arms", () => {
+    expect(resolveArm("hand")).toMatchObject({ push: "inject", notes: "hand" });
+    expect(resolveArm("gen:gen-opus-full")).toMatchObject({ push: "inject", notes: "gen-opus-full" });
+    expect(resolveArm("pull:hand")).toMatchObject({ push: "noop", pull: true });
+    expect(() => resolveArm("bogus")).toThrow(/unknown arm/);
+  });
+
+  it("builds an isolated Claude Code command", () => {
+    const runDir = join(tmp, "cmd");
+    mkdirSync(runDir, { recursive: true });
+    const { cmd, args } = buildAgentCommand(task, resolveArm("hand-pull"), { ...base, model: "claude-sonnet-5", budgetUsd: 2 }, { ws: "/ws", runDir, notesFile: "/n.json", env: { BIFROST_LOG: "/l" } });
+    expect(cmd).toBe("claude");
+    expect(args).toEqual(expect.arrayContaining(["-p", "--output-format", "stream-json", "--strict-mcp-config", "--setting-sources", "project", "--model", "claude-sonnet-5", "--max-budget-usd", "2", "--append-system-prompt"]));
+    const mcp = JSON.parse(readFileSync(join(runDir, "mcp.json"), "utf8"));
+    expect(mcp.mcpServers.bifrost.env).toMatchObject({ BIFROST_NOTES: "/n.json", BIFROST_ROOT: "/ws" });
+    const settings = JSON.parse(readFileSync(join(runDir, "settings.json"), "utf8"));
+    expect(settings.hooks.PreToolUse[0].hooks[0].command).toContain("hook.mjs");
+  });
+
+  it("refuses push arms for codex", () => {
+    const runDir = join(tmp, "cmd2");
+    mkdirSync(runDir, { recursive: true });
+    expect(() => buildAgentCommand(task, resolveArm("hand"), { ...base, agent: "codex" }, { ws: "/ws", runDir, env: { BIFROST_LOG: "/l" } })).toThrow(/codex/);
+  });
+
+  it("runs, grades and measures a scripted agent end to end", async () => {
+    const out = join(tmp, "results");
+    const opts: RunOptions = { ...base, agent: "command", agentCmd: `"${process.execPath}" "${join(EXP, "harness/fake-agent.mjs")}" {workspace} {runDir}` };
+    const control = await runOne(task, resolveArm("control"), 1, opts, out);
+    const hand = await runOne(task, resolveArm("hand"), 1, opts, out);
+    expect(control).toMatchObject({ pass: false, trapHit: true, notesShown: [], costUsd: 0.5, numTurns: 3, toolCalls: 2 });
+    expect(hand).toMatchObject({ pass: true, trapHit: false, notesShown: ["rr-1", "rr-2"], pushDeliveries: 1 });
+    const trace = readFileSync(join(control.runDir, "trace.jsonl"), "utf8").trim().split("\n");
+    expect(JSON.parse(trace[trace.length - 1]).text).toContain("a timeout that loses the response is handled safely: NO");
+    const report = buildReport([control, hand]);
+    expect(report).toContain("| hand | 1 | 100% | 0% |");
+  });
+
+  it("describes a grade in the task's own words", () => {
+    const text = outcomeText({ visible: true, goal: false, details: { goal: "signed out" } }, { command: [], labels: { visible: "tests pass", goal: "blip survived" } });
+    expect(text).toBe("After the session the change was graded. tests pass: yes. blip survived: NO (signed out).");
+  });
+});
+
+describe("report statistics", () => {
+  it("bootstraps a difference with an interval around it", () => {
+    const a = [0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
+    const b = [1, 1, 1, 1, 0, 1, 1, 1, 1, 1];
+    const d = bootstrapDiff(a, b, (xs) => xs.reduce((x, y) => x + y, 0) / xs.length);
+    expect(d.point).toBeCloseTo(0.7);
+    expect(d.low).toBeGreaterThan(0);
+    expect(d.high).toBeLessThanOrEqual(1);
+  });
+
+  it("writes nothing it cannot compute", () => {
+    writeFileSync(join(tmp, "empty.jsonl"), "");
+    expect(buildReport([], "control")).toContain("Runs: 0.");
+  });
+});

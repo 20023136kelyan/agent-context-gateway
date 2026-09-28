@@ -18,18 +18,21 @@ Full concept: [`docs/architecture.md`](./docs/architecture.md).
 
 ## Status: pre-MVP
 
-Nothing here is built yet. The first milestone is the **upper-bound experiment**
+None of the product is built yet. The first milestone is the **upper-bound experiment**
 (§13 of the architecture doc). Its question is whether perfect, hand-written,
 correctly anchored findings delivered at the right place make agents
 materially better. If they don't, no extraction pipeline can rescue the idea,
 and the project stops.
 
-- [ ] Pick one small repository and design a set of *trap tasks*, where earlier
-      work holds a warning or decision that a fresh agent would otherwise miss
-- [ ] Hand-author findings for it (typed, anchored, ≤ 280 chars)
-- [ ] Local Bifröst store: findings, presence, activity
-- [ ] File-touch trigger that injects the top 2–3 relevant findings (~150 tokens max), or stays silent
-- [ ] A/B harness: baseline agent vs. the same agent with place-triggered findings
+The experiment kit is in [`experiments/upper-bound/`](./experiments/upper-bound/README.md).
+
+- [x] Trap-task format, and a first trap task (`refresh-rotation`) with a hidden grader that separates "goal met" from "trap hit"
+- [x] Hand-written findings for it (typed, anchored, ≤ 280 chars), plus a deliberately wrong set
+- [x] Delivery: file-touch hook that injects the top notes or stays silent, and a one-tool MCP server for pull-only agents
+- [x] Notes generator: seed trace plus graded outcome → model → notes (strong model, open-weight model, digest-only input)
+- [x] A/B harness: isolated runs per arm, grading, cost and time metrics, report with bootstrap intervals
+- [ ] Run it with real agents: smoke test, then control vs hand-written notes (≥ 10 runs per arm)
+- [ ] Design 10+ trap tasks across kinds of knowledge (vendor constraints, past decisions, flaky areas, work in progress)
 - [ ] Decide: ≥ 15% faster or cheaper, or materially better trap-task completion, or stop
 
 ## The model
