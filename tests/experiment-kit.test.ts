@@ -340,6 +340,22 @@ describe("harness", () => {
     expect(JSON.parse(off.OPENCODE_CONFIG_CONTENT).plugin).toBeUndefined();
   });
 
+  it("tells brief arms what pushed notes are, and no one else", () => {
+    const runDir = join(tmp, "cmd4");
+    mkdirSync(runDir, { recursive: true });
+    const env: Record<string, string> = { BIFROST_LOG: "/l" };
+    buildAgentCommand(task, resolveArm("hand-brief"), { ...base, agent: "opencode" }, { ws: "/ws", runDir, notesFile: "/n.json", env });
+    const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT);
+    expect(config.plugin).toHaveLength(1);
+    expect(config.mcp).toBeUndefined();
+    expect(readFileSync(config.instructions[0], "utf8")).toContain("BIFRÖST");
+    const plain: Record<string, string> = { BIFROST_LOG: "/l" };
+    buildAgentCommand(task, resolveArm("hand"), { ...base, agent: "opencode" }, { ws: "/ws", runDir, notesFile: "/n.json", env: plain });
+    expect(JSON.parse(plain.OPENCODE_CONFIG_CONTENT).instructions).toBeUndefined();
+    const { args } = buildAgentCommand(task, resolveArm("hand-brief"), base, { ws: "/ws", runDir, notesFile: "/n.json", env: { BIFROST_LOG: "/l" } });
+    expect(args[args.indexOf("--append-system-prompt") + 1]).toContain("BIFRÖST");
+  });
+
   it("reads OpenCode traces: steps, paths, summed cost and tokens", () => {
     const ev = (type: string, part: object) => JSON.stringify({ type, timestamp: 1, sessionID: "ses_1", part });
     const text = [

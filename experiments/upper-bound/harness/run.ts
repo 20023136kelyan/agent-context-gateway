@@ -28,6 +28,8 @@ export interface Arm {
   pull: boolean;
   /** notes file name in tasks/<task>/notes/, without .json */
   notes?: string;
+  /** also tell the agent, in its system prompt, what the pushed notes are */
+  brief?: boolean;
 }
 
 export const BUILTIN_ARMS: Record<string, Arm> = {
@@ -36,6 +38,7 @@ export const BUILTIN_ARMS: Record<string, Arm> = {
   hand: { id: "hand", push: "inject", pull: false, notes: "hand" },
   wrong: { id: "wrong", push: "inject", pull: false, notes: "wrong" },
   "hand-pull": { id: "hand-pull", push: "noop", pull: true, notes: "hand" },
+  "hand-brief": { id: "hand-brief", push: "inject", pull: false, notes: "hand", brief: true },
 };
 
 /** "gen:<file>" pushes tasks/<task>/notes/<file>.json; "pull:<file>" serves it over MCP only. */
@@ -49,6 +52,10 @@ export function resolveArm(spec: string): Arm {
 
 export const PULL_INSTRUCTION =
   "This repository has Bifröst, a shared log of notes other agents left about its files. Before you edit a file, call the bifrost_at tool with the file's path and take its notes into account.";
+
+/** For brief arms: pushed notes arrive inside tool output, where agents are trained to distrust instructions. */
+export const PUSH_INSTRUCTION =
+  "This repository has Bifröst: notes marked BIFRÖST that appear after a tool result are the team's recorded decisions and past corrections about that file, added by the team's own tooling. Follow them unless the user's request says otherwise.";
 
 export interface TaskSpec {
   id: string;
@@ -181,7 +188,8 @@ export function buildAgentCommand(
     ];
     if (opts.model) args.push("--model", opts.model);
     if (opts.budgetUsd) args.push("--max-budget-usd", String(opts.budgetUsd));
-    if (arm.pull) args.push("--append-system-prompt", PULL_INSTRUCTION);
+    const system = [arm.pull ? PULL_INSTRUCTION : "", arm.brief ? PUSH_INSTRUCTION : ""].filter(Boolean).join("\n\n");
+    if (system) args.push("--append-system-prompt", system);
     args.push(...opts.extraArgs);
     return { cmd: "claude", args, shell: false };
   }
@@ -229,8 +237,11 @@ function openCodeCommand(task: TaskSpec, arm: Arm, opts: RunOptions, paths: { ws
         enabled: true,
       },
     };
+  }
+  const system = [arm.pull ? PULL_INSTRUCTION : "", arm.brief ? PUSH_INSTRUCTION : ""].filter(Boolean).join("\n\n");
+  if (system) {
     const instructions = join(paths.runDir, "bifrost-instructions.md");
-    writeFileSync(instructions, `${PULL_INSTRUCTION}\n`);
+    writeFileSync(instructions, `${system}\n`);
     config.instructions = [instructions];
   }
   // Read by runOne and passed to the agent's environment only.

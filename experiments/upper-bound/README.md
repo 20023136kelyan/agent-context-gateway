@@ -165,6 +165,7 @@ control = no notes, hand = correct notes, wrong = misleading notes.
 |---|---|---|---|---|---|
 | undocumented | Muse Spark 1.3, `xhigh` | 10 | 0% (50% trap) | 100% | 0% |
 | undocumented | MiMo v2.6 Flash | 5 | 0% (60% trap) | 100% | 0% (80% trap) |
+| taste | Muse Spark 1.3, `xhigh` | 10 | 0% (100% trap) | 50% | 0% (100% trap) |
 | taste | MiMo v2.6 Flash | 5 | 0% (100% trap) | 80% | 0% (100% trap) |
 | vendor | Muse Spark 1.3, `xhigh` | 10 | 100% | 100% | 100% |
 | vendor | MiMo v2.6 Flash | 5 | 80% | 80% | 100% |
@@ -179,6 +180,13 @@ What this shows:
 - **Knowledge that is in the repo**, even as one section among ~186 files
   (vendor): both models find it by searching (`grep "refresh|rotat|reuse|idempot"`)
   and notes add nothing measurable: no higher pass rate, no fewer turns.
+- **The strong model ignored correct notes half the time** on the taste task. All
+  four notes reached it before its first edit in every run. In the 5 failures it
+  followed none of them and mirrored the JSON export, which the prompt mentions.
+  The small model followed them 4 times in 5. Notes pushed into tool output may
+  read as untrusted text to a model trained to resist prompt injection. The
+  `hand-brief` arm tests this: the same notes, plus one line in the system prompt
+  saying what they are (`PUSH_INSTRUCTION` in `harness/run.ts`).
 - **Wrong notes** are followed when nothing in the repo contradicts them (0% on
   undocumented and taste) and overridden when the repo holds the truth (vendor).
   What gets into the notes needs checking before it is shared.
