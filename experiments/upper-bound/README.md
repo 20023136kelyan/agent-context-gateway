@@ -155,6 +155,34 @@ reviewer sends back. The grader checks each convention separately:
 The grader runs in `Asia/Tokyo`, so a locale date of a late-evening UTC time
 lands on the wrong day.
 
+## Results so far
+
+Free models through OpenCode, graded runs only (runs that got no response
+because of rate limits were left out and re-run). Pass rate per arm:
+control = no notes, hand = correct notes, wrong = misleading notes.
+
+| Task | Model | n/arm | control | hand | wrong |
+|---|---|---|---|---|---|
+| undocumented | Muse Spark 1.3, `xhigh` | 10 | 0% (50% trap) | 100% | 0% |
+| undocumented | MiMo v2.6 Flash | 5 | 0% (60% trap) | 100% | 0% (80% trap) |
+| taste | MiMo v2.6 Flash | 5 | 0% (100% trap) | 80% | 0% (100% trap) |
+| vendor | Muse Spark 1.3, `xhigh` | 10 | 100% | 100% | 100% |
+| vendor | MiMo v2.6 Flash | 5 | 80% | 80% | 100% |
+| buried | Muse Spark 1.3, `xhigh` | 3–4 | 100% | 100% | 100% |
+
+What this shows:
+
+- **Knowledge that isn't in the repo** (undocumented, taste): without notes both
+  models fail every time; with notes they almost always pass. On the taste task
+  the one convention the repo hints at (a `toISODate` helper) was followed without
+  notes in every run; the four with no trace in the repo were followed only with notes.
+- **Knowledge that is in the repo**, even as one section among ~186 files
+  (vendor): both models find it by searching (`grep "refresh|rotat|reuse|idempot"`)
+  and notes add nothing measurable: no higher pass rate, no fewer turns.
+- **Wrong notes** are followed when nothing in the repo contradicts them (0% on
+  undocumented and taste) and overridden when the repo holds the truth (vendor).
+  What gets into the notes needs checking before it is shared.
+
 A task can point `repo` and `hidden` at another task and add `overlay` (files
 copied over the repo) and `remove` (paths deleted), so variants don't copy the
 grader. The kit tests check that each grader separates no fix, the naive retry
