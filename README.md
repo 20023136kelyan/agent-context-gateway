@@ -126,6 +126,33 @@ the smallest useful finding schema, conflict display, staleness detection, what
 counts as "new", presence expiry, when to summarize activity into findings, and
 how much semantics place resolution really needs.
 
+## Using it (version 1, in progress)
+
+Bifröst runs on your machine. You write notes; every agent that works in the
+repository sees the relevant ones where it works.
+
+```sh
+npm install && npm run build
+node dist/cli.js install opencode      # or claude-code, codex, cursor (add --project for this repo only)
+
+cd ~/code/ledgerline
+node dist/cli.js note add "CSV files for finance use ';' as the delimiter." --at src/exports/
+node dist/cli.js note add "Never retry the refresh without the same Idempotency-Key." --at "src/authClient.js#AuthClient.refreshSession" --type warning
+node dist/cli.js note add "Corporate documents keep internal analogies out." --at .
+node dist/cli.js note list
+node dist/cli.js log                   # what agents were shown
+```
+
+- `--at` takes a file, a folder ending in `/`, `file#symbol`, or `.` for the whole
+  project. Project notes are shown at the start of each session; the others when an
+  agent reads, writes or runs a command on that place.
+- Types: `preference` (default), `decision`, `warning`, `known-issue`, `how-to`,
+  `discovery`, `in-progress`, `open-thread`.
+- A daemon (`bifrost daemon start|status|stop`) answers the hooks; the first hook
+  call starts it if it is not running. Everything fails open: if Bifröst has a
+  problem, the agent simply sees no notes.
+- Data lives in `~/.local/share/bifrost/` (`BIFROST_DB` to change it).
+
 ## Code
 
 | Path | What it is |
