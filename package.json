@@ -12,7 +12,8 @@
     "test": "vitest run",
     "exp:run": "node --env-file-if-exists=.env --import tsx experiments/upper-bound/harness/run.ts",
     "exp:generate": "node --env-file-if-exists=.env --import tsx experiments/upper-bound/harness/generate.ts",
-    "exp:report": "node --import tsx experiments/upper-bound/harness/report.ts"
+    "exp:report": "node --import tsx experiments/upper-bound/harness/report.ts",
+    "bifrost": "node --import tsx src/cli.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
@@ -26,11 +27,13 @@
     "typescript": "^5.5.0",
     "vitest": "^5.0.1"
   },
-  "main": "index.js",
   "directories": {
     "test": "tests"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "bin": {
+    "bifrost": "dist/cli.js"
+  }
 }

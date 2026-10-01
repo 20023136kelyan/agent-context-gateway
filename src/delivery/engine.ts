@@ -30,6 +30,8 @@ export interface SessionEvent {
   cwd: string;
   session: string;
   client: string;
+  /** false when the client carries the fixed explanation itself (OpenCode's instructions file). */
+  explain?: boolean;
 }
 
 export interface Decision {
@@ -149,11 +151,12 @@ export class DeliveryEngine {
       const st = this.state(e.session);
       const out = project.length ? this.format(project, this.opts.maxProjectItems ?? 5) : { text: "", shown: [] };
       for (const id of out.shown) st.shown.add(id);
-      const text = out.text ? `${SESSION_EXPLANATION}\n\n${out.text}` : SESSION_EXPLANATION;
+      const explain = e.explain !== false;
+      const text = explain ? (out.text ? `${SESSION_EXPLANATION}\n\n${out.text}` : SESSION_EXPLANATION) : out.text;
       this.log({ repo, session: e.session, client: e.client, event: "session", places: [], matched: project.map((i) => i.id), shown: out.shown, chars: text.length });
       return { text, shown: out.shown };
     } catch {
-      return { text: SESSION_EXPLANATION, shown: [] };
+      return { text: e.explain === false ? "" : SESSION_EXPLANATION, shown: [] };
     }
   }
 }

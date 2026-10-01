@@ -5,8 +5,7 @@
  */
 import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { DatabaseSync as DatabaseSyncT } from "node:sqlite";
 import { ItemError, normalizeAnchor, validateNewItem, type Anchor, type Evidence, type Item, type ItemStatus, type ItemType, type NewItem } from "./items.js";
@@ -14,8 +13,19 @@ import { ItemError, normalizeAnchor, validateNewItem, type Anchor, type Evidence
 // Lazy: node:sqlite prints an experimental warning on import in some Node versions.
 const require = createRequire(import.meta.url);
 function openDatabase(path: string): DatabaseSyncT {
-  const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
-  return new DatabaseSync(path);
+  // Node marks node:sqlite experimental and warns on every CLI run; that warning says nothing to a user.
+  const emit = process.emitWarning;
+  process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
+    const text = typeof warning === "string" ? warning : warning.message;
+    if (/SQLite is an experimental feature/.test(text)) return;
+    (emit as (...a: unknown[]) => void).call(process, warning, ...rest);
+  }) as typeof process.emitWarning;
+  try {
+    const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
+    return new DatabaseSync(path);
+  } finally {
+    process.emitWarning = emit;
+  }
 }
 
 /** Each entry moves the schema up one version. Never edit a released step; add a new one. */
@@ -85,11 +95,8 @@ export interface Delivery {
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
 
-export function defaultStorePath(): string {
-  if (process.env.BIFROST_DB) return process.env.BIFROST_DB;
-  const dataHome = process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share");
-  return join(dataHome, "bifrost", "bifrost.db");
-}
+export { defaultStorePath } from "../paths.js";
+import { defaultStorePath } from "../paths.js";
 
 export interface ItemFilter {
   repo?: string;
