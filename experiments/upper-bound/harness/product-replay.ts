@@ -4,11 +4,15 @@
  * built plugin and the fixed explanation, exactly as `bifrost install opencode` sets
  * them up. Checks that M1 reproduces the experiment's explained-push results.
  *
+ * Known issue, not fixed: the daemon runs in this process and spawnSync blocks it
+ * while the agent runs, so no notes are delivered. Superseded by the Rust base's
+ * evals/run.mjs in the bifrost repository, which has no daemon.
+ *
  *   npm run build
  *   tsx experiments/upper-bound/harness/product-replay.ts --task invoice-csv-taste \
  *     --notes hand-dir --reps 3 --model opencode/muse-spark-1.3-contributor-free --variant low
  */
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -47,7 +51,17 @@ async function main() {
     const config = { $schema: "https://opencode.ai/config.json", share: "disabled", autoupdate: false, plugin: [plugin], instructions: [explanation], permission: { edit: "allow", bash: "allow", webfetch: "allow", external_directory: "deny" } };
     const args = ["run", "--format", "json", "--dir", ws, "--model", model, ...(variant ? ["--variant", variant] : []), task.prompt];
     const t0 = Date.now();
-    const run = spawnSync("opencode", args, { cwd: ws, encoding: "utf8", timeout: 20 * 60_000, maxBuffer: 1 << 28, env: { ...env, OPENCODE_CONFIG_CONTENT: JSON.stringify(config), OPENCODE_DISABLE_CLAUDE_CODE: "1", OPENCODE_DISABLE_AUTOUPDATE: "1" } });
+    // Async on purpose: the daemon runs in this process and must keep answering while the agent works.
+    const run = await new Promise<{ stdout: string }>((done) => {
+      const child = spawn("opencode", args, { cwd: ws, env: { ...env, OPENCODE_CONFIG_CONTENT: JSON.stringify(config), OPENCODE_DISABLE_CLAUDE_CODE: "1", OPENCODE_DISABLE_AUTOUPDATE: "1" } });
+      let stdout = "";
+      child.stdout.on("data", (c: Buffer) => (stdout += c.toString("utf8")));
+      const timer = setTimeout(() => child.kill("SIGTERM"), 20 * 60_000);
+      child.on("close", () => {
+        clearTimeout(timer);
+        done({ stdout });
+      });
+    });
     const seconds = Math.round((Date.now() - t0) / 1000);
     const g = grade(task, ws) as { pass?: boolean; trapHit?: boolean; details?: unknown } | null;
     const all = store.deliveries({ limit: 1000 }).filter((d) => d.at >= new Date(t0).toISOString());
