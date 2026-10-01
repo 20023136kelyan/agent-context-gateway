@@ -540,6 +540,23 @@ Free models through OpenCode; full tables in `experiments/upper-bound/README.md`
   created under it. With a model that skips the old files, folder anchors raised
   the conventions followed from about 1 in 5 to all 5 in three of four runs.
 
+### 13.6 Generated notes and noise
+
+- **A generator can launder a mistake into advice.** Given a failed session and
+  its outcome, one model wrote a note recommending the failed session's own
+  approach; every agent then failed the same way (0/5). Another model's notes
+  passed 4/5, and for the taste task both recovered every convention (5/5).
+  Extraction must separate what a session did from what its outcome confirmed:
+  an approach from a failed session is never written as a how-to unless the
+  outcome shows it works.
+- **Notes about new code point at files that do not exist yet.** A note on a
+  file the session created is anchored to that file's folder.
+- **Noise costs correct notes, not just attention.** With at most three notes per
+  file touch, ranked by type, irrelevant warnings displaced a correct note and
+  the agent broke exactly that convention (4/5 against 5/5). Ranking has to
+  weigh relevance to what the agent is doing, and admission has to keep noise
+  out; the cap makes every bad note expensive.
+
 ## 14. Open Questions
 
 - How precisely should an event be mapped to an anchor when shell activity or generated changes touch many files?
@@ -562,6 +579,7 @@ Free models through OpenCode; full tables in `experiments/upper-bound/README.md`
 | Telemetry is not memory. | Keep activity separate from findings. |
 | Silence is useful. | Do not surface context unless it is new and relevant. |
 | Wrong context is harmful. | Support correction, votes, supersession, and staleness; agents follow uncontradicted notes. |
+| Record only what an outcome confirms. | A failed session's approach is not advice; tie each item to the evidence that supports it. |
 | Admit what the code cannot tell. | Prioritize preferences, corrections and knowledge absent from the repository over findable facts. |
 | Delivered context must read as trusted. | Explain the channel to the agent; text appended to tool output alone is often ignored. |
 | Inform before controlling. | Default behavior is non-blocking. |

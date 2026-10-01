@@ -247,6 +247,40 @@ the system-prompt line. OpenCode's plugin runs after a tool call, so a note on a
 new file arrives after the first write and the agent has to revise it; Claude
 Code's hook runs before.
 
+## Generated notes and noise
+
+Two tests of what a real system would face: notes written by a model from a
+failed session, and correct notes buried among irrelevant ones. Muse Spark `low`
+as the agent, explained push (`brief:`), 5 runs per arm.
+
+**Generated notes.** `harness/generate.ts --provider opencode` turned one failed
+control run per task (the trace plus the grader's outcome, standing in for an
+incident report or a reviewer's correction) into notes:
+
+| Task | Notes by Muse Spark `xhigh` | Notes by MiMo v2.6 Flash | Hand notes |
+|---|---|---|---|
+| taste | 5/5 | 5/5 | 5/5 |
+| undocumented | **0/5** | 4/5 | 5/5 |
+
+- Taste: both generators recovered all five conventions as `preference` notes
+  anchored to `src/exports/`. MiMo first anchored its main note to
+  `src/exports/invoicesCsv.js`, the file the failed session created, which is not
+  in the repository, so validation dropped it. Notes on a file the session
+  created are now anchored to its folder; the run used the re-anchored note.
+- Undocumented: Muse Spark's notes included "refreshSession must not clear the
+  TokenStore on TransportError… throw and keep the session". That was the failed
+  session's own approach, which the outcome had graded as failing. The generator
+  turned the mistake into advice, and every agent followed it and failed the
+  same way. MiMo's notes did not include it.
+
+**Noise.** The hand notes plus 16 (taste) or 12 (undocumented) plausible,
+irrelevant notes on the same files and folders (`notes/hand-noise.json`):
+taste 4/5, undocumented 5/5. The one failure is the delivery cap at work: the hook
+shows at most 3 notes per file touch, warnings first. When the agent read
+`invoicesJson.js`, three irrelevant notes filled the slots and the correct one
+anchored there (named exports only) never appeared; the agent followed every
+other convention and broke that one.
+
 A task can point `repo` and `hidden` at another task and add `overlay` (files
 copied over the repo) and `remove` (paths deleted), so variants don't copy the
 grader. The kit tests check that each grader separates no fix, the naive retry
