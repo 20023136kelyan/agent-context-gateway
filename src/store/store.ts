@@ -53,7 +53,35 @@ const MIGRATIONS: string[] = [
      at TEXT,
      PRIMARY KEY (item_id, seq)
    );`,
+  `CREATE TABLE deliveries (
+     at TEXT NOT NULL,
+     repo TEXT NOT NULL,
+     session TEXT NOT NULL,
+     client TEXT NOT NULL,
+     event TEXT NOT NULL,
+     tool TEXT,
+     places TEXT NOT NULL,
+     matched TEXT NOT NULL,
+     shown TEXT NOT NULL,
+     chars INTEGER NOT NULL
+   );
+   CREATE INDEX deliveries_session ON deliveries (session, at);`,
 ];
+
+/** One delivery decision, kept locally: what an agent touched and what it was shown. */
+export interface Delivery {
+  at: string;
+  repo: string;
+  session: string;
+  client: string;
+  /** "tool" for a tool call, "session" for session start */
+  event: "tool" | "session";
+  tool?: string;
+  places: string[];
+  matched: string[];
+  shown: string[];
+  chars: number;
+}
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
 
@@ -108,6 +136,16 @@ export class ItemStore {
   }
 
   private depth = 0;
+  private writes = 0;
+
+  /**
+   * Changes whenever items change, through this connection or another process's.
+   * Readers that cache items compare it before trusting their cache.
+   */
+  changeToken(): string {
+    const v = (this.db.prepare("PRAGMA data_version").get() as Row).data_version;
+    return `${v}:${this.writes}`;
+  }
 
   /** Runs fn atomically. Nested calls become savepoints, so writes compose. */
   private transaction<T>(fn: () => T): T {
@@ -118,6 +156,7 @@ export class ItemStore {
       const out = fn();
       this.depth--;
       this.db.exec(this.depth === 0 ? "COMMIT" : `RELEASE ${savepoint}`);
+      this.writes++;
       return out;
     } catch (err) {
       this.depth--;
@@ -210,6 +249,7 @@ export class ItemStore {
       confidence: patch.confidence ?? item.confidence,
     });
     const a = normalizeAnchor(next.anchor);
+    this.writes++;
     this.db
       .prepare(
         `UPDATE items SET type = ?, text = ?, anchor_kind = ?, anchor_path = ?, anchor_symbol = ?, line_start = ?, line_end = ?,
@@ -252,6 +292,7 @@ export class ItemStore {
 
   vote(id: string, direction: "up" | "down"): Item {
     this.require(id);
+    this.writes++;
     const col = direction === "up" ? "votes_up" : "votes_down";
     this.db.prepare(`UPDATE items SET ${col} = ${col} + 1, updated_at = ? WHERE id = ?`).run(this.stamp(), id);
     return this.require(id);
@@ -259,8 +300,41 @@ export class ItemStore {
 
   addEvidence(id: string, evidence: Evidence): Item {
     this.require(id);
+    this.writes++;
     this.insertEvidence(id, evidence);
     return this.require(id);
+  }
+
+  logDelivery(d: Delivery): void {
+    this.db
+      .prepare("INSERT INTO deliveries (at, repo, session, client, event, tool, places, matched, shown, chars) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(d.at, d.repo, d.session, d.client, d.event, d.tool ?? null, JSON.stringify(d.places), JSON.stringify(d.matched), JSON.stringify(d.shown), d.chars);
+  }
+
+  deliveries(filter: { session?: string; repo?: string; limit?: number } = {}): Delivery[] {
+    const where: string[] = [];
+    const args: (string | number)[] = [];
+    if (filter.session) {
+      where.push("session = ?");
+      args.push(filter.session);
+    }
+    if (filter.repo) {
+      where.push("repo = ?");
+      args.push(filter.repo);
+    }
+    const sql = `SELECT * FROM deliveries${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY at DESC, rowid DESC LIMIT ?`;
+    return (this.db.prepare(sql).all(...args, filter.limit ?? 100) as Row[]).map((r) => ({
+      at: String(r.at),
+      repo: String(r.repo),
+      session: String(r.session),
+      client: String(r.client),
+      event: r.event as Delivery["event"],
+      ...(r.tool != null ? { tool: String(r.tool) } : {}),
+      places: JSON.parse(String(r.places)),
+      matched: JSON.parse(String(r.matched)),
+      shown: JSON.parse(String(r.shown)),
+      chars: Number(r.chars),
+    }));
   }
 
   close(): void {
