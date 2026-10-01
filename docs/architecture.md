@@ -286,7 +286,8 @@ fatigue by surfacing repetitive or low-value context.
 Delivered context must also read as trusted. Agents are trained to distrust
 instructions that appear inside tool output, because prompt injections arrive
 that way. In the experiment, a strong model shown correct notes inside file reads
-ignored them in half the runs. Each delivery channel should therefore establish,
+ignored them in half the runs; one system-prompt line explaining the notes raised
+that to every run (section 13.5). Each delivery channel should therefore establish,
 through the agent's system prompt or equivalent, what Bifröst items are and that
 they come from the team's own tooling.
 
@@ -514,9 +515,12 @@ Free models through OpenCode; full tables in `experiments/upper-bound/README.md`
 - **Wrong notes** were followed whenever the repository did not contradict them,
   and overridden when it did. Admission and correction matter as much as
   delivery.
-- **Delivery channel:** a strong model ignored correct notes pushed into tool
-  output in half the runs. Early runs that also explain the notes in the system
-  prompt pass; a pull tool the agent must call was used only for some files.
+- **Delivery channel** (taste task, strong model, 10 runs each): notes pushed
+  into tool output passed 50%. The same notes plus one system-prompt line saying
+  what they are passed 100%, in a third of the time without notes (74 s against
+  223 s). A pull tool the agent was told to call passed 20%: it was queried for
+  only some files, and its answers were mostly ignored. Push delivery, with the
+  channel explained to the agent, is the design to keep.
 
 ## 14. Open Questions
 

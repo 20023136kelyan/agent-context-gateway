@@ -183,10 +183,21 @@ What this shows:
 - **The strong model ignored correct notes half the time** on the taste task. All
   four notes reached it before its first edit in every run. In the 5 failures it
   followed none of them and mirrored the JSON export, which the prompt mentions.
-  The small model followed them 4 times in 5. Notes pushed into tool output may
-  read as untrusted text to a model trained to resist prompt injection. The
-  `hand-brief` arm tests this: the same notes, plus one line in the system prompt
-  saying what they are (`PUSH_INSTRUCTION` in `harness/run.ts`).
+  The small model followed them 4 times in 5. Notes pushed into tool output read
+  as untrusted text to a model trained to resist prompt injection. Adding one line
+  to the system prompt saying what they are fixed it (`hand-brief`,
+  `PUSH_INSTRUCTION` in `harness/run.ts`):
+
+  | Taste task, Muse Spark `xhigh`, 10 runs each | Pass | Median time |
+  |---|---|---|
+  | no notes (control) | 0% | 223s |
+  | pull: told to call `bifrost_at` before editing (`hand-pull`) | 20% | 180s |
+  | push into tool output (`hand`) | 50% | 162s |
+  | push, plus one system-prompt line saying what the notes are (`hand-brief`) | 100% | 74s |
+
+  Pull fails twice: in 5 of 10 runs the agent asked only about the two files it
+  meant to copy, missing the money and date notes. When it did fetch all four, it
+  still ignored them in 4 of 5 runs.
 - **Wrong notes** are followed when nothing in the repo contradicts them (0% on
   undocumented and taste) and overridden when the repo holds the truth (vendor).
   What gets into the notes needs checking before it is shared.
