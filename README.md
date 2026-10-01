@@ -36,7 +36,8 @@ Next: the [build plan](./docs/build-plan.md).
 - [x] Control vs notes, ≥ 10 runs per arm on a strong model; small models and low reasoning effort
 - [x] Delivery channel (push, pull, explained push), folder anchors, generated notes, noise
 - [x] Decision against the bar: met for unfindable knowledge (0% → 100%); no gain where one search finds the answer
-- [ ] Build version 1 ([plan](./docs/build-plan.md))
+- [x] Build plan M0: foundations (store, delivery logic, previous code retired)
+- [ ] Build plan M1: delivery with hand-written notes ([plan](./docs/build-plan.md))
 
 ## The model
 
@@ -129,6 +130,8 @@ how much semantics place resolution really needs.
 
 | Path | What it is |
 |---|---|
+| `src/store/` | The item store: typed items with project, folder, file and symbol anchors, evidence, confidence and validity; SQLite with migrations; import of the experiment kit's note files. |
+| `src/delivery/` | Places from tool calls, matching, ranking (most specific anchor first), and the sanitised, cache-stable text agents see. |
 | `src/adapters/` | Read-only readers of native agent histories: Claude Code, Codex, Cursor, OpenCode, git. Input to ingestion (build plan M2). |
 | `src/core/`, `src/topology/` | Shared models and ids; parent/child session topology. |
 | `experiments/upper-bound/` | The experiment kit: trap tasks, delivery hook and plugin, notes generator, harness. |

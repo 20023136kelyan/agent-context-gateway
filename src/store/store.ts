@@ -187,7 +187,7 @@ export class ItemStore {
       where.push("type = ?");
       args.push(filter.type);
     }
-    const sql = `SELECT * FROM items${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY created_at, id`;
+    const sql = `SELECT * FROM items${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY created_at, rowid`;
     return (this.db.prepare(sql).all(...args) as Row[]).map((r) => this.toItem(r));
   }
 
@@ -195,7 +195,7 @@ export class ItemStore {
   activeAt(repo: string, at: Date = this.now()): Item[] {
     const t = at.toISOString();
     return (this.db
-      .prepare("SELECT * FROM items WHERE repo = ? AND status = 'active' AND valid_from <= ? AND (valid_until IS NULL OR valid_until > ?) ORDER BY created_at, id")
+      .prepare("SELECT * FROM items WHERE repo = ? AND status = 'active' AND valid_from <= ? AND (valid_until IS NULL OR valid_until > ?) ORDER BY created_at, rowid")
       .all(repo, t, t) as Row[]).map((r) => this.toItem(r));
   }
 
