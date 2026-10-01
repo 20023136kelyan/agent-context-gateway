@@ -106,6 +106,16 @@ exists.
 - Ranking v1: anchor specificity first (symbol > file > folder > project), then
   type, then recency; at most 3 per touch; never repeat a shown note in a session
   unless it is a warning and the agent is editing.
+- Prompt-cache rules. Agent sessions depend on the provider's prompt cache (the
+  stored attention state of an unchanged prompt prefix); anything that changes
+  earlier context makes every later call slower and more expensive. So:
+  - the session-start explanation is fixed text, identical in every session;
+    project-level items go after it, and only at session start;
+  - notes are only ever appended after a tool result, never inserted earlier;
+  - a changed or superseded note is delivered as a new note, never by editing
+    text the agent already saw;
+  - every delivered note stays in the context for the rest of the session, so
+    the 280-character limit and the per-touch cap also bound its running cost.
 - CLI: `bifrost note add|list|edit|retire`, with anchors given as paths or folders.
 - Telemetry, local only: which notes were shown, when, to which session.
 
@@ -217,6 +227,7 @@ About three months to a pilot, with a usable tool for the developer from week 3.
 | Noise hides the notes that matter. | Strict admission, relevance-aware ranking, demotion of ignored items, noise replay in the evals. |
 | The trusted channel becomes an injection route. | Only items from the Bifröst store are delivered; text is sanitised and length-capped; items from sources outside the developer's own sessions need review; the explanation line says what the notes are without granting them authority over the user's request. |
 | Clients that deliver after the call show notes late. | Session-start context and folder anchors carry conventions before the first write; measured per client in the evals. |
+| Delivery breaks the agent's prompt cache and raises its cost. | Fixed session-start text, append-only notes, supersession as new notes (M1); measure cached-token share per session with and without Bifröst. |
 | Client hook APIs change. | One thin shim per client, kept small; the daemon does the work. |
 | Free-tier models are rate-limited during development. | Evals run on small models and low effort; strong models only for final checks. |
 
