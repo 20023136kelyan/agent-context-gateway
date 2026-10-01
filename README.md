@@ -16,25 +16,27 @@ Full concept: [`docs/architecture.md`](./docs/architecture.md).
 > originally named Agent Context Gateway); its code, spec and plans remain in
 > this tree for reference until they are retired or reused.
 
-## Status: pre-MVP
+## Status: experiments done, build planned
 
-None of the product is built yet. The first milestone is the **upper-bound experiment**
-(§13 of the architecture doc). Its question is whether perfect, hand-written,
-correctly anchored findings delivered at the right place make agents
-materially better. If they don't, no extraction pipeline can rescue the idea,
-and the project stops.
+None of the product is built yet. The **upper-bound experiment** (§13 of the
+architecture doc) asked whether short, correctly anchored notes delivered at the
+place make agents materially better. For knowledge the code cannot tell
+(preferences, corrections, undocumented behaviour) they do: agents went from
+failing every run to passing nearly every run, once the notes were pushed at the
+place and explained in the agent's session context. Results, and the failure
+modes found along the way (wrong notes, noise, generated advice from failed
+sessions), are in [`experiments/upper-bound/`](./experiments/upper-bound/README.md)
+and architecture §13.5–13.6.
 
-The experiment kit is in [`experiments/upper-bound/`](./experiments/upper-bound/README.md).
+Next: the [build plan](./docs/build-plan.md).
 
-- [x] Trap-task format, and a first trap task (`refresh-rotation`) with a hidden grader that separates "goal met" from "trap hit"
-- [x] Hand-written findings for it (typed, anchored, ≤ 280 chars), plus a deliberately wrong set
-- [x] Delivery: file-touch hook that injects the top notes or stays silent, and a one-tool MCP server for pull-only agents
-- [x] Notes generator: seed trace plus graded outcome → model → notes (strong model, open-weight model, digest-only input)
-- [x] A/B harness: isolated runs per arm, grading, cost and time metrics, report with bootstrap intervals
-- [x] Runners for Claude Code and OpenCode (OpenCode checked end to end with a scripted mock model)
-- [ ] Run it with real agents: smoke test, then control vs hand-written notes (≥ 10 runs per arm)
-- [ ] Design 10+ trap tasks across kinds of knowledge (vendor constraints, past decisions, flaky areas, work in progress)
-- [ ] Decide: ≥ 15% faster or cheaper, or materially better trap-task completion, or stop
+- [x] Experiment kit: trap tasks with hidden graders, push and pull delivery, notes generator, A/B harness and report
+- [x] Runners for Claude Code and OpenCode; runs on free models through OpenCode
+- [x] Trap tasks across kinds of knowledge: undocumented vendor change, team taste, findable vendor fact
+- [x] Control vs notes, ≥ 10 runs per arm on a strong model; small models and low reasoning effort
+- [x] Delivery channel (push, pull, explained push), folder anchors, generated notes, noise
+- [x] Decision against the bar: met for unfindable knowledge (0% → 100%); no gain where one search finds the answer
+- [ ] Build version 1 ([plan](./docs/build-plan.md))
 
 ## The model
 
@@ -61,7 +63,7 @@ and recent events moving across it.
 |---|---|---|
 | **Activity** | What happened here? | Mechanical and high-volume: reads, edits, runs, tests, shell touches. Substrate, not memory. |
 | **Presence** | Who is active here right now? | Ephemeral, updated within seconds. |
-| **Findings** | What was learned or decided? | Typed (`decision`, `discovery`, `warning`, `known-issue`, `how-to`, `in-progress`, `open-thread`), ≤ 280 chars, links back to the originating thread. |
+| **Findings** | What was learned or decided? | Typed (`decision`, `preference`, `discovery`, `warning`, `known-issue`, `how-to`, `in-progress`, `open-thread`), ≤ 280 chars, links back to the originating thread. |
 | **Tasks** | What state is the work in? | `verified`, `failing`, `unverified`, `reverted`. |
 
 **Anchors are repository-native** (`repository, path, symbol?, lineStart?,
