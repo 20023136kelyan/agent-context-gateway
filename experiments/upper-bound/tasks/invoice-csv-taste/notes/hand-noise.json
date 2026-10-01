@@ -1,0 +1,214 @@
+{
+  "source": "hand-noise",
+  "notes": [
+    {
+      "id": "tc-1",
+      "type": "decision",
+      "anchor": {
+        "path": "src/reports/monthly.js"
+      },
+      "text": "CSV files for finance use ';' as the delimiter and snake_case headers (invoice_id, customer, issued_on, total_cents). Finance opens them in Excel with a French locale. monthly.js predates this; don't copy its format.",
+      "author": "claude-code",
+      "age": "12d"
+    },
+    {
+      "id": "tc-2",
+      "type": "decision",
+      "anchor": {
+        "path": "src/lib/money.js",
+        "symbol": "formatMoney"
+      },
+      "text": "Machine-readable exports carry amounts as integer cents (total_cents: 123450), never formatMoney strings. formatMoney is for the UI only; this was corrected in review twice.",
+      "author": "codex",
+      "age": "5d"
+    },
+    {
+      "id": "tc-3",
+      "type": "how-to",
+      "anchor": {
+        "path": "src/lib/dates.js",
+        "symbol": "toISODate"
+      },
+      "text": "Dates in exports go through toISODate (YYYY-MM-DD, UTC). formatDate depends on the server's locale and time zone and is for the UI only.",
+      "author": "codex",
+      "age": "5d"
+    },
+    {
+      "id": "tc-4",
+      "type": "decision",
+      "anchor": {
+        "path": "src/exports/invoicesJson.js"
+      },
+      "text": "New modules use named exports only. The default exports in older files like this one are legacy and are being removed.",
+      "author": "claude-code",
+      "age": "12d"
+    },
+    {
+      "id": "tn-1",
+      "type": "warning",
+      "anchor": {
+        "path": "src/invoices.js",
+        "symbol": "invoicesInMonth"
+      },
+      "text": "invoicesInMonth filters on UTC month. A local-time filter double-counts invoices issued near midnight at month boundaries; keep getUTCMonth.",
+      "author": "codex",
+      "age": "4d"
+    },
+    {
+      "id": "tn-2",
+      "type": "known-issue",
+      "anchor": {
+        "path": "src/lib/money.js",
+        "symbol": "toCents"
+      },
+      "text": "toCents uses Math.round on a float, so '0.285' becomes 28 instead of 29. Known, low impact; fix planned with the decimal library migration.",
+      "author": "claude-code",
+      "age": "5d"
+    },
+    {
+      "id": "tn-3",
+      "type": "decision",
+      "anchor": {
+        "path": "src/lib/money.js",
+        "symbol": "formatMoney"
+      },
+      "text": "formatMoney stays en-US for now; the localisation work (ticket LL-212) will pass the user's locale from the session.",
+      "author": "codex",
+      "age": "6d"
+    },
+    {
+      "id": "tn-4",
+      "type": "warning",
+      "anchor": {
+        "path": "src/http/routes.js",
+        "symbol": "createRouter"
+      },
+      "text": "Routes are matched as exact strings: no trailing-slash or query-string handling. /exports/invoices.json?x=1 returns 404.",
+      "author": "claude-code",
+      "age": "7d"
+    },
+    {
+      "id": "tn-5",
+      "type": "how-to",
+      "anchor": {
+        "path": "src/http/routes.js",
+        "symbol": "createRouter"
+      },
+      "text": "To add a route, add a 'METHOD /path' key returning { status, headers, body }; set content-type explicitly, there is no default.",
+      "author": "codex",
+      "age": "8d"
+    },
+    {
+      "id": "tn-6",
+      "type": "decision",
+      "anchor": {
+        "path": "src/store.js"
+      },
+      "text": "The in-memory store is for tests and local dev only; production uses the Postgres adapter in the deploy repo. Don't add persistence here.",
+      "author": "claude-code",
+      "age": "9d"
+    },
+    {
+      "id": "tn-7",
+      "type": "warning",
+      "anchor": {
+        "path": "src/exports/invoicesJson.js"
+      },
+      "text": "The partner portal parses invoicesJson output strictly: don't rename or reorder its fields (invoiceId, customerName, issuedAt, total) without telling the partner team.",
+      "author": "codex",
+      "age": "10d"
+    },
+    {
+      "id": "tn-8",
+      "type": "known-issue",
+      "anchor": {
+        "path": "src/reports/monthly.js"
+      },
+      "text": "The monthly report's total row uses the default currency (EUR) even if invoices mix currencies. Mixed-currency months are rare; tracked in LL-198.",
+      "author": "claude-code",
+      "age": "11d"
+    },
+    {
+      "id": "tn-9",
+      "type": "discovery",
+      "anchor": {
+        "path": "src/lib/dates.js",
+        "symbol": "formatDate"
+      },
+      "text": "formatDate uses the server's time zone; the production servers run in Europe/Paris, so dates in emails can differ from UTC by a day.",
+      "author": "codex",
+      "age": "12d"
+    },
+    {
+      "id": "tn-10",
+      "type": "how-to",
+      "anchor": {
+        "path": "test/fixtures.js"
+      },
+      "text": "Fixtures are shared across test files; add new invoices at the end so existing index-based assertions keep working.",
+      "author": "claude-code",
+      "age": "13d"
+    },
+    {
+      "id": "tn-11",
+      "type": "warning",
+      "anchor": {
+        "path": "src/index.js"
+      },
+      "text": "index.js is the package's public API; the partner SDK imports from it by name. Removing or renaming an export is a breaking change.",
+      "author": "codex",
+      "age": "14d"
+    },
+    {
+      "id": "tn-12",
+      "type": "decision",
+      "anchor": {
+        "path": "src/invoices.js",
+        "symbol": "listInvoices"
+      },
+      "text": "listInvoices sorts by issuedAt then id so pagination is stable. Keep the tie-break when adding filters.",
+      "author": "claude-code",
+      "age": "15d"
+    },
+    {
+      "id": "tn-13",
+      "type": "known-issue",
+      "anchor": {
+        "path": "test/reports.test.js"
+      },
+      "text": "The monthly report test asserts on formatted money and breaks if the Node ICU data changes; pin Node 22 in CI.",
+      "author": "codex",
+      "age": "16d"
+    },
+    {
+      "id": "tn-14",
+      "type": "how-to",
+      "anchor": {
+        "path": "src/exports/"
+      },
+      "text": "Exports are pure functions over an invoice list; they don't read the store themselves. The router passes listInvoices(store).",
+      "author": "claude-code",
+      "age": "17d"
+    },
+    {
+      "id": "tn-15",
+      "type": "warning",
+      "anchor": {
+        "path": "src/exports/"
+      },
+      "text": "Exports can be large: keep them as one string build for now, but don't add per-row awaits; a streaming version is planned.",
+      "author": "codex",
+      "age": "18d"
+    },
+    {
+      "id": "tn-16",
+      "type": "discovery",
+      "anchor": {
+        "path": "src/lib/"
+      },
+      "text": "lib/ has no dependencies on the rest of src/ and is also published as @ledgerline/lib; keep it that way.",
+      "author": "claude-code",
+      "age": "19d"
+    }
+  ]
+}

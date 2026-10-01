@@ -1,0 +1,69 @@
+{
+  "source": "gen:opencode:opencode/muse-spark-1.3-contributor-free:full",
+  "generatedAt": "2026-10-01T18:37:54.635Z",
+  "trace": "experiments/upper-bound/results/batch5-low/invoice-csv-taste/control/rep-01/trace.jsonl",
+  "input": "full",
+  "usage": {
+    "total": 16763,
+    "input": 9109,
+    "output": 425,
+    "reasoning": 2892,
+    "cache": {
+      "write": 0,
+      "read": 4337
+    }
+  },
+  "dropped": [],
+  "notes": [
+    {
+      "id": "gen-1",
+      "type": "preference",
+      "anchor": {
+        "path": "src/exports/"
+      },
+      "text": "CSV exports must use ';' as delimiter, not ','; Finance opens these files in Excel with French locale where comma breaks columns.",
+      "author": "generated",
+      "age": ""
+    },
+    {
+      "id": "gen-2",
+      "type": "preference",
+      "anchor": {
+        "path": "src/exports/"
+      },
+      "text": "CSV export headers must be snake_case (e.g. invoice_id, customer_name), not Title Case with spaces like 'Invoice ID'.",
+      "author": "generated",
+      "age": ""
+    },
+    {
+      "id": "gen-3",
+      "type": "preference",
+      "anchor": {
+        "path": "src/exports/"
+      },
+      "text": "Invoice CSV dates must be YYYY-MM-DD in UTC via toISODate (e.g. 2026-03-31), not full ISO timestamps like 2026-03-14T16:40:00Z.",
+      "author": "generated",
+      "age": ""
+    },
+    {
+      "id": "gen-4",
+      "type": "preference",
+      "anchor": {
+        "path": "src/exports/"
+      },
+      "text": "Invoice CSV totals must be raw integer cents (e.g. 123450), not formatted strings like '€1,234.50' from formatMoney.",
+      "author": "generated",
+      "age": ""
+    },
+    {
+      "id": "gen-5",
+      "type": "preference",
+      "anchor": {
+        "path": "src/exports/"
+      },
+      "text": "New modules in src/exports/ must use named exports only (e.g. export function exportInvoicesCsv), not default exports.",
+      "author": "generated",
+      "age": ""
+    }
+  ]
+}

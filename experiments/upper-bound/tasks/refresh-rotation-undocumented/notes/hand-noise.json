@@ -1,0 +1,173 @@
+{
+  "source": "hand-noise",
+  "notes": [
+    {
+      "id": "ru-1",
+      "type": "warning",
+      "anchor": {
+        "path": "src/authClient.js",
+        "symbol": "AuthClient.refreshSession"
+      },
+      "text": "Don't retry the refresh_token grant as is. Since v3.2 Keyline rotates refresh tokens and revokes the whole token family when a used one is re-sent. A timeout can hit after the server rotated, so a plain retry signs every device out. Our vendor doc copy is v3.1 and predates this.",
+      "author": "codex",
+      "age": "3d"
+    },
+    {
+      "id": "ru-2",
+      "type": "how-to",
+      "anchor": {
+        "path": "src/authClient.js",
+        "symbol": "AuthClient.refreshSession"
+      },
+      "text": "Safe retry: send one Idempotency-Key header, reused across all attempts of the same refresh (transport.post(path, body, { headers })). Keyline (v3.4+) replays the first response for 60 s and skips reuse detection. Never reuse the key for a different refresh token.",
+      "author": "codex",
+      "age": "3d"
+    },
+    {
+      "id": "ru-3",
+      "type": "decision",
+      "anchor": {
+        "path": "src/sessionGuard.js",
+        "symbol": "SessionGuard.run"
+      },
+      "text": "SessionGuard retries an API call once after a 401. A refresh that fails with 400 invalid_grant is never retried: the family is gone, so sign the user out.",
+      "author": "claude-code",
+      "age": "9d"
+    },
+    {
+      "id": "ru-4",
+      "type": "how-to",
+      "anchor": {
+        "path": "src/transport.js",
+        "symbol": "HttpTransport.post"
+      },
+      "text": "post() rejects with TransportError (code ETIMEDOUT or ECONNRESET) only when no HTTP response arrived. Extra headers such as Idempotency-Key go in options.headers.",
+      "author": "claude-code",
+      "age": "9d"
+    },
+    {
+      "id": "un-1",
+      "type": "warning",
+      "anchor": {
+        "path": "src/tokenStore.js"
+      },
+      "text": "TokenStore is in-memory per tab; two tabs refresh independently. Cross-tab sync via BroadcastChannel was tried and dropped (Safari bugs).",
+      "author": "codex",
+      "age": "4d"
+    },
+    {
+      "id": "un-2",
+      "type": "known-issue",
+      "anchor": {
+        "path": "src/sessionGuard.js",
+        "symbol": "SessionGuard.run"
+      },
+      "text": "SessionGuard retries the original API call once after a refresh but does not replay its body stream; streaming uploads fail on 401 and must be retried by the caller.",
+      "author": "claude-code",
+      "age": "5d"
+    },
+    {
+      "id": "un-3",
+      "type": "decision",
+      "anchor": {
+        "path": "src/transport.js",
+        "symbol": "HttpTransport.post"
+      },
+      "text": "Transport timeout is 10 s for all calls; raising it per endpoint was rejected to keep the UI responsive.",
+      "author": "codex",
+      "age": "6d"
+    },
+    {
+      "id": "un-4",
+      "type": "how-to",
+      "anchor": {
+        "path": "src/transport.js"
+      },
+      "text": "To test against staging set KEYLINE_BASE_URL; the default points at production Keyline.",
+      "author": "claude-code",
+      "age": "7d"
+    },
+    {
+      "id": "un-5",
+      "type": "warning",
+      "anchor": {
+        "path": "src/authClient.js",
+        "symbol": "AuthClient.signIn"
+      },
+      "text": "signIn must not log the password or the full token response; the logging middleware redacts only known field names.",
+      "author": "codex",
+      "age": "8d"
+    },
+    {
+      "id": "un-6",
+      "type": "discovery",
+      "anchor": {
+        "path": "src/authClient.js"
+      },
+      "text": "Access tokens last 15 minutes and refresh tokens 30 days of inactivity (§5); the UI refreshes 60 s before expiry.",
+      "author": "claude-code",
+      "age": "9d"
+    },
+    {
+      "id": "un-7",
+      "type": "known-issue",
+      "anchor": {
+        "path": "test/fakeServer.js"
+      },
+      "text": "FakeTokenServer's clock is real time; tests that wait for expiry are slow. Inject a clock if you add one.",
+      "author": "codex",
+      "age": "10d"
+    },
+    {
+      "id": "un-8",
+      "type": "decision",
+      "anchor": {
+        "path": "src/index.js"
+      },
+      "text": "index.js is the public entry for the web and desktop clients; keep exports stable.",
+      "author": "claude-code",
+      "age": "11d"
+    },
+    {
+      "id": "un-9",
+      "type": "warning",
+      "anchor": {
+        "path": "src/sessionGuard.js"
+      },
+      "text": "Never call signOut from inside a request interceptor: it re-enters SessionGuard and deadlocks pending requests.",
+      "author": "codex",
+      "age": "12d"
+    },
+    {
+      "id": "un-10",
+      "type": "how-to",
+      "anchor": {
+        "path": "test/authClient.test.js"
+      },
+      "text": "Tests build a fresh FakeTokenServer per test; don't share one across tests, its state leaks.",
+      "author": "claude-code",
+      "age": "13d"
+    },
+    {
+      "id": "un-11",
+      "type": "known-issue",
+      "anchor": {
+        "path": "src/authClient.js",
+        "symbol": "AuthClient.signOut"
+      },
+      "text": "signOut doesn't revoke the refresh token server-side yet (Keyline /revoke); the token stays valid until it expires.",
+      "author": "codex",
+      "age": "14d"
+    },
+    {
+      "id": "un-12",
+      "type": "decision",
+      "anchor": {
+        "path": "src/tokenStore.js"
+      },
+      "text": "Tokens are not persisted to localStorage on purpose (XSS exposure); a page reload signs the user out.",
+      "author": "claude-code",
+      "age": "15d"
+    }
+  ]
+}

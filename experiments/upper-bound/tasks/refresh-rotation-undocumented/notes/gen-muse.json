@@ -1,0 +1,51 @@
+{
+  "source": "gen:opencode:opencode/muse-spark-1.3-contributor-free:full",
+  "generatedAt": "2026-10-01T18:38:33.744Z",
+  "trace": "experiments/upper-bound/results/batch5-low/refresh-rotation-undocumented/control/rep-02/trace.jsonl",
+  "input": "full",
+  "usage": {
+    "total": 19932,
+    "input": 9528,
+    "output": 437,
+    "reasoning": 5630,
+    "cache": {
+      "write": 0,
+      "read": 4337
+    }
+  },
+  "dropped": [],
+  "notes": [
+    {
+      "id": "gen-1",
+      "type": "warning",
+      "anchor": {
+        "path": "src/authClient.js",
+        "symbol": "AuthClient.refreshSession"
+      },
+      "text": "Do not retry refresh with same refresh_token after timeout without Idempotency-Key. Keyline rotates tokens and treats reuse as theft (docs/vendor/authserver-api.md §10.2), revoking whole family and signing out all devices. Safe retry requires same Idempotency-Key (§11).",
+      "author": "generated",
+      "age": ""
+    },
+    {
+      "id": "gen-2",
+      "type": "warning",
+      "anchor": {
+        "path": "src/authClient.js",
+        "symbol": "AuthClient.refreshSession"
+      },
+      "text": "refreshSession must not clear TokenStore on TransportError (ETIMEDOUT/ECONNRESET). Request may never have reached server so stored tokens stay valid; clearing logs user out on single blip. Throw AuthError network and keep session.",
+      "author": "generated",
+      "age": ""
+    },
+    {
+      "id": "gen-3",
+      "type": "known-issue",
+      "anchor": {
+        "path": "test/fakeServer.js"
+      },
+      "text": "FakeTokenServer never invalidates old refresh_tokens and has no family revocation, unlike Keyline rotation + reuse detection (§10.2). Retries that pass here can still revoke whole family in prod; do not trust it for retry safety.",
+      "author": "generated",
+      "age": ""
+    }
+  ]
+}

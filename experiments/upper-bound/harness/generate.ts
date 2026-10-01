@@ -12,7 +12,9 @@
  *     --out experiments/upper-bound/tasks/refresh-rotation/notes/gen-opus-full.json
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
@@ -64,7 +66,7 @@ Write notes only for knowledge that will still be true and useful next time:
 Do not summarise the session, restate what the code plainly says, or give generic advice.
 
 Each note:
-- belongs to one file in the repository (use a path from the file list), and to a symbol when it is about one function or method
+- belongs to one file in the repository (use a path from the file list), and to a symbol when it is about one function or method; when it is about code that does not exist yet (a convention for new files), it belongs to the folder where that code goes, written with a trailing slash (e.g. src/exports/)
 - is at most 280 characters, specific and self-contained
 - states facts; if the session showed an approach fails, say what fails and why, and what works instead if that is known
 
@@ -95,17 +97,31 @@ export interface GeneratedNotes {
   notes: { id: string; type: string; anchor: { path: string; symbol?: string }; text: string; author: string; age: string }[];
 }
 
-export function validateNotes(raw: unknown, repoFiles: string[], idPrefix = "gen"): Pick<GeneratedNotes, "notes" | "dropped"> {
+/**
+ * Validates model output. `written` lists paths the session wrote (absolute or relative):
+ * a note on one of those that is not in the repository yet is anchored to its folder.
+ */
+export function validateNotes(raw: unknown, repoFiles: string[], idPrefix = "gen", written: string[] = []): Pick<GeneratedNotes, "notes" | "dropped"> {
   const parsed = ModelNotes.safeParse(raw);
   if (!parsed.success) throw new Error(`model output does not match the notes schema: ${parsed.error.message}`);
   const files = new Set(repoFiles);
   const notes: GeneratedNotes["notes"] = [];
   const dropped: GeneratedNotes["dropped"] = [];
   for (const n of parsed.data.notes) {
-    const path = n.path.replace(/^\.\//, "");
-    if (!files.has(path)) {
-      dropped.push({ reason: "path not in repository", note: n });
-      continue;
+    let path = n.path.replace(/^\.\//, "");
+    const isFolder = path.endsWith("/") && repoFiles.some((f) => f.startsWith(path));
+    if (!files.has(path) && !isFolder) {
+      // A file the session created is not in the repository yet; its folder is.
+      const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/") + 1) : "";
+      const createdHere = written.some((w) => w === path || w.endsWith(`/${path}`));
+      if (createdHere && folder && repoFiles.some((f) => f.startsWith(folder))) {
+        dropped.push({ reason: `new file, anchored to its folder ${folder}`, note: n });
+        path = folder;
+        n.symbol = null;
+      } else {
+        dropped.push({ reason: "path not in repository", note: n });
+        continue;
+      }
     }
     const text = n.text.trim();
     if (!text) {
@@ -141,7 +157,8 @@ export async function generateNotes(opts: {
   const traceText = opts.input === "full" ? renderFull(opts.steps) : renderDigest(opts.steps);
   const user = buildUserPrompt(traceText, opts.repoFiles, opts.input);
   const { json, usage } = await opts.call({ system: SYSTEM_PROMPT, user, schema: NOTES_JSON_SCHEMA });
-  const { notes, dropped } = validateNotes(json, opts.repoFiles);
+  const written = opts.steps.flatMap((s) => (s.kind === "tool_call" && ["Write", "Edit", "MultiEdit"].includes(s.tool) && typeof s.input.file_path === "string" ? [s.input.file_path] : []));
+  const { notes, dropped } = validateNotes(json, opts.repoFiles, "gen", written);
   return { source: opts.source, generatedAt: new Date().toISOString(), trace: opts.trace, input: opts.input, usage, dropped, notes };
 }
 
@@ -194,6 +211,47 @@ export function openaiCompatibleCall(model: string, { schema = true } = {}): Mod
   };
 }
 
+/**
+ * A model reached through OpenCode (`opencode run`), for the free models it serves.
+ * The run works in an empty folder and cannot reach outside it or the web.
+ */
+export function opencodeCall(model: string, variant?: string): ModelCall {
+  return async ({ system, user }) => {
+    const dir = mkdtempSync(join(tmpdir(), "bifrost-gen-"));
+    try {
+      // OpenCode's free tier refuses runs with every tool denied, so tools stay on inside an empty folder.
+      const deny = { webfetch: "deny", external_directory: "deny" };
+      const args = ["run", "--format", "json", "--dir", dir, "--model", model];
+      if (variant) args.push("--variant", variant);
+      args.push(`${system}\n\n${user}\n\nAnswer with the JSON only. Do not use any tools.`);
+      const r = spawnSync("opencode", args, {
+        encoding: "utf8",
+        maxBuffer: 1 << 28,
+        timeout: 15 * 60_000,
+        env: { ...process.env, OPENCODE_CONFIG_CONTENT: JSON.stringify({ share: "disabled", autoupdate: false, permission: deny }), OPENCODE_DISABLE_CLAUDE_CODE: "1" },
+      });
+      if (r.status !== 0) throw new Error(`opencode run failed (${r.status}): ${(r.stderr || r.error?.message || "").slice(0, 500)}`);
+      let text = "";
+      let usage: Record<string, unknown> | undefined;
+      for (const line of r.stdout.split("\n")) {
+        try {
+          const e = JSON.parse(line) as { type?: string; part?: { text?: string; tokens?: Record<string, unknown> } };
+          if (e.type === "text" && e.part?.text) text += e.part.text;
+          if (e.type === "step_finish" && e.part?.tokens) usage = e.part.tokens;
+        } catch {
+          /* not an event line */
+        }
+      }
+      const start = text.indexOf("{");
+      const end = text.lastIndexOf("}");
+      if (start < 0 || end < start) throw new Error(`no JSON in the model's answer: ${text.slice(0, 300)}`);
+      return { json: JSON.parse(text.slice(start, end + 1)), usage, model };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+}
+
 export function listRepoFiles(dir: string): string[] {
   const out: string[] = [];
   const walk = (d: string) => {
@@ -221,7 +279,7 @@ async function main(argv: string[]) {
   const provider = arg(argv, "provider", "anthropic");
   const input = (arg(argv, "input", "full") as "full" | "digest");
   if (!task || !trace || !out) {
-    console.error("usage: generate.ts --task <id> --trace <trace.jsonl> --out <notes.json> [--provider anthropic|openai] [--model M] [--input full|digest] [--effort high] [--no-schema]");
+    console.error("usage: generate.ts --task <id> --trace <trace.jsonl> --out <notes.json> [--provider anthropic|openai|opencode] [--model M] [--variant V] [--input full|digest] [--effort high] [--no-schema]");
     process.exit(2);
   }
   const taskDir = resolve(here, "..", "tasks", task);
@@ -229,11 +287,13 @@ async function main(argv: string[]) {
   const repoFiles = listRepoFiles(join(taskDir, spec.repo));
   const steps = parseTrace(readFileSync(trace, "utf8"), spec.prompt);
   const model = arg(argv, "model", provider === "anthropic" ? "claude-opus-5" : undefined);
-  if (!model) throw new Error("--model is required for --provider openai");
+  if (!model) throw new Error(`--model is required for --provider ${provider}`);
   const call =
     provider === "anthropic"
       ? anthropicCall(model, (arg(argv, "effort", "high") as "high"))
-      : openaiCompatibleCall(model, { schema: !argv.includes("--no-schema") });
+      : provider === "opencode"
+        ? opencodeCall(model, arg(argv, "variant"))
+        : openaiCompatibleCall(model, { schema: !argv.includes("--no-schema") });
   const result = await generateNotes({ steps, repoFiles, input, call, source: `gen:${provider}:${model}:${input}`, trace });
   mkdirSync(dirname(resolve(out)), { recursive: true });
   writeFileSync(out, JSON.stringify(result, null, 2) + "\n");

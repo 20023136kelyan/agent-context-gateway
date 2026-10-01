@@ -1,0 +1,50 @@
+{
+  "source": "gen:opencode:opencode/mimo-v2.6-flash-free:full",
+  "generatedAt": "2026-10-01T18:37:35.176Z",
+  "trace": "experiments/upper-bound/results/batch5-low/invoice-csv-taste/control/rep-01/trace.jsonl",
+  "input": "full",
+  "usage": {
+    "total": 14560,
+    "input": 9568,
+    "output": 168,
+    "reasoning": 728,
+    "cache": {
+      "write": 0,
+      "read": 4096
+    }
+  },
+  "dropped": [
+    {
+      "reason": "new file, anchored to its folder src/exports/",
+      "note": {
+        "type": "preference",
+        "path": "src/exports/invoicesCsv.js",
+        "symbol": null,
+        "text": "Finance CSV exports must NOT copy monthlyReport's style: use ';' delimiter (Excel French locale), snake_case headers, dates YYYY-MM-DD UTC (toISODate), amounts as integer cents (123450) — not formatMoney strings like \"€1,234.50\"."
+      }
+    }
+  ],
+  "notes": [
+    {
+      "id": "gen-1",
+      "type": "preference",
+      "anchor": {
+        "path": "src/exports/"
+      },
+      "text": "New modules under src/exports/ use named exports only (export function exportInvoicesCsv), not `export default`, even though invoicesJson.js still uses a default export. src/index.js re-exports them as named aliases.",
+      "author": "generated",
+      "age": ""
+    },
+    {
+      "id": "gen-2",
+      "type": "preference",
+      "anchor": {
+        "path": "src/exports/"
+      },
+      "text": "Finance CSV exports must NOT copy monthlyReport's style: use ';' delimiter (Excel French locale), snake_case headers, dates YYYY-MM-DD UTC (toISODate), amounts as integer cents (123450) — not formatMoney strings like \"€1,234.50\".",
+      "author": "generated",
+      "age": ""
+    }
+  ],
+  "revalidated": true
+}

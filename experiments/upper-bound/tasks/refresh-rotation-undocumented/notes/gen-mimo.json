@@ -1,0 +1,60 @@
+{
+  "source": "gen:opencode:opencode/mimo-v2.6-flash-free:full",
+  "generatedAt": "2026-10-01T18:38:10.517Z",
+  "trace": "experiments/upper-bound/results/batch5-low/refresh-rotation-undocumented/control/rep-02/trace.jsonl",
+  "input": "full",
+  "usage": {
+    "total": 15871,
+    "input": 7997,
+    "output": 269,
+    "reasoning": 1461,
+    "cache": {
+      "write": 0,
+      "read": 6144
+    }
+  },
+  "dropped": [
+    {
+      "reason": "text cut to 280 characters",
+      "note": {
+        "type": "warning",
+        "path": "src/authClient.js",
+        "symbol": "refreshSession",
+        "text": "Do not retry refreshSession after a TransportError by resending the same refresh token: if the server rotated it already, reuse detection (docs/vendor/authserver-api.md §10.2) revokes the whole token family and signs out every device. Retry only with the original Idempotency-Key (§11)."
+      }
+    }
+  ],
+  "notes": [
+    {
+      "id": "gen-1",
+      "type": "warning",
+      "anchor": {
+        "path": "src/authClient.js",
+        "symbol": "refreshSession"
+      },
+      "text": "Do not retry refreshSession after a TransportError by resending the same refresh token: if the server rotated it already, reuse detection (docs/vendor/authserver-api.md §10.2) revokes the whole token family and signs out every device. Retry only with the original Idempotency-Key…",
+      "author": "generated",
+      "age": ""
+    },
+    {
+      "id": "gen-2",
+      "type": "discovery",
+      "anchor": {
+        "path": "docs/vendor/authserver-api.md"
+      },
+      "text": "Keyline refresh tokens rotate on every use: a used token returns invalid_grant (§8), and reuse detection (§10.2) revokes the entire token family across all devices of that client. Only a retried request carrying the same Idempotency-Key (§11) is safe.",
+      "author": "generated",
+      "age": ""
+    },
+    {
+      "id": "gen-3",
+      "type": "warning",
+      "anchor": {
+        "path": "test/fakeServer.js"
+      },
+      "text": "FakeTokenServer never invalidates old refresh tokens and has no reuse detection or family revocation, so `npm test` stays green while a retry loop would get real Keyline servers to sign out every device. Validate refresh-retry behaviour against §10.2/§11, not this fake.",
+      "author": "generated",
+      "age": ""
+    }
+  ]
+}

@@ -290,6 +290,17 @@ describe("generator", () => {
     expect(dropped.map((d) => d.reason)).toEqual(["path not in repository", "text cut to 280 characters"]);
     expect(() => validateNotes({ notes: [{ type: "gossip", path: "a", text: "b" }] }, repoFiles)).toThrow(/schema/);
   });
+  it("anchors a note on a file the session created to that file's folder, but not a made-up path", () => {
+    const raw = { notes: [
+      { type: "preference", path: "src/exports/invoicesCsv.js", symbol: "exportInvoicesCsv", text: "Use ';'." },
+      { type: "warning", path: "src/exports/ghost.js", symbol: null, text: "x" },
+    ] };
+    const files = ["src/exports/invoicesJson.js", "src/index.js"];
+    const { notes, dropped } = validateNotes(raw, files, "gen", ["/tmp/ws/src/exports/invoicesCsv.js"]);
+    expect(notes.map((n) => n.anchor)).toEqual([{ path: "src/exports/" }]);
+    expect(dropped.map((d) => d.reason)).toEqual(["new file, anchored to its folder src/exports/", "path not in repository"]);
+  });
+
 
   it("sends the rendered trace to the model and returns a notes file", async () => {
     let seen = "";
