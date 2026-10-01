@@ -146,12 +146,16 @@ daemon
   .command("status")
   .action(async () => {
     const info = readDaemonInfo();
-    if (!info) return console.log("Not running.");
+    if (!info) {
+      process.exitCode = 1;
+      return console.log("Not running.");
+    }
     try {
       const res = await fetch(`http://127.0.0.1:${info.port}/health`, { headers: { "x-bifrost": "1" }, signal: AbortSignal.timeout(500) });
       const h = (await res.json()) as { version: string; pid: number };
       console.log(`Running: pid ${h.pid}, port ${info.port}, version ${h.version}, store ${info.store}`);
     } catch {
+      process.exitCode = 1;
       console.log(`Not responding (last seen pid ${info.pid} on port ${info.port}).`);
     }
   });

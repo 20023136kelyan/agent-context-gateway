@@ -139,3 +139,37 @@ describe("install", () => {
     rmSync(home, { recursive: true, force: true });
   });
 });
+
+describe("OpenCode plugin", () => {
+  it("fetches notes before the tool runs and appends them after, plus the project's notes once", async () => {
+    const repo = mkdtempSync(join(tmpdir(), "bifrost-oc-"));
+    const info = join(repo, "daemon.json");
+    const prev = process.env.BIFROST_DAEMON_FILE;
+    process.env.BIFROST_DAEMON_FILE = info;
+    const store = new ItemStore(":memory:");
+    store.add({ repo, type: "preference", text: "Use ';' in finance CSVs.", anchor: parseAnchor("src/exports/"), source: { kind: "hand" } });
+    store.add({ repo, type: "decision", text: "The product is a service.", anchor: parseAnchor("."), source: { kind: "hand" } });
+    const daemon = await startDaemon({ store, port: 0, infoPath: info });
+    try {
+      const { BifrostPlugin } = await import("../src/clients/opencode-plugin.js");
+      const hooks = await BifrostPlugin({ directory: repo, worktree: repo });
+      const call = async (callID: string, tool: string, args: unknown) => {
+        await hooks["tool.execute.before"]({ tool, sessionID: "ses_1", callID }, { args });
+        const output = { title: "", output: "FILE CONTENT", metadata: {} };
+        await hooks["tool.execute.after"]({ tool, sessionID: "ses_1", callID, args }, output);
+        return output.output;
+      };
+      const first = await call("c1", "write", { filePath: join(repo, "src/exports/invoicesCsv.js"), content: "x" });
+      expect(first.startsWith("FILE CONTENT\n\nBIFRÖST (project)")).toBe(true);
+      expect(first).toContain("BIFRÖST src/exports/");
+      expect(await call("c2", "read", { filePath: join(repo, "src/exports/invoicesCsv.js") })).toBe("FILE CONTENT");
+      expect(await call("c3", "read", { filePath: join(repo, "README.md") })).toBe("FILE CONTENT");
+    } finally {
+      await daemon.close();
+      store.close();
+      if (prev === undefined) delete process.env.BIFROST_DAEMON_FILE;
+      else process.env.BIFROST_DAEMON_FILE = prev;
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+});
