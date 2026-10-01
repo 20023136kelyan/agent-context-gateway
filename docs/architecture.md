@@ -163,12 +163,45 @@ anchored, and intended to be useful in-context.
 | `how-to` | A concise procedure that has been demonstrated to work. |
 | `in-progress` | A line of investigation or implementation currently underway. |
 | `open-thread` | A question or unresolved issue that remains relevant. |
+| `preference` | A convention the user or team wants followed that cannot be derived from the code, usually learned from a correction. |
 
 Default finding content is at most 280 characters, with optional "why" context
 and a link back to the originating thread. The short form is deliberate: the Work
 Layer should provide orientation, not replay a conversation.
 
-### 4.4 Tasks — work with state
+### 4.4 What earns a place on the plane
+
+Bifröst does not hold everything. It holds what is judged important enough to
+share between agents, and every item is classified by type. The granularity and
+the set of types stay modular, so new kinds of knowledge can be added without
+reshaping the store.
+
+The upper-bound experiment (section 13.5) sharpened what is worth admitting:
+
+- **Taste is not in the code.** Many decisions are not logical consequences of
+  the code; they are how the user or team wants things done (a delimiter, a
+  naming style, an export convention). No amount of searching recovers them.
+  These become `preference` items.
+- **Capable agents still get things wrong.** A strong model with enough time
+  does not always find the answer, and the user has to step in. Each such
+  correction is knowledge that exists only in past work, and is the highest-value
+  input to the plane.
+- **Smaller, cheaper and lower-effort agents gain the most.** A strong model at
+  high reasoning effort often recovers facts that are written down somewhere in
+  the repository. Smaller models and low-effort modes do so less often, so the
+  same item is worth more to them.
+- **Findable facts are worth less, not nothing.** When the knowledge is in the
+  repository and one search finds it, an item adds little. Admission should
+  favor what is absent from the code or costly to find.
+
+The plane serves agents analysing their own work too. While reviewing these
+experiments, an agent concluded that notes matter little when a search can find
+the answer; the user added the four points above. That exchange is itself the
+kind of item the plane should keep: an agent's conclusion, corrected and
+extended by a person, anchored to the work it concerns, so the next agent starts
+from the corrected version.
+
+### 4.5 Tasks — work with state
 
 Tasks represent explicit work requests and their resulting state. Unlike
 findings, tasks are inherently stateful.
@@ -249,6 +282,13 @@ Find recent / relevant work items
 
 Silence is a first-class outcome. The system should not create notification
 fatigue by surfacing repetitive or low-value context.
+
+Delivered context must also read as trusted. Agents are trained to distrust
+instructions that appear inside tool output, because prompt injections arrive
+that way. In the experiment, a strong model shown correct notes inside file reads
+ignored them in half the runs. Each delivery channel should therefore establish,
+through the agent's system prompt or equivalent, what Bifröst items are and that
+they come from the team's own tooling.
 
 ### 6.2 Session start
 
@@ -462,6 +502,22 @@ incrementally.
 | Trap-task success | Whether the system prevents previously observed mistakes. |
 | Regression / repeated failure rate | Whether warnings and decisions persist across sessions. |
 
+### 13.5 First results
+
+Free models through OpenCode; full tables in `experiments/upper-bound/README.md`.
+
+- **Knowledge absent from the repository** (an undocumented vendor change, a
+  team's conventions): without notes, agents failed in every run; with correct
+  notes, small models almost always passed.
+- **Knowledge present in the repository**, even as one section among ~186 files:
+  both models found it by searching, and notes added no measurable benefit.
+- **Wrong notes** were followed whenever the repository did not contradict them,
+  and overridden when it did. Admission and correction matter as much as
+  delivery.
+- **Delivery channel:** a strong model ignored correct notes pushed into tool
+  output in half the runs. Early runs that also explain the notes in the system
+  prompt pass; a pull tool the agent must call was used only for some files.
+
 ## 14. Open Questions
 
 - How precisely should an event be mapped to an anchor when shell activity or generated changes touch many files?
@@ -472,6 +528,8 @@ incrementally.
 - How should presence expire when an agent crashes, disconnects, or becomes idle?
 - When should activity be summarized into findings automatically, and when should raw activity remain untouched?
 - How much semantic understanding is actually needed for place resolution before embeddings or an LLM become necessary?
+- How is "important enough to share" judged at admission, and how does a correction from the user outrank an agent's own finding?
+- How does each agent client establish that delivered items are trusted, without that trust becoming an injection route of its own?
 
 ## 15. Design Principles
 
@@ -481,7 +539,9 @@ incrementally.
 | Knowledge has a location and a time. | Every semantic item is anchored and temporal. |
 | Telemetry is not memory. | Keep activity separate from findings. |
 | Silence is useful. | Do not surface context unless it is new and relevant. |
-| Wrong context is harmful. | Support correction, votes, supersession, and staleness. |
+| Wrong context is harmful. | Support correction, votes, supersession, and staleness; agents follow uncontradicted notes. |
+| Admit what the code cannot tell. | Prioritize preferences, corrections and knowledge absent from the repository over findable facts. |
+| Delivered context must read as trusted. | Explain the channel to the agent; text appended to tool output alone is often ignored. |
 | Inform before controlling. | Default behavior is non-blocking. |
 | The map is replaceable. | Do not make work data depend on graph-specific node IDs. |
 | Test the value before the machinery. | Use perfect-note upper-bound experiments before building extraction pipelines. |

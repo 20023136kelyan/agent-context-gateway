@@ -8,7 +8,7 @@
 import { readFileSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
-export const TYPE_ORDER = ["warning", "known-issue", "in-progress", "decision", "open-thread", "discovery", "how-to"];
+export const TYPE_ORDER = ["warning", "known-issue", "in-progress", "decision", "preference", "open-thread", "discovery", "how-to"];
 export const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"]);
 export const REPEAT_ON_EDIT = new Set(["warning", "known-issue"]);
 export const TEXT_LIMIT = 280;

@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { parseTrace, renderDigest, renderFull, type Step } from "./trace.js";
 
-export const NOTE_TYPES = ["warning", "known-issue", "decision", "discovery", "how-to", "in-progress", "open-thread"] as const;
+export const NOTE_TYPES = ["warning", "known-issue", "decision", "preference", "discovery", "how-to", "in-progress", "open-thread"] as const;
 
 export const NOTES_JSON_SCHEMA = {
   type: "object",
@@ -58,6 +58,7 @@ export const SYSTEM_PROMPT = `You maintain Bifröst, a shared log of short notes
 Write notes only for knowledge that will still be true and useful next time:
 - constraints and pitfalls that are not obvious from the code (warning, known-issue)
 - decisions and their reasons (decision)
+- conventions the user wants followed that the code cannot tell, especially where the user corrected the agent (preference)
 - facts that were hard to find (discovery)
 - how to do something correctly here (how-to)
 Do not summarise the session, restate what the code plainly says, or give generic advice.
