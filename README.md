@@ -125,20 +125,22 @@ the smallest useful finding schema, conflict display, staleness detection, what
 counts as "new", presence expiry, when to summarize activity into findings, and
 how much semantics place resolution really needs.
 
-## Inherited from the search approach
+## Code
 
-The history-search code in `src/` from the previous approach stays in place.
-It is not the product on this branch. Parts of it may be reused, but each is
-unproven here and stays unused until the experiment calls for it:
-
-| Existing piece | Possible role |
+| Path | What it is |
 |---|---|
-| `src/adapters/` (Claude Code, Codex, Cursor, OpenCode, git) | Activity capture and offline extraction input |
-| `src/temporal/` (bi-temporal invalidation, `asOf`) | Supersession and validity intervals for findings |
-| `src/feedback/` | Votes on findings |
-| `src/collaboration/live.ts` | Starting point for presence |
-| `src/artifacts/graph.ts` | A rough file-level code map |
-| `src/transports/mcp.ts`, `src/git/hooks.ts`, session hooks | Integration points for triggers and ingestion |
-| `src/search/` | Candidate backend for `where(topic)` and extraction |
+| `src/adapters/` | Read-only readers of native agent histories: Claude Code, Codex, Cursor, OpenCode, git. Input to ingestion (build plan M2). |
+| `src/core/`, `src/topology/` | Shared models and ids; parent/child session topology. |
+| `experiments/upper-bound/` | The experiment kit: trap tasks, delivery hook and plugin, notes generator, harness. |
 
-Running the existing search CLI: `npm install && npx tsx src/cli.ts --help`.
+The previous approach (federated search over agent histories, first named Agent
+Context Gateway) was retired from this branch in build-plan M0. Its full code,
+tests, scripts, UI and documents are at commit `2d7285c` and on `main`. Pieces worth
+reading before rebuilding their equivalents: `src/temporal/` (bi-temporal
+validity), `src/feedback/` (votes), `src/collaboration/live.ts` (presence),
+`src/git/hooks.ts` (git integration).
+
+```sh
+npm install
+npm test
+```
