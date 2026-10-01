@@ -41,13 +41,14 @@ export const BUILTIN_ARMS: Record<string, Arm> = {
   "hand-brief": { id: "hand-brief", push: "inject", pull: false, notes: "hand", brief: true },
 };
 
-/** "gen:<file>" pushes tasks/<task>/notes/<file>.json; "pull:<file>" serves it over MCP only. */
+/** "gen:<file>" pushes tasks/<task>/notes/<file>.json; "brief:<file>" pushes it and explains it in the system prompt; "pull:<file>" serves it over MCP only. */
 export function resolveArm(spec: string): Arm {
   if (BUILTIN_ARMS[spec]) return BUILTIN_ARMS[spec];
   const [kind, file] = spec.split(":");
   if (kind === "gen" && file) return { id: spec, push: "inject", pull: false, notes: file };
   if (kind === "pull" && file) return { id: spec, push: "noop", pull: true, notes: file };
-  throw new Error(`unknown arm "${spec}" (built-in: ${Object.keys(BUILTIN_ARMS).join(", ")}, or gen:<notes-file>, pull:<notes-file>)`);
+  if (kind === "brief" && file) return { id: spec, push: "inject", pull: false, notes: file, brief: true };
+  throw new Error(`unknown arm "${spec}" (built-in: ${Object.keys(BUILTIN_ARMS).join(", ")}, or gen:<notes-file>, pull:<notes-file>, brief:<notes-file>)`);
 }
 
 export const PULL_INSTRUCTION =

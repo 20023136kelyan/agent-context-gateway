@@ -3,7 +3,9 @@
  *
  * A notes file is { source, notes: [{ id, type, anchor: { path, symbol?, lines? }, text, author?, age? }] }.
  * Paths are repo-relative. Matching is by file path; `lines` ([start, end]) narrows a match
- * when the tool call says which lines it touches.
+ * when the tool call says which lines it touches. A path ending in "/" anchors a note to a
+ * folder: it matches anything under it, including a file being created there, and the
+ * folder itself.
  */
 import { readFileSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
@@ -69,11 +71,16 @@ export function placesFromToolCall(toolName, input, root, knownPaths = []) {
   return out;
 }
 
+export function anchorCovers(anchor, path) {
+  if (!anchor.endsWith("/")) return anchor === path;
+  return path.startsWith(anchor) || path === anchor.slice(0, -1);
+}
+
 export function matchNotes(notes, places) {
   const hits = [];
   for (const note of notes) {
     for (const place of places) {
-      if (note.anchor.path !== place.path) continue;
+      if (!anchorCovers(note.anchor.path, place.path)) continue;
       const nl = note.anchor.lines;
       if (Array.isArray(nl) && place.lines && (nl[1] < place.lines[0] || nl[0] > place.lines[1])) continue;
       hits.push(note);

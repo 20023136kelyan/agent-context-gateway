@@ -1,0 +1,45 @@
+{
+  "source": "hand-dir",
+  "notes": [
+    {
+      "id": "tc-1",
+      "type": "decision",
+      "anchor": {
+        "path": "src/exports/"
+      },
+      "text": "CSV files for finance use ';' as the delimiter and snake_case headers (invoice_id, customer, issued_on, total_cents). Finance opens them in Excel with a French locale. monthly.js predates this; don't copy its format.",
+      "author": "claude-code",
+      "age": "12d"
+    },
+    {
+      "id": "tc-2",
+      "type": "decision",
+      "anchor": {
+        "path": "src/exports/"
+      },
+      "text": "Machine-readable exports carry amounts as integer cents (total_cents: 123450), never formatMoney strings. formatMoney is for the UI only; this was corrected in review twice.",
+      "author": "codex",
+      "age": "5d"
+    },
+    {
+      "id": "tc-3",
+      "type": "how-to",
+      "anchor": {
+        "path": "src/exports/"
+      },
+      "text": "Dates in exports go through toISODate (YYYY-MM-DD, UTC). formatDate depends on the server's locale and time zone and is for the UI only.",
+      "author": "codex",
+      "age": "5d"
+    },
+    {
+      "id": "tc-4",
+      "type": "decision",
+      "anchor": {
+        "path": "src/exports/"
+      },
+      "text": "New modules use named exports only. The default exports in older files like this one are legacy and are being removed.",
+      "author": "claude-code",
+      "age": "12d"
+    }
+  ]
+}

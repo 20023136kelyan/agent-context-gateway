@@ -202,6 +202,16 @@ What this shows:
   undocumented and taste) and overridden when the repo holds the truth (vendor).
   What gets into the notes needs checking before it is shared.
 
+**Folder anchors.** A note anchored to a path ending in `/` (for example
+`src/exports/`) is shown for anything read, written or listed under that folder,
+including a file being created there. File anchors miss conventions about new
+code: on the taste task one model never opened the old files the notes were
+anchored to, and wrote the export without them. `notes/hand-dir.json` holds the
+same taste notes anchored to `src/exports/`; arm `brief:hand-dir` pushes them with
+the system-prompt line. OpenCode's plugin runs after a tool call, so a note on a
+new file arrives after the first write and the agent has to revise it; Claude
+Code's hook runs before.
+
 A task can point `repo` and `hidden` at another task and add `overlay` (files
 copied over the repo) and `remove` (paths deleted), so variants don't copy the
 grader. The kit tests check that each grader separates no fix, the naive retry

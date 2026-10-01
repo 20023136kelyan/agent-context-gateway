@@ -49,6 +49,17 @@ describe("notes-lib", () => {
     expect(matchNotes(notes, [{ path: "src/a.js" }]).map((n: { id: string }) => n.id)).toEqual(["a", "b"]);
   });
 
+  it("matches a folder anchor for anything under it, including a new file, and the folder itself", () => {
+    const notes = [{ id: "d", type: "preference", anchor: { path: "src/exports/" }, text: "x" }];
+    const ids = (path: string) => matchNotes(notes, [{ path }]).map((n: { id: string }) => n.id);
+    expect(ids("src/exports/invoicesCsv.js")).toEqual(["d"]);
+    expect(ids("src/exports")).toEqual(["d"]);
+    expect(ids("src/exportsOld.js")).toEqual([]);
+    expect(ids("src/reports/monthly.js")).toEqual([]);
+    const places = placesFromToolCall("Write", { file_path: "/repo/src/exports/invoicesCsv.js" }, "/repo");
+    expect(matchNotes(notes, places).map((n: { id: string }) => n.id)).toEqual(["d"]);
+  });
+
   it("formats within the note cap and character budget, warnings first", () => {
     const notes = loadNotes(HAND);
     const all = formatNotes(notes, { maxNotes: 3, budgetChars: 5000 });
@@ -186,7 +197,7 @@ describe("invoice-csv-taste task", () => {
   it("keeps notes within 280 characters, anchored to files the agent gets", () => {
     const ws = prepareWorkspace(loadTask("invoice-csv-taste"));
     try {
-      for (const f of ["hand", "wrong"]) {
+      for (const f of ["hand", "hand-dir", "wrong"]) {
         for (const n of loadNotes(join(dir, `notes/${f}.json`))) {
           expect(n.text.length).toBeLessThanOrEqual(280);
           expect(existsSync(join(ws, n.anchor.path))).toBe(true);
@@ -307,6 +318,7 @@ describe("harness", () => {
     expect(resolveArm("hand")).toMatchObject({ push: "inject", notes: "hand" });
     expect(resolveArm("gen:gen-opus-full")).toMatchObject({ push: "inject", notes: "gen-opus-full" });
     expect(resolveArm("pull:hand")).toMatchObject({ push: "noop", pull: true });
+    expect(resolveArm("brief:hand-dir")).toEqual({ id: "brief:hand-dir", push: "inject", pull: false, notes: "hand-dir", brief: true });
     expect(() => resolveArm("bogus")).toThrow(/unknown arm/);
   });
 
