@@ -288,6 +288,8 @@ Find recent / relevant work items
 Silence is a first-class outcome. The system should not create notification
 fatigue by surfacing repetitive or low-value context.
 
+Every major client supports this: Claude Code and Gemini CLI inject before a tool call; Codex, Cursor and OpenCode inject after it; all five can add the explanation at session start (study §7.1).
+
 Delivered context must also read as trusted. Agents are trained to distrust
 instructions that appear inside tool output, because prompt injections arrive
 that way. In the experiment, a strong model shown correct notes inside file reads
@@ -568,7 +570,7 @@ Free models through OpenCode; full tables in `experiments/upper-bound/README.md`
 - When should activity be summarized into findings automatically, and when should raw activity remain untouched?
 - How much semantic understanding is actually needed for place resolution before embeddings or an LLM become necessary?
 - How is "important enough to share" judged at admission, and how does a correction from the user outrank an agent's own finding?
-- How does each agent client establish that delivered items are trusted, without that trust becoming an injection route of its own?
+- How is the trust established at session start kept from becoming an injection route of its own?
 
 ## 15. Design Principles
 

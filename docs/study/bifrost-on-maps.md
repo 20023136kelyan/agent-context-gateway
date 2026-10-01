@@ -354,14 +354,23 @@ interface Objective {
 
 ### 7.1 Channels by platform
 
-| Platform | Delivered at the place | Session start | Pull (MCP) |
+| Platform | Delivered at the place | Explanation line and session context | Pull (MCP) |
 |---|---|---|---|
-| Claude Code | `PreToolUse` on `Read\|Edit\|Write\|MultiEdit\|Grep` → `additionalContext` | `SessionStart` hook | Yes |
-| Gemini CLI | `BeforeTool` → `additionalContext` | Instruction file | Yes |
-| Codex | **Unconfirmed.** Codex runs `PreToolUse` hooks from `.codex/hooks.json`, but Graphify reports that Codex Desktop rejects `additionalContext` there (its changelog #651, #2165), so Graphify leaves that hook empty. Whether the Codex CLI accepts it, or another hook event carries context, is untested. | `AGENTS.md` | Yes |
-| Cursor | **Unconfirmed.** Graphify integrates through an always-applied rules file only, which says nothing about whether Cursor has hooks of its own. Untested. | `.cursor/rules` (`alwaysApply`) | Yes |
+| Claude Code | `PreToolUse` on `Read\|Edit\|Write\|MultiEdit\|Grep` → `additionalContext`, **before** the call | `SessionStart` hook; `--append-system-prompt` or `CLAUDE.md` | Yes |
+| Gemini CLI | `BeforeTool` → `additionalContext`, before the call | `GEMINI.md` | Yes |
+| OpenCode | Plugin `tool.execute.after` appends to the tool result, **after** the call (tested in the experiments) | `instructions` files in its config | Yes |
+| Codex | `PostToolUse` → `additionalContext`, added as developer context after the call; fires for shell, `apply_patch` file edits, MCP and local function tools. `PreToolUse` parses `additionalContext` but does not support it. Codex reads files through shell commands, so places come from the command text. | `SessionStart` hook (stdout or `additionalContext` becomes developer context); `AGENTS.md` | Yes |
+| Cursor | `postToolUse` → `additional_context`, "injected into the conversation after the tool result"; fires for every tool (`Read`, `Write`, `Grep`, `Shell`, `MCP:…`). IDE agent and cloud agents; CLI not stated. `beforeReadFile` cannot change what the model sees. | `sessionStart` hook → `additional_context`, added to the initial system context; `.cursor/rules` | Yes |
 
-These are the channels Graphify already relies on. Graphify itself works on all of these platforms. The open question is only whether per-tool-call context injection is available outside Claude Code and Gemini. Where it isn't, Bifröst falls back to instruction files, MCP pull and session start, as Graphify does. Its hooks inject a fixed reminder, while Bifröst injects the entries for the place being touched.
+Sources (checked October 2026): [Codex hooks](https://learn.chatgpt.com/docs/hooks), [Cursor hooks](https://cursor.com/docs/hooks).
+
+Every major client can now push notes at the place and explain them at session
+start, which the experiments showed is the delivery that works. The difference is
+timing. Claude Code and Gemini CLI deliver before the call; Codex, Cursor and
+OpenCode after it, so a note on a file the agent is about to write arrives after
+the first write and the agent has to revise. Notes delivered when the agent reads
+neighbouring files, and folder anchors, soften this; the experiments with
+OpenCode, which only delivers after, still reached 100% with explained push.
 
 ### 7.2 Latency
 
