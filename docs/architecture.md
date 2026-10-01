@@ -235,6 +235,11 @@ anchor = {
 This lets Bifröst remain useful even when the underlying structural map is
 rebuilt, incomplete, or temporarily stale.
 
+A `path` may name a folder (ending in `/`). A folder anchor matches anything read,
+written or created under it. Conventions about new code need this: the file the
+agent will write does not exist yet, and the old files that would carry a file
+anchor are often the ones that show the pattern to avoid.
+
 ### 5.2 Every item has time semantics
 
 A finding is not an eternal truth. It is a claim that was valid under a
@@ -521,6 +526,19 @@ Free models through OpenCode; full tables in `experiments/upper-bound/README.md`
   223 s). A pull tool the agent was told to call passed 20%: it was queried for
   only some files, and its answers were mostly ignored. Push delivery, with the
   channel explained to the agent, is the design to keep.
+- **Across models and effort levels**, explained push passed every run on every
+  task (35 runs: the strong model at high and low reasoning effort, and a small
+  model). Plain push was ignored most by the strong model.
+- **Reasoning effort:** at low effort the strong model still found knowledge
+  present in the repository and still missed knowledge absent from it; it was
+  roughly twice as fast. These tasks do not yet show smaller or lower-effort
+  agents gaining more from notes; that needs tasks where the knowledge is in the
+  repository but harder to reach than one search.
+- **Anchoring:** conventions for new code were first anchored to the old files
+  that embody the opposite pattern. An agent that never opens those files never
+  sees them. Anchors may also name a folder, matching anything read, written or
+  created under it. With a model that skips the old files, folder anchors raised
+  the conventions followed from about 1 in 5 to all 5 in three of four runs.
 
 ## 14. Open Questions
 
@@ -540,7 +558,7 @@ Free models through OpenCode; full tables in `experiments/upper-bound/README.md`
 | Principle | Implication |
 |---|---|
 | Context should arrive where work happens. | Prefer place-triggered delivery over search-first interaction. |
-| Knowledge has a location and a time. | Every semantic item is anchored and temporal. |
+| Knowledge has a location and a time. | Every semantic item is anchored and temporal; anchor to where the work will land, which may be a folder or a new file, not only to existing files. |
 | Telemetry is not memory. | Keep activity separate from findings. |
 | Silence is useful. | Do not surface context unless it is new and relevant. |
 | Wrong context is harmful. | Support correction, votes, supersession, and staleness; agents follow uncontradicted notes. |

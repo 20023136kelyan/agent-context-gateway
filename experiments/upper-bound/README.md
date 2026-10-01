@@ -158,18 +158,40 @@ lands on the wrong day.
 ## Results so far
 
 Free models through OpenCode, graded runs only (runs that got no response
-because of rate limits were left out and re-run). Pass rate per arm:
-control = no notes, hand = correct notes, wrong = misleading notes.
+because of rate limits were left out and re-run). Pass rate per arm, with the
+share of runs that hit the trap in brackets: control = no notes, hand = notes
+pushed into tool output, brief = the same plus one system-prompt line saying
+what the notes are (`hand-brief`), wrong = misleading notes.
 
-| Task | Model | n/arm | control | hand | wrong |
-|---|---|---|---|---|---|
-| undocumented | Muse Spark 1.3, `xhigh` | 10 | 0% (50% trap) | 100% | 0% |
-| undocumented | MiMo v2.6 Flash | 5 | 0% (60% trap) | 100% | 0% (80% trap) |
-| taste | Muse Spark 1.3, `xhigh` | 10 | 0% (100% trap) | 50% | 0% (100% trap) |
-| taste | MiMo v2.6 Flash | 5 | 0% (100% trap) | 80% | 0% (100% trap) |
-| vendor | Muse Spark 1.3, `xhigh` | 10 | 100% | 100% | 100% |
-| vendor | MiMo v2.6 Flash | 5 | 80% | 80% | 100% |
-| buried | Muse Spark 1.3, `xhigh` | 3–4 | 100% | 100% | 100% |
+| Task | Model | n/arm | control | hand | brief | wrong |
+|---|---|---|---|---|---|---|
+| undocumented | Muse Spark 1.3, `xhigh` | 10 | 0% (50%) | 100% | | 0% |
+| undocumented | Muse Spark 1.3, `low` | 5 | 0% (40%) | 100% | 100% | |
+| undocumented | MiMo v2.6 Flash | 5 | 0% (60%) | 100% | 100% | 0% (80%) |
+| taste | Muse Spark 1.3, `xhigh` | 10 | 0% (100%) | 50% (50%) | 100% | 0% (100%) |
+| taste | Muse Spark 1.3, `low` | 5 | 0% (100%) | 40% (60%) | 100% | |
+| taste | MiMo v2.6 Flash | 5 | 0% (100%) | 80% (20%) | 100% | 0% (100%) |
+| vendor | Muse Spark 1.3, `xhigh` | 10 | 100% | 100% | | 100% |
+| vendor | Muse Spark 1.3, `low` | 5 | 100% | 100% | 100% | |
+| vendor | MiMo v2.6 Flash | 5 | 80% (20%) | 80% | 100% | 100% |
+| buried | Muse Spark 1.3, `xhigh` | 3–4 | 100% | 100% | | 100% |
+
+Folder anchors (`brief:hand-dir`, taste task, the four notes anchored to
+`src/exports/`): Muse Spark `low` 5/5, MiMo 5/5. Both models read the old files
+before writing, so file anchors also arrived in time. Nemotron 3.5 Lightning
+often skips them and writes straight away, which separates the two (4 runs each,
+both with the system-prompt line):
+
+| Taste task, Nemotron 3.5 Lightning | Notes seen before first write | Conventions followed (of 5) |
+|---|---|---|
+| file anchors (`hand-brief`) | 1–3 of 4 in most runs | 2, 1, 2, 0 |
+| folder anchors (`brief:hand-dir`) | all 4, every run | 5, 5, 5, 2 |
+
+No Nemotron run passed: with folder anchors it followed the conventions but
+broke the CSV quoting (`Café "Le Zinc"` lost its quotes), a coding error notes
+cannot fix. Its earlier no-notes, plain-push and wrong-notes runs (8 in all) are
+in `results/sweep-nemotron`; the sweep was stopped because most failures were of
+this kind.
 
 What this shows:
 
@@ -201,6 +223,19 @@ What this shows:
 - **Wrong notes** are followed when nothing in the repo contradicts them (0% on
   undocumented and taste) and overridden when the repo holds the truth (vendor).
   What gets into the notes needs checking before it is shared.
+- **Explained push holds across models and effort levels:** 100% on every task
+  for Muse Spark `xhigh` and `low` and for MiMo (35 runs, no failure). Plain push
+  is ignored most by Muse Spark (50% at `xhigh`, 40% at `low` on taste) and least
+  by the small MiMo (80%).
+- **Low reasoning effort did not change what the model can find:** Muse Spark at
+  `low` still solved the vendor task without notes every time, and still failed
+  the two tasks whose knowledge is absent from the repo. On these tasks the gap
+  between effort levels is in speed (`low` runs took roughly half the time, though
+  the `xhigh` timings are inflated by rate limiting),
+  not in what the model finds. The small model is the only case where search
+  fell short (vendor control 80%). Smaller or lower-effort agents benefiting
+  most remains plausible but is not shown by these tasks; it needs tasks where
+  the knowledge is in the repo but harder to reach than one grep.
 
 **Folder anchors.** A note anchored to a path ending in `/` (for example
 `src/exports/`) is shown for anything read, written or listed under that folder,
